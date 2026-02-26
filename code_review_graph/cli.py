@@ -1,11 +1,13 @@
 """CLI entry point for code-review-graph.
 
 Usage:
+    code-review-graph init
     code-review-graph build [--base BASE]
     code-review-graph update [--base BASE]
     code-review-graph watch
     code-review-graph status
     code-review-graph serve
+    code-review-graph visualize
 """
 
 from __future__ import annotations
@@ -23,8 +25,52 @@ if sys.version_info < (3, 10):
     sys.exit(1)
 
 import argparse
+import json
 import logging
 from pathlib import Path
+
+
+def _handle_init(args: argparse.Namespace) -> None:
+    """Set up .mcp.json in the project root for Claude Code integration."""
+    from .incremental import find_repo_root
+
+    repo_root = Path(args.repo) if args.repo else find_repo_root()
+    if not repo_root:
+        repo_root = Path.cwd()
+
+    mcp_path = repo_root / ".mcp.json"
+    python_path = sys.executable
+
+    mcp_config = {
+        "mcpServers": {
+            "code-review-graph": {
+                "command": python_path,
+                "args": ["-m", "code_review_graph.main"],
+                "cwd": ".",
+            }
+        }
+    }
+
+    # Merge into existing .mcp.json if present
+    if mcp_path.exists():
+        try:
+            existing = json.loads(mcp_path.read_text())
+            if "code-review-graph" in existing.get("mcpServers", {}):
+                print(f"Already configured in {mcp_path}")
+                print(f"  Python: {existing['mcpServers']['code-review-graph']['command']}")
+                return
+            existing.setdefault("mcpServers", {}).update(mcp_config["mcpServers"])
+            mcp_config = existing
+        except (json.JSONDecodeError, KeyError):
+            pass  # Overwrite malformed file
+
+    mcp_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
+    print(f"Created {mcp_path}")
+    print(f"  Python: {python_path}")
+    print()
+    print("Next steps:")
+    print(f"  code-review-graph build    # build the knowledge graph")
+    print(f"  Restart Claude Code        # to pick up the new MCP server")
 
 
 def main() -> None:
@@ -34,6 +80,12 @@ def main() -> None:
         description="Persistent incremental knowledge graph for code reviews",
     )
     sub = ap.add_subparsers(dest="command")
+
+    # init
+    init_cmd = sub.add_parser(
+        "init", help="Set up .mcp.json for Claude Code integration"
+    )
+    init_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
 
     # build
     build_cmd = sub.add_parser("build", help="Full graph build (re-parse all files)")
@@ -52,6 +104,10 @@ def main() -> None:
     status_cmd = sub.add_parser("status", help="Show graph statistics")
     status_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
 
+    # visualize
+    vis_cmd = sub.add_parser("visualize", help="Generate interactive HTML graph visualization")
+    vis_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+
     # serve
     sub.add_parser("serve", help="Start MCP server (stdio transport)")
 
@@ -64,6 +120,10 @@ def main() -> None:
     if args.command == "serve":
         from .main import main as serve_main
         serve_main()
+        return
+
+    if args.command == "init":
+        _handle_init(args)
         return
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -112,6 +172,13 @@ def main() -> None:
 
         elif args.command == "watch":
             watch(repo_root, store)
+
+        elif args.command == "visualize":
+            from .visualization import generate_html
+            html_path = repo_root / ".code-review-graph.html"
+            generate_html(store, html_path)
+            print(f"Visualization: {html_path}")
+            print("Open in browser to explore your codebase graph.")
 
     finally:
         store.close()
