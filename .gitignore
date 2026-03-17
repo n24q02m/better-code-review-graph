@@ -48,3 +48,20 @@ htmlcov/
 
 # mypy
 .mypy_cache/
+
+# Medium article
+medium/
+
+# Superpowers brainstorm
+.superpowers/
+
+# Diagrams source files (PNGs are tracked, sources are not)
+diagrams/*.excalidraw
+diagrams/export_pngs.mjs
+diagrams/generate_diagrams.py
+*.excalidraw
+
+# Draft/duplicate files
+evaluate/results?2.csv
+evaluate/results?3.csv
+docs/assets/marketing-diagram*

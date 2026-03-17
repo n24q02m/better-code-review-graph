@@ -1,0 +1,263 @@
+{
+  "name": "code-review-graph",
+  "displayName": "Code Review Graph",
+  "description": "Visualize code dependencies, blast radius, and review context from your code-review-graph database directly in VS Code.",
+  "version": "0.1.0",
+  "publisher": "tirth8205",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tirth8205/code-review-graph"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "extensionKind": [
+    "workspace"
+  ],
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.code-review-graph/graph.db",
+    "onCommand:codeReviewGraph.*",
+    "onView:codeReviewGraph.*"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeReviewGraph",
+          "title": "Code Graph",
+          "icon": "media/icons/graph.svg"
+        }
+      ]
+    },
+    "views": {
+      "codeReviewGraph": [
+        {
+          "id": "codeReviewGraph.codeGraph",
+          "name": "Code Graph"
+        },
+        {
+          "id": "codeReviewGraph.blastRadius",
+          "name": "Blast Radius"
+        },
+        {
+          "id": "codeReviewGraph.stats",
+          "name": "Stats"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "codeReviewGraph.showBlastRadius",
+        "title": "Code Graph: Show Blast Radius",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "codeReviewGraph.findCallers",
+        "title": "Code Graph: Find Callers",
+        "icon": "$(references)"
+      },
+      {
+        "command": "codeReviewGraph.findTests",
+        "title": "Code Graph: Find Tests",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "codeReviewGraph.showGraph",
+        "title": "Code Graph: Show Graph",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "codeReviewGraph.search",
+        "title": "Code Graph: Search",
+        "icon": "$(search)"
+      },
+      {
+        "command": "codeReviewGraph.reviewChanges",
+        "title": "Code Graph: Review Changes",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "codeReviewGraph.buildGraph",
+        "title": "Code Graph: Build Graph",
+        "icon": "$(database)"
+      },
+      {
+        "command": "codeReviewGraph.updateGraph",
+        "title": "Code Graph: Update Graph",
+        "icon": "$(sync)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "codeReviewGraph.showBlastRadius",
+          "when": "viewItem =~ /node-/",
+          "group": "codeGraph@1"
+        },
+        {
+          "command": "codeReviewGraph.findCallers",
+          "when": "viewItem =~ /node-/",
+          "group": "codeGraph@2"
+        },
+        {
+          "command": "codeReviewGraph.findTests",
+          "when": "viewItem =~ /node-/",
+          "group": "codeGraph@3"
+        },
+        {
+          "command": "codeReviewGraph.showGraph",
+          "when": "viewItem =~ /node-/",
+          "group": "codeGraph@4"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Code Review Graph",
+      "properties": {
+        "codeReviewGraph.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the code-review-graph CLI binary. Leave empty to use the bundled version or the one found on PATH."
+        },
+        "codeReviewGraph.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically update the graph database when files are saved."
+        },
+        "codeReviewGraph.blastRadiusDepth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum depth for blast radius traversal."
+        },
+        "codeReviewGraph.graphTheme": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "light",
+            "dark"
+          ],
+          "description": "Color theme for the graph visualization. 'auto' follows the VS Code theme."
+        },
+        "codeReviewGraph.treeView.showFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show function nodes in the tree view."
+        },
+        "codeReviewGraph.treeView.showClasses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show class nodes in the tree view."
+        },
+        "codeReviewGraph.treeView.showFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show file nodes in the tree view."
+        },
+        "codeReviewGraph.treeView.showTypes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show type nodes in the tree view."
+        },
+        "codeReviewGraph.treeView.showTests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show test nodes in the tree view."
+        },
+        "codeReviewGraph.graph.defaultEdges": {
+          "type": "array",
+          "default": [
+            "CALLS",
+            "IMPORTS_FROM",
+            "INHERITS",
+            "IMPLEMENTS",
+            "TESTED_BY",
+            "DEPENDS_ON"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "CALLS",
+              "IMPORTS_FROM",
+              "INHERITS",
+              "IMPLEMENTS",
+              "CONTAINS",
+              "TESTED_BY",
+              "DEPENDS_ON"
+            ]
+          },
+          "description": "Edge types shown by default in the graph visualization."
+        },
+        "codeReviewGraph.graph.maxNodes": {
+          "type": "number",
+          "default": 500,
+          "minimum": 10,
+          "maximum": 5000,
+          "description": "Maximum number of nodes to display in the graph visualization."
+        }
+      }
+    },
+    "walkthroughs": [
+      {
+        "id": "codeReviewGraph.welcome",
+        "title": "Get Started with Code Review Graph",
+        "description": "Build a code graph and explore your codebase visually.",
+        "steps": [
+          {
+            "id": "codeReviewGraph.welcome.install",
+            "title": "Install the CLI",
+            "description": "Install the code-review-graph CLI tool to build your graph database.\n\n[Install CLI](command:codeReviewGraph.walkthrough.install)",
+            "media": {
+              "markdown": "media/walkthrough/install.md"
+            }
+          },
+          {
+            "id": "codeReviewGraph.welcome.build",
+            "title": "Build Your Graph",
+            "description": "Run the build command to analyze your codebase and create a graph database.\n\n[Build Graph](command:codeReviewGraph.buildGraph)",
+            "media": {
+              "markdown": "media/walkthrough/build.md"
+            }
+          },
+          {
+            "id": "codeReviewGraph.welcome.explore",
+            "title": "Explore the Graph",
+            "description": "Open the Code Graph panel in the activity bar to explore your code's structure, blast radius, and review context.\n\n[Open Code Graph](command:codeReviewGraph.walkthrough.explore)",
+            "media": {
+              "markdown": "media/walkthrough/explore.md"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "vsce package",
+    "lint": "tsc --noEmit",
+    "test": "node --experimental-vm-modules node_modules/@vscode/test-electron/out/runTest.js"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/d3": "^7.4.3",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "d3": "^7.9.0"
+  }
+}

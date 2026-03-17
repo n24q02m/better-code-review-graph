@@ -1,0 +1,10 @@
+src/**
+test/**
+node_modules/**
+.vscode/**
+*.ts
+!*.d.ts
+.gitignore
+tsconfig.json
+esbuild.mjs
+**/*.map
