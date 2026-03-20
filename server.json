@@ -3,23 +3,28 @@
   "name": "io.github.n24q02m/better-code-review-graph",
   "description": "Knowledge graph for token-efficient code reviews with fixed search and configurable embeddings",
   "repository": {
-    "url": "https://github.com/n24q02m/better-code-review-graph",
+    "url": "https://github.com/n24q02m/better-code-review-graph.git",
     "source": "github"
   },
+  "version": "1.0.0",
   "packages": [
     {
       "registryType": "pypi",
-      "name": "better-code-review-graph",
-      "version": "0.1.0",
+      "identifier": "better-code-review-graph",
+      "version": "1.0.0",
       "runtimeHint": "uvx",
-      "runtimeArgs": ["--python", "3.13", "better-code-review-graph", "serve"]
+      "runtimeArgs": ["--python", "3.13"],
+      "transport": {
+        "type": "stdio"
+      }
     },
     {
       "registryType": "oci",
-      "name": "n24q02m/better-code-review-graph",
-      "version": "0.1.0",
+      "identifier": "docker.io/n24q02m/better-code-review-graph:latest",
       "runtimeHint": "docker",
-      "runtimeArgs": ["run", "-i", "--rm", "n24q02m/better-code-review-graph"]
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }
