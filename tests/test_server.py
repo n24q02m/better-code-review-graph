@@ -40,12 +40,16 @@ class TestMCPServerSetup:
 
 
 class TestToolDelegation:
-    """Verify server tools delegate correctly to tools.py implementations."""
+    """Verify server tools delegate correctly to tools.py implementations.
+
+    In FastMCP v2, @mcp.tool() wraps functions into FunctionTool objects.
+    Access the underlying function via .fn to call directly in tests.
+    """
 
     @patch("better_code_review_graph.server.build_or_update_graph")
     def test_build_or_update_graph_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = build_or_update_graph_tool(
+        result = build_or_update_graph_tool.fn(
             full_rebuild=True, repo_root="/test", base="HEAD~2"
         )
         mock_fn.assert_called_once_with(
@@ -56,7 +60,7 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.get_impact_radius")
     def test_get_impact_radius_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = get_impact_radius_tool(
+        result = get_impact_radius_tool.fn(
             changed_files=["a.py"],
             max_depth=3,
             max_results=100,
@@ -75,7 +79,9 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.query_graph")
     def test_query_graph_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = query_graph_tool(pattern="callers_of", target="foo", repo_root="/test")
+        result = query_graph_tool.fn(
+            pattern="callers_of", target="foo", repo_root="/test"
+        )
         mock_fn.assert_called_once_with(
             pattern="callers_of", target="foo", repo_root="/test"
         )
@@ -84,7 +90,7 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.get_review_context")
     def test_get_review_context_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = get_review_context_tool(
+        result = get_review_context_tool.fn(
             changed_files=["b.py"],
             max_depth=1,
             include_source=False,
@@ -105,7 +111,7 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.semantic_search_nodes")
     def test_semantic_search_nodes_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = semantic_search_nodes_tool(
+        result = semantic_search_nodes_tool.fn(
             query="auth", kind="Class", limit=5, repo_root="/test"
         )
         mock_fn.assert_called_once_with(
@@ -116,21 +122,21 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.embed_graph")
     def test_embed_graph_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = embed_graph_tool(repo_root="/test")
+        result = embed_graph_tool.fn(repo_root="/test")
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result == {"status": "ok"}
 
     @patch("better_code_review_graph.server.list_graph_stats")
     def test_list_graph_stats_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = list_graph_stats_tool(repo_root="/test")
+        result = list_graph_stats_tool.fn(repo_root="/test")
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result == {"status": "ok"}
 
     @patch("better_code_review_graph.server.get_docs_section")
     def test_get_docs_section_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = get_docs_section_tool(section_name="usage")
+        result = get_docs_section_tool.fn(section_name="usage")
         mock_fn.assert_called_once_with(
             section_name="usage", repo_root=_default_repo_root
         )
@@ -139,7 +145,7 @@ class TestToolDelegation:
     @patch("better_code_review_graph.server.find_large_functions")
     def test_find_large_functions_tool(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = find_large_functions_tool(
+        result = find_large_functions_tool.fn(
             min_lines=100,
             kind="Function",
             file_path_pattern="src/",
