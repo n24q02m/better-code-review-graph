@@ -158,3 +158,72 @@ class TestCodeParser:
         nodes, edges = self.parser.parse_file(Path("readme.txt"))
         assert nodes == []
         assert edges == []
+
+
+# --- Bare call target resolution tests (Task 2.2) ---
+
+
+def test_calls_edge_target_qualified_go(tmp_path):
+    """Go call targets should be resolved to qualified names when defined in same file."""
+    parser = CodeParser()
+    go_file = tmp_path / "main.go"
+    go_file.write_text(
+        """
+package main
+
+func FirebaseAuth() {}
+
+func setupRoutes() {
+    FirebaseAuth()
+}
+"""
+    )
+    nodes, edges = parser.parse_file(go_file)
+    call_edges = [e for e in edges if e.kind == "CALLS"]
+    assert len(call_edges) >= 1
+
+    firebase_call = next(e for e in call_edges if "FirebaseAuth" in e.target)
+    # Target should be qualified (contains ::), not bare
+    assert "::" in firebase_call.target, (
+        f"Expected qualified target, got bare name: {firebase_call.target}"
+    )
+
+
+def test_calls_edge_target_qualified_python(tmp_path):
+    """Python call targets should be resolved to qualified names when defined in same file."""
+    parser = CodeParser()
+    py_file = tmp_path / "auth.py"
+    py_file.write_text(
+        """
+def verify_token(token):
+    pass
+
+def login(request):
+    verify_token(request.token)
+"""
+    )
+    nodes, edges = parser.parse_file(py_file)
+    call_edges = [e for e in edges if e.kind == "CALLS"]
+    verify_call = next((e for e in call_edges if "verify_token" in e.target), None)
+    assert verify_call is not None
+    assert "::" in verify_call.target
+
+
+def test_calls_edge_external_stays_bare(tmp_path):
+    """External library calls (not defined in file) should remain bare."""
+    parser = CodeParser()
+    py_file = tmp_path / "app.py"
+    py_file.write_text(
+        """
+import json
+
+def handler():
+    json.loads("{}")
+"""
+    )
+    nodes, edges = parser.parse_file(py_file)
+    call_edges = [e for e in edges if e.kind == "CALLS"]
+    loads_call = next((e for e in call_edges if "loads" in e.target), None)
+    assert loads_call is not None
+    # External call -- stays bare (no local definition)
+    assert "::" not in loads_call.target
