@@ -8,7 +8,7 @@ argument-hint: "[PR number or branch name]"
 
 Perform a comprehensive code review of a pull request or branch diff using the knowledge graph.
 
-**Token optimization:** Before starting, call `get_docs_section_tool(section_name="review-pr")` for the optimized workflow. Never include full files unless explicitly asked.
+**Token optimization:** Before starting, call `help(topic="graph")` for the full actions reference. Never include full files unless explicitly asked.
 
 ## Steps
 
@@ -16,20 +16,20 @@ Perform a comprehensive code review of a pull request or branch diff using the k
    - If a PR number or branch is provided, use `git diff main...<branch>` to get changed files
    - Otherwise auto-detect from the current branch vs main/master
 
-2. **Update the graph** by calling `build_or_update_graph_tool(base="main")` to ensure the graph reflects the current state.
+2. **Update the graph** by calling `graph(action="build", base="main")` to ensure the graph reflects the current state.
 
-3. **Get the full review context** by calling `get_review_context_tool(base="main")`:
+3. **Get the full review context** by calling `graph(action="review", base="main")`:
    - This uses `main` (or the specified base branch) as the diff base
    - Returns all changed files across all commits in the PR
 
-4. **Analyze impact** by calling `get_impact_radius_tool(base="main")`:
+4. **Analyze impact** by calling `graph(action="impact", base="main")`:
    - Review the blast radius across the entire PR
    - Identify high-risk areas (widely depended-upon code)
 
 5. **Deep-dive each changed file**:
    - Read the full source of files with significant changes
-   - Use `query_graph_tool(pattern="callers_of", target=<func>)` for high-risk functions
-   - Use `query_graph_tool(pattern="tests_for", target=<func>)` to verify test coverage
+   - Use `graph(action="query", pattern="callers_of", target=<func>)` for high-risk functions
+   - Use `graph(action="query", pattern="tests_for", target=<func>)` to verify test coverage
    - Check for breaking changes in public APIs
 
 6. **Generate structured review output**:
@@ -62,5 +62,5 @@ Perform a comprehensive code review of a pull request or branch diff using the k
 ## Tips
 
 - For large PRs, focus on the highest-impact files first (most dependents)
-- Use `semantic_search_nodes_tool` to find related code the PR might have missed
+- Use `graph(action="search", query=<term>)` to find related code the PR might have missed
 - Check if renamed/moved functions have updated all callers

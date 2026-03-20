@@ -8,13 +8,13 @@ argument-hint: "[file or function name]"
 
 Perform a focused, token-efficient code review of only the changed code and its blast radius.
 
-**Token optimization:** Before starting, call `get_docs_section_tool(section_name="review-delta")` for the optimized workflow. Use ONLY changed nodes + 2-hop neighbors in context.
+**Token optimization:** Before starting, call `help(topic="graph")` for the full actions reference. Use ONLY changed nodes + 2-hop neighbors in context.
 
 ## Steps
 
-1. **Ensure the graph is current** by calling `build_or_update_graph_tool()` (incremental update).
+1. **Ensure the graph is current** by calling `graph(action="update")`.
 
-2. **Get review context** by calling `get_review_context_tool()`. This returns:
+2. **Get review context** by calling `graph(action="review")`. This returns:
    - Changed files (auto-detected from git diff)
    - Impacted nodes and files (blast radius)
    - Source code snippets for changed areas
@@ -28,7 +28,7 @@ Perform a focused, token-efficient code review of only the changed code and its 
 4. **Perform the review** using the context. For each changed file:
    - Review the source snippet for correctness, style, and potential bugs
    - Check if impacted callers/dependents need updates
-   - Verify test coverage using `query_graph_tool(pattern="tests_for", target=<function_name>)`
+   - Verify test coverage using `graph(action="query", pattern="tests_for", target=<function_name>)`
    - Flag any untested changed functions
 
 5. **Report findings** in a structured format:

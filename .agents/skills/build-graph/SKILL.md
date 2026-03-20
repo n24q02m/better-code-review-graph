@@ -10,15 +10,15 @@ Build or incrementally update the persistent code knowledge graph for this repos
 
 ## Steps
 
-1. **Check graph status** by calling the `list_graph_stats_tool` MCP tool.
+1. **Check graph status** by calling `graph` with `action="stats"`.
    - If the graph has never been built (last_updated is null), proceed with a full build.
    - If the graph exists, proceed with an incremental update.
 
-2. **Build the graph** by calling the `build_or_update_graph_tool` MCP tool:
-   - For first-time setup: `build_or_update_graph_tool(full_rebuild=True)`
-   - For updates: `build_or_update_graph_tool()` (incremental by default)
+2. **Build the graph** by calling `graph`:
+   - For first-time setup: `graph(action="build", full_rebuild=True)`
+   - For updates: `graph(action="update")` (incremental by default)
 
-3. **Verify** by calling `list_graph_stats_tool` again and report the results:
+3. **Verify** by calling `graph(action="stats")` again and report the results:
    - Number of files parsed
    - Number of nodes and edges created
    - Languages detected
