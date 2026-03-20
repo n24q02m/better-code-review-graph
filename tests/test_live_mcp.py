@@ -2,6 +2,8 @@
 
 Spawns the MCP server as a subprocess and communicates via the MCP protocol
 (JSON-RPC over stdio), testing ALL tools through the actual transport layer.
+
+Tests the 3-tier tool architecture: graph (mega-tool) + config + help.
 """
 
 from __future__ import annotations
@@ -133,93 +135,103 @@ class TestLiveMCP:
         )
 
     # ------------------------------------------------------------------
-    # 1. Tool listing
+    # 1. Tool listing — exactly 3 tools
     # ------------------------------------------------------------------
     async def test_list_tools(self):
-        """Server exposes all expected tools."""
+        """Server exposes exactly 3 tools: graph, config, help."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
                 names = {t.name for t in tools.tools}
-                expected = {
-                    "build_or_update_graph_tool",
-                    "get_impact_radius_tool",
-                    "query_graph_tool",
-                    "get_review_context_tool",
-                    "semantic_search_nodes_tool",
-                    "embed_graph_tool",
-                    "list_graph_stats_tool",
-                    "get_docs_section_tool",
-                    "find_large_functions_tool",
-                }
-                assert expected.issubset(names), f"Missing tools: {expected - names}"
+                expected = {"graph", "config", "help"}
+                assert expected == names, f"Expected {expected}, got {names}"
 
     # ------------------------------------------------------------------
-    # 2. Full happy-path workflow
+    # 2. Graph tool — happy path
     # ------------------------------------------------------------------
-    async def test_build_graph(self, sample_repo: Path):
-        """build_or_update_graph_tool with full_rebuild parses files."""
+    async def test_graph_build(self, sample_repo: Path):
+        """graph action=build with full_rebuild parses files."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("status") == "ok"
                 assert data.get("files_parsed", 0) > 0
 
-    async def test_list_graph_stats(self, sample_repo: Path):
-        """list_graph_stats_tool returns node counts after build."""
+    async def test_graph_stats(self, sample_repo: Path):
+        """graph action=stats returns node counts after build."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                # Build first
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "list_graph_stats_tool",
-                    {"repo_root": str(sample_repo)},
+                    "graph",
+                    {"action": "stats", "repo_root": str(sample_repo)},
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("total_nodes", 0) > 0
 
-    async def test_semantic_search(self, sample_repo: Path):
-        """semantic_search_nodes_tool returns results for a known symbol."""
+    async def test_graph_search(self, sample_repo: Path):
+        """graph action=search returns results for a known symbol."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "semantic_search_nodes_tool",
-                    {"query": "calculator", "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "search",
+                        "query": "calculator",
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 results = data.get("results", [])
                 assert len(results) > 0, "Expected at least one search result"
 
-    async def test_query_graph_file_summary(self, sample_repo: Path):
-        """query_graph_tool with file_summary pattern returns nodes."""
+    async def test_graph_query_file_summary(self, sample_repo: Path):
+        """graph action=query with file_summary pattern returns nodes."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "query_graph_tool",
+                    "graph",
                     {
+                        "action": "query",
                         "pattern": "file_summary",
                         "target": "calculator.py",
                         "repo_root": str(sample_repo),
@@ -230,18 +242,23 @@ class TestLiveMCP:
                 results = data.get("results", [])
                 assert len(results) > 0
 
-    async def test_get_impact_radius(self, sample_repo: Path):
-        """get_impact_radius_tool returns impact data for changed files."""
+    async def test_graph_impact(self, sample_repo: Path):
+        """graph action=impact returns impact data for changed files."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "get_impact_radius_tool",
+                    "graph",
                     {
+                        "action": "impact",
                         "changed_files": ["calculator.py"],
                         "repo_root": str(sample_repo),
                     },
@@ -250,18 +267,23 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("status") == "ok"
 
-    async def test_get_review_context(self, sample_repo: Path):
-        """get_review_context_tool produces review context."""
+    async def test_graph_review(self, sample_repo: Path):
+        """graph action=review produces review context."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "get_review_context_tool",
+                    "graph",
                     {
+                        "action": "review",
                         "changed_files": ["calculator.py"],
                         "repo_root": str(sample_repo),
                         "include_source": False,
@@ -269,135 +291,196 @@ class TestLiveMCP:
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
-                # Should have some context structure
                 assert len(data) > 0
 
-    async def test_embed_graph(self, sample_repo: Path):
-        """embed_graph_tool computes embeddings for graph nodes."""
+    async def test_graph_embed(self, sample_repo: Path):
+        """graph action=embed computes embeddings for graph nodes."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "embed_graph_tool",
-                    {"repo_root": str(sample_repo)},
+                    "graph",
+                    {"action": "embed", "repo_root": str(sample_repo)},
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("newly_embedded", 0) > 0
 
-    async def test_get_docs_section(self):
-        """get_docs_section_tool returns documentation content."""
-        async with stdio_client(self._server_params()) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(
-                    "get_docs_section_tool",
-                    {"section_name": "usage"},
-                )
-                data = _parse_result_text(result)
-                assert isinstance(data, dict), f"Unexpected response: {data}"
-                content = data.get("content", "")
-                assert len(content) > 0, "Expected non-empty docs content"
-
-    async def test_find_large_functions(self, sample_repo: Path):
-        """find_large_functions_tool works with low threshold."""
+    async def test_graph_large_functions(self, sample_repo: Path):
+        """graph action=large_functions works with low threshold."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "find_large_functions_tool",
+                    "graph",
                     {
+                        "action": "large_functions",
                         "min_lines": 3,
                         "repo_root": str(sample_repo),
                     },
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
-                # With min_lines=3, should find our Calculator class and functions
                 results = data.get("results", [])
                 assert len(results) > 0
 
     # ------------------------------------------------------------------
-    # 3. Error paths
+    # 3. Config tool — happy path
     # ------------------------------------------------------------------
-    async def test_query_graph_invalid_pattern(self, sample_repo: Path):
-        """query_graph_tool with an invalid pattern returns error message."""
+    async def test_config_status(self):
+        """config action=status returns server info."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "config", {"action": "status"}
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict), f"Unexpected response: {data}"
+                assert data.get("status") == "ok"
+                assert "version" in data
+
+    async def test_config_set_log_level(self):
+        """config action=set updates log level."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "config",
+                    {"action": "set", "key": "log_level", "value": "DEBUG"},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict), f"Unexpected response: {data}"
+                assert data.get("status") == "updated"
+
+    # ------------------------------------------------------------------
+    # 4. Help tool
+    # ------------------------------------------------------------------
+    async def test_help_graph(self):
+        """help topic=graph returns documentation content."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("help", {"topic": "graph"})
+                data = _parse_result_text(result)
+                # Help returns markdown text (not JSON), or fallback JSON
+                if isinstance(data, str):
+                    assert len(data) > 50, "Expected non-empty docs content"
+                else:
+                    # Fallback loaded from LLM-OPTIMIZED-REFERENCE.md
+                    content = data.get("content", "")
+                    assert len(content) > 0 or "error" not in data
+
+    async def test_help_config(self):
+        """help topic=config returns config documentation."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("help", {"topic": "config"})
+                data = _parse_result_text(result)
+                if isinstance(data, str):
+                    assert len(data) > 50
+                else:
+                    content = data.get("content", "")
+                    assert len(content) > 0 or "error" not in data
+
+    # ------------------------------------------------------------------
+    # 5. Error paths
+    # ------------------------------------------------------------------
+    async def test_graph_unknown_action(self):
+        """graph with unknown action returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "graph", {"action": "nonexistent_action"}
+                )
+                data = _parse_result_text(result)
+                if isinstance(data, dict):
+                    assert "error" in data
+                    assert "valid_actions" in data
+
+    async def test_graph_query_invalid_pattern(self, sample_repo: Path):
+        """graph action=query with invalid pattern returns error."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
                 )
                 result = await session.call_tool(
-                    "query_graph_tool",
+                    "graph",
                     {
+                        "action": "query",
                         "pattern": "nonexistent_pattern",
                         "target": "calculator.py",
                         "repo_root": str(sample_repo),
                     },
                 )
                 data = _parse_result_text(result)
-                # Should contain error information
                 if isinstance(data, dict):
                     text = json.dumps(data).lower()
                 else:
                     text = str(data).lower()
-                assert "error" in text or "unknown" in text or "invalid" in text
+                assert "error" in text or "unknown" in text
 
-    async def test_semantic_search_empty_query(self, sample_repo: Path):
-        """semantic_search_nodes_tool with empty query returns empty or error."""
-        async with stdio_client(self._server_params()) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                await session.call_tool(
-                    "build_or_update_graph_tool",
-                    {"full_rebuild": True, "repo_root": str(sample_repo)},
-                )
-                result = await session.call_tool(
-                    "semantic_search_nodes_tool",
-                    {"query": "", "repo_root": str(sample_repo)},
-                )
-                data = _parse_result_text(result)
-                # Empty query should return empty results or an error
-                if isinstance(data, dict):
-                    results = data.get("results", [])
-                    # Either empty results or error key is acceptable
-                    assert (
-                        len(results) == 0
-                        or "error" in json.dumps(data).lower()
-                        or len(results) > 0  # some servers return all results
-                    )
-                else:
-                    # String error response is also acceptable
-                    assert isinstance(data, str)
-
-    async def test_get_docs_section_invalid(self):
-        """get_docs_section_tool with invalid section name."""
+    async def test_graph_search_missing_query(self):
+        """graph action=search without query returns error."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
-                    "get_docs_section_tool",
-                    {"section_name": "nonexistent_section_xyz"},
+                    "graph", {"action": "search"}
                 )
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
-                    text = json.dumps(data).lower()
-                else:
-                    text = str(data).lower()
-                # Should indicate section not found or return empty
-                assert (
-                    "not found" in text
-                    or "error" in text
-                    or "available" in text
-                    or len(text) == 0
+                    assert "error" in data
+
+    async def test_config_invalid_action(self):
+        """config with invalid action returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "config", {"action": "nonexistent"}
                 )
+                data = _parse_result_text(result)
+                if isinstance(data, dict):
+                    assert "error" in data
+                    assert "valid_actions" in data
+
+    async def test_help_invalid_topic(self):
+        """help with invalid topic returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "help", {"topic": "nonexistent_xyz"}
+                )
+                data = _parse_result_text(result)
+                if isinstance(data, dict):
+                    assert "error" in data or "valid_topics" in data
+                elif isinstance(data, str):
+                    text = data.lower()
+                    assert "error" in text or "not found" in text or len(text) == 0

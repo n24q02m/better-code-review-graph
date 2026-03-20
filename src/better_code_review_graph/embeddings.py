@@ -538,6 +538,11 @@ class EmbeddingStore:
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
 
+    def clear(self) -> None:
+        """Remove all embeddings."""
+        self._conn.execute("DELETE FROM embeddings")
+        self._conn.commit()
+
 
 # ---------------------------------------------------------------------------
 # Module-level convenience functions
