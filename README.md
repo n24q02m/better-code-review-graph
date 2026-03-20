@@ -1,45 +1,103 @@
-<h1 align="center">code-review-graph</h1>
+# better-code-review-graph
 
-<p align="center">
-  <strong>Stop burning tokens. Start reviewing smarter.</strong>
-</p>
+mcp-name: io.github.n24q02m/better-code-review-graph
 
-<p align="center">
-  <a href="https://github.com/tirth8205/code-review-graph/stargazers"><img src="https://img.shields.io/github/stars/tirth8205/code-review-graph?style=flat-square" alt="Stars"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="MIT Licence"></a>
-  <a href="https://github.com/tirth8205/code-review-graph/actions/workflows/ci.yml"><img src="https://github.com/tirth8205/code-review-graph/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square" alt="Python 3.10+"></a>
-  <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/MCP-compatible-green.svg?style=flat-square" alt="MCP"></a>
-  <a href="#"><img src="https://img.shields.io/badge/version-1.8.2-purple.svg?style=flat-square" alt="v1.8.2"></a>
-</p>
+**Knowledge graph for token-efficient code reviews -- fixed search, configurable embeddings, qualified call resolution.**
 
-<br>
+[![CI](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/n24q02m/better-code-review-graph/graph/badge.svg)](https://codecov.io/gh/n24q02m/better-code-review-graph)
+[![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
+[![Docker](https://img.shields.io/docker/v/n24q02m/better-code-review-graph?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/better-code-review-graph)
+[![License: MIT](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
 
-Claude Code re-reads your entire codebase on every task. `code-review-graph` fixes that. It builds a structural map of your code with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), tracks changes incrementally, and gives Claude precise context so it reads only what matters.
+[![Python](https://img.shields.io/badge/Python_3.13-3776AB?logo=python&logoColor=white)](#)
+[![MCP](https://img.shields.io/badge/MCP-000000?logo=anthropic&logoColor=white)](#)
+[![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/python-semantic-release/python-semantic-release)
+[![Renovate](https://img.shields.io/badge/renovate-enabled-1A1F6C?logo=renovatebot&logoColor=white)](https://developer.mend.io/)
 
-<p align="center">
-  <img src="diagrams/diagram1_before_vs_after.png" alt="The Token Problem: 6.8x fewer tokens with higher review quality" width="85%" />
-</p>
+Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with critical bug fixes, configurable embeddings, and production CI/CD. Parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters.
+
+---
+
+## Why Better
+
+| Feature | code-review-graph | better-code-review-graph |
+|:--------|:------------------|:-------------------------|
+| Multi-word search | Broken (literal substring match) | AND-logic word splitting (`"firebase auth"` matches both `verify_firebase_token` and `FirebaseAuth`) |
+| callers_of accuracy | Empty results (bare name targets) | Qualified name resolution -- same-file calls resolved to `file::name` |
+| Embedding model | all-MiniLM-L6-v2 + torch (1.1 GB) | qwen3-embed ONNX + LiteLLM (200 MB) |
+| Output size | Unbounded (500K+ chars possible) | Paginated (default 500 nodes, truncation metadata) |
+| Plugin hooks | Invalid PostEdit/PostGit events | Valid PostToolUse (Write, Edit, Bash) |
+| Plugin MCP | Duplicate registration (.mcp.json + plugin.json) | Single source (plugin.json only) |
+| Python version | 3.10+ | 3.13 (pinned) |
+| CI/CD | GitHub Actions basic | PSR + Docker multi-arch + MCP Registry |
+| Test coverage | Unknown | 95%+ enforced |
+
+All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream-prs)). If all are merged, this repo will be archived.
 
 ---
 
 ## Quick Start
 
-**Claude Code Plugin** (recommended)
+### Prerequisites
 
-```bash
-claude plugin marketplace add tirth8205/code-review-graph
-claude plugin install code-review-graph@code-review-graph
+- **Python 3.13** (required -- `requires-python = "==3.13.*"`)
+
+### Option 1: uvx (Recommended)
+
+```jsonc
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"],
+      "env": {
+        // -- optional: cloud embeddings via LiteLLM
+        // "API_KEYS": "GOOGLE_API_KEY:AIza...",
+        // -- optional: LiteLLM Proxy (selfhosted gateway)
+        // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
+        // "LITELLM_PROXY_KEY": "sk-your-virtual-key"
+        // -- without API_KEYS, uses built-in local qwen3-embed ONNX (zero-config)
+      }
+    }
+  }
+}
 ```
 
-**pip**
+### Option 2: pip
 
 ```bash
-pip install code-review-graph
-code-review-graph install
+pip install better-code-review-graph
+better-code-review-graph install   # creates .mcp.json in project root
 ```
 
-Restart Claude Code after either method. Requires Python 3.10+ and [uv](https://docs.astral.sh/uv/).
+### Option 3: Docker
+
+```jsonc
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "crg-data:/data",
+        "-e", "API_KEYS",
+        "n24q02m/better-code-review-graph:latest"
+      ],
+      "env": {
+        // -- optional: cloud embeddings
+        // "API_KEYS": "GOOGLE_API_KEY:AIza..."
+      }
+    }
+  }
+}
+```
+
+### Option 4: Claude Code Plugin
+
+```bash
+claude plugin install n24q02m/better-code-review-graph@better-code-review-graph
+```
 
 Then open your project and tell Claude:
 
@@ -47,181 +105,69 @@ Then open your project and tell Claude:
 Build the code review graph for this project
 ```
 
-The initial build takes ~10 seconds for a 500-file project. After that, the graph updates automatically on every file edit and git commit.
-
 ---
 
-## How It Works
-
-Your repository is parsed into an AST with Tree-sitter, stored as a graph of nodes (functions, classes, imports) and edges (calls, inheritance, test coverage), then queried at review time to compute the minimal set of files Claude needs to read.
-
-<p align="center">
-  <img src="diagrams/diagram2_architecture_pipeline.png" alt="Architecture pipeline: Repository to Tree-sitter Parser to SQLite Graph to Blast Radius to Minimal Review Set" width="100%" />
-</p>
-
-<details>
-<summary><strong>Blast-radius analysis</strong></summary>
-<br>
-
-When a file changes, the graph traces every caller, dependent, and test that could be affected. This is the "blast radius" of the change. Claude reads only these files instead of scanning the whole project.
-
-<p align="center">
-  <img src="diagrams/diagram3_blast_radius.png" alt="Blast radius visualization showing how a change to login() propagates to callers, dependents, and tests" width="70%" />
-</p>
-
-</details>
-
-<details>
-<summary><strong>Incremental updates in &lt; 2 seconds</strong></summary>
-<br>
-
-On every git commit or file save, a hook fires. The graph diffs changed files, finds their dependents via SHA-256 hash checks, and re-parses only what changed. A 2,900-file project re-indexes in under 2 seconds.
-
-<p align="center">
-  <img src="diagrams/diagram4_incremental_update.png" alt="Incremental update flow: git commit triggers diff, finds dependents, re-parses only 5 files while 2,910 are skipped" width="90%" />
-</p>
-
-</details>
-
-<details>
-<summary><strong>12 supported languages</strong></summary>
-<br>
-
-Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
-
-Each language has full Tree-sitter grammar support for functions, classes, imports, call sites, inheritance, and test detection.
-
-</details>
-
----
-
-## Benchmarks
-
-All figures come from real tests on three production open-source repositories.
-
-<p align="center">
-  <img src="diagrams/diagram5_benchmark_board.png" alt="Benchmarks: httpx 27.3x, FastAPI 6.3x, Next.js 4.9x token reduction with higher review quality" width="90%" />
-</p>
-
-<details>
-<summary><strong>Code review benchmark details (6.8x average reduction)</strong></summary>
-<br>
-
-Tested across 6 real git commits. The graph replaces reading entire source files with a compact structural summary (156-207 tokens) covering blast radius, test coverage gaps, and dependency chains.
-
-| Repo | Size | Standard Approach | With Graph | Reduction | Review Quality |
-|------|-----:|------------------:|-----------:|----------:|:-:|
-| [httpx](https://github.com/encode/httpx) | 125 files | 12,507 tokens | 458 tokens | 26.2x | 9.0 vs 7.0 |
-| [FastAPI](https://github.com/fastapi/fastapi) | 2,915 files | 5,495 tokens | 871 tokens | 8.1x | 8.5 vs 7.5 |
-| [Next.js](https://github.com/vercel/next.js) | 27,732 files | 21,614 tokens | 4,457 tokens | 6.0x | 9.0 vs 7.0 |
-| **Average** | | **13,205** | **1,928** | **6.8x** | **8.8 vs 7.2** |
-
-Standard approach: reading all changed files plus the diff. Quality scored on accuracy, completeness, bug-catching potential, and actionable insight (1-10 scale).
-
-</details>
-
-<details>
-<summary><strong>Live coding task details (14.1x average, 49x peak)</strong></summary>
-<br>
-
-An agent performed 6 real coding tasks (adding features, fixing bugs) across the same repositories. The graph directed it to the right files and away from everything else.
-
-| Task | Repo | With Graph | Without Graph | Reduction | Files Skipped |
-|------|------|--------:|-----------:|----------:|---:|
-| Add rate limiter | httpx | 14,090 | 64,666 | 4.6x | 58 |
-| Fix streaming bug | httpx | 14,090 | 64,666 | 4.6x | 59 |
-| Add rate limiter | FastAPI | 37,217 | 138,585 | 3.7x | 1,120 |
-| Fix streaming bug | FastAPI | 36,986 | 138,585 | 3.7x | 1,121 |
-| Add rate limiter | Next.js | 15,049 | 739,352 | 49.1x | ~16,000 |
-| Fix streaming bug | Next.js | 16,135 | 739,352 | 45.8x | ~16,000 |
-
-The graph identified the correct files in every case. Savings scale with repository size.
-
-</details>
-
-<details>
-<summary><strong>Monorepo scale: the 49x case</strong></summary>
-<br>
-
-Large repositories benefit most. In the Next.js monorepo (27,732 files, 739K tokens), the graph narrows the review context to ~15 files and 15K tokens, a 49x reduction with 27,700+ files excluded entirely.
-
-<p align="center">
-  <img src="diagrams/diagram6_monorepo_funnel.png" alt="Next.js monorepo: 27,732 files funneled down to ~15 files, 49x fewer tokens" width="75%" />
-</p>
-
-</details>
-
----
-
-## Usage
-
-<details>
-<summary><strong>Slash commands</strong></summary>
-<br>
-
-| Command | Description |
-|---------|-------------|
-| `/code-review-graph:build-graph` | Build or rebuild the code graph |
-| `/code-review-graph:review-delta` | Review changes since last commit |
-| `/code-review-graph:review-pr` | Full PR review with blast-radius analysis |
-
-</details>
-
-<details>
-<summary><strong>CLI reference</strong></summary>
-<br>
-
-```bash
-code-review-graph install     # Register MCP server with Claude Code
-code-review-graph build       # Parse entire codebase
-code-review-graph update      # Incremental update (changed files only)
-code-review-graph status      # Graph statistics
-code-review-graph watch       # Auto-update on file changes
-code-review-graph visualize   # Generate interactive HTML graph
-code-review-graph serve       # Start MCP server
-```
-
-</details>
-
-<details>
-<summary><strong>MCP tools</strong></summary>
-<br>
+## MCP Tools
 
 Claude uses these automatically once the graph is built.
 
 | Tool | Description |
-|------|-------------|
-| `build_or_update_graph_tool` | Build or incrementally update the graph |
-| `get_impact_radius_tool` | Blast radius of changed files |
-| `get_review_context_tool` | Token-optimised review context with structural summary |
-| `query_graph_tool` | Callers, callees, tests, imports, inheritance queries |
-| `semantic_search_nodes_tool` | Search code entities by name or meaning |
-| `embed_graph_tool` | Compute vector embeddings for semantic search |
-| `list_graph_stats_tool` | Graph size and health |
-| `get_docs_section_tool` | Retrieve documentation sections |
-
-</details>
+|:-----|:------------|
+| `build_or_update_graph_tool` | Build or incrementally update the graph. Default: incremental (changed files only). |
+| `get_impact_radius_tool` | Blast radius of changed files. Shows which functions, classes, files are affected. Paginated with `max_results`. |
+| `get_review_context_tool` | Token-optimized review context with structural summary, source snippets, and review guidance. |
+| `query_graph_tool` | Predefined queries: callers_of, callees_of, imports_of, importers_of, children_of, tests_for, inheritors_of, file_summary. |
+| `semantic_search_nodes_tool` | Search code entities by name/keyword or semantic similarity (requires embeddings). |
+| `embed_graph_tool` | Compute vector embeddings for semantic search. Uses dual-mode backend. |
+| `list_graph_stats_tool` | Graph size, languages, node/edge breakdown, embedding count. |
+| `get_docs_section_tool` | Retrieve specific documentation sections for minimal token usage. |
+| `find_large_functions_tool` | Find functions/classes exceeding a line-count threshold for decomposition audits. |
 
 ---
 
-## Features
+## Embedding Backends
 
-| Feature | Details |
-|---------|---------|
-| **Incremental updates** | Re-parses only changed files. Subsequent updates complete in under 2 seconds. |
-| **12 languages** | Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++ |
-| **Blast-radius analysis** | Shows exactly which functions, classes, and files are affected by any change |
-| **Auto-update hooks** | Graph updates on every file edit and git commit without manual intervention |
-| **Semantic search** | Optional vector embeddings via sentence-transformers |
-| **Interactive visualisation** | D3.js force-directed graph with edge-type toggles and search |
-| **Local storage** | SQLite file in `.code-review-graph/`. No external database, no cloud dependency. |
-| **Watch mode** | Continuous graph updates as you work |
+Embeddings enable semantic search (vector similarity instead of keyword matching). Two backends are available:
 
-<details>
-<summary><strong>Configuration</strong></summary>
-<br>
+| Backend | Config | Size | Description |
+|:--------|:-------|:-----|:------------|
+| **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. Downloaded on first `embed_graph_tool` call. |
+| **litellm** | `API_KEYS` or `LITELLM_PROXY_URL` | 0 MB | Cloud providers via LiteLLM (Gemini, OpenAI, Cohere, etc.). |
 
-To exclude paths from indexing, create a `.code-review-graphignore` file in your repository root:
+- **Auto-detection**: If `API_KEYS` or `LITELLM_PROXY_URL` is set, uses LiteLLM. Otherwise, uses local ONNX.
+- **Override**: Set `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=litellm` explicitly.
+- **Fixed 768-dim storage**: All embeddings stored at 768 dimensions via MRL truncation. Switching backends does NOT invalidate existing vectors.
+- **Lazy loading**: Model downloads on first embed call, not on server start.
+
+---
+
+## CLI Reference
+
+```bash
+better-code-review-graph install     # Register MCP server with Claude Code (creates .mcp.json)
+better-code-review-graph init        # Alias for install
+better-code-review-graph build       # Full graph build (parse all files)
+better-code-review-graph update      # Incremental update (changed files only)
+better-code-review-graph watch       # Auto-update on file changes
+better-code-review-graph status      # Show graph statistics
+better-code-review-graph serve       # Start MCP server (stdio transport)
+```
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `EMBEDDING_BACKEND` | (auto-detect) | `local` (qwen3-embed ONNX) or `litellm` (cloud API). Auto: API_KEYS/proxy -> litellm, else local. |
+| `EMBEDDING_MODEL` | `gemini/gemini-embedding-001` | LiteLLM embedding model (only used when backend=litellm). |
+| `API_KEYS` | - | LLM API keys for SDK mode (format: `ENV_VAR:key,...`). Enables LiteLLM backend. |
+| `LITELLM_PROXY_URL` | - | LiteLLM Proxy URL. Enables LiteLLM backend via proxy. |
+| `LITELLM_PROXY_KEY` | - | LiteLLM Proxy virtual key. |
+
+### Ignore files
+
+Create `.code-review-graphignore` in your project root to exclude paths:
 
 ```
 generated/**
@@ -230,39 +176,76 @@ vendor/**
 node_modules/**
 ```
 
-For semantic search, install the optional embeddings dependencies:
+---
 
-```bash
-pip install code-review-graph[embeddings]
-```
+## Supported Languages
 
-</details>
+Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
+
+Each language has full Tree-sitter grammar support for functions, classes, imports, call sites, inheritance, and test detection.
 
 ---
 
-## Contributing
+## Cross-Agent Compatibility
+
+| Feature | Claude Code | Copilot CLI | Codex | Gemini CLI | Antigravity | OpenCode | Cursor | Windsurf | Cline | Amp |
+|:--------|:-----------:|:-----------:|:-----:|:----------:|:-----------:|:--------:|:------:|:--------:|:-----:|:---:|
+| MCP tools (9 tools) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
+| CLAUDE.md / AGENTS.md | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | -- | -- |
+| Skills (slash commands) | Yes | Yes | Yes | Yes | -- | Yes | -- | -- | -- | -- |
+| Hooks (PostToolUse) | Yes | -- | Yes | Yes | -- | -- | -- | -- | -- | -- |
+| Plugin (marketplace) | Yes | Yes | -- | -- | -- | -- | -- | -- | -- | -- |
+
+---
+
+## Upstream PRs
+
+All fixes in this fork are submitted as standalone PRs to the original [code-review-graph](https://github.com/tirth8205/code-review-graph):
+
+- Multi-word search AND logic
+- Parser call target resolution (ref: issue #20)
+- Impact radius output pagination
+
+**If all upstream PRs are merged, this repository will be archived.**
+
+---
+
+## Build from Source
 
 ```bash
-git clone https://github.com/tirth8205/code-review-graph.git
-cd code-review-graph
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-pytest
+git clone https://github.com/n24q02m/better-code-review-graph
+cd better-code-review-graph
+uv sync --group dev
+uv run pytest
+uv run better-code-review-graph serve
 ```
 
-<details>
-<summary><strong>Adding a new language</strong></summary>
-<br>
+**Requirements:** Python 3.13 (not 3.14+), [uv](https://docs.astral.sh/uv/)
 
-Edit `code_review_graph/parser.py` and add your extension to `EXTENSION_TO_LANGUAGE` along with node type mappings in `_CLASS_TYPES`, `_FUNCTION_TYPES`, `_IMPORT_TYPES`, and `_CALL_TYPES`. Include a test fixture and open a PR.
+---
 
-</details>
+## Compatible With
 
-## Licence
+[![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-F9DC7C?logo=anthropic&logoColor=black)](#quick-start)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-000000?logo=anthropic&logoColor=white)](#quick-start)
+[![Cursor](https://img.shields.io/badge/Cursor-000000?logo=cursor&logoColor=white)](#quick-start)
+[![VS Code Copilot](https://img.shields.io/badge/VS_Code_Copilot-007ACC?logo=visualstudiocode&logoColor=white)](#quick-start)
+[![Antigravity](https://img.shields.io/badge/Antigravity-4285F4?logo=google&logoColor=white)](#quick-start)
+[![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-8E75B2?logo=googlegemini&logoColor=white)](#quick-start)
+[![OpenAI Codex](https://img.shields.io/badge/Codex-412991?logo=openai&logoColor=white)](#quick-start)
+[![OpenCode](https://img.shields.io/badge/OpenCode-F7DF1E?logoColor=black)](#quick-start)
 
-MIT. See [LICENSE](LICENSE).
+## Also by n24q02m
 
-<p align="center">
-<br>
-<code>pip install code-review-graph && code-review-graph install</code>
-</p>
+| Server | Description | Install |
+|--------|-------------|---------|
+| [wet-mcp](https://github.com/n24q02m/wet-mcp) | Web search, content extraction, library docs | `uvx --python 3.13 wet-mcp@latest` |
+| [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) | Persistent AI memory with hybrid search | `uvx mnemo-mcp@latest` |
+| [better-notion-mcp](https://github.com/n24q02m/better-notion-mcp) | Notion API for AI agents | `npx -y @n24q02m/better-notion-mcp@latest` |
+| [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | Email (IMAP/SMTP) for AI agents | `npx -y @n24q02m/better-email-mcp@latest` |
+| [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Godot Engine for AI agents | `npx -y @n24q02m/better-godot-mcp@latest` |
+| [better-telegram-mcp](https://github.com/n24q02m/better-telegram-mcp) | Telegram Bot API + MTProto for AI agents | `uvx --python 3.13 better-telegram-mcp@latest` |
+
+## License
+
+MIT - See [LICENSE](LICENSE)
