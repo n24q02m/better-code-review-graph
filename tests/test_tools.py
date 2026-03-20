@@ -140,6 +140,64 @@ class TestTools:
         assert (
             "/repo/main.py::process" in impacted_qns or "/repo/main.py" in impacted_qns
         )
+        # Should include truncation metadata
+        assert result["truncated"] is False
+        assert result["total_impacted"] >= 1
+
+    def test_impact_radius_not_truncated(self):
+        """Impact radius with high max_nodes returns truncated=False."""
+        result = self.store.get_impact_radius(
+            ["/repo/auth.py"], max_depth=2, max_nodes=500
+        )
+        assert result["truncated"] is False
+        assert result["total_impacted"] == len(result["impacted_nodes"])
+
+    def test_impact_radius_truncated(self):
+        """Impact radius with very small max_nodes triggers truncation."""
+        # Build a dense graph: a chain of functions calling each other
+        # file_a::f0 -> file_b::f1 -> file_c::f2 -> ... -> file_n::fn
+        num_nodes = 20
+        for i in range(num_nodes):
+            fpath = f"/repo/chain_{i}.py"
+            self.store.upsert_node(
+                NodeInfo(
+                    kind="File",
+                    name=fpath,
+                    file_path=fpath,
+                    line_start=1,
+                    line_end=10,
+                    language="python",
+                )
+            )
+            self.store.upsert_node(
+                NodeInfo(
+                    kind="Function",
+                    name=f"func_{i}",
+                    file_path=fpath,
+                    line_start=1,
+                    line_end=10,
+                    language="python",
+                )
+            )
+        # Create a chain of CALLS edges
+        for i in range(num_nodes - 1):
+            self.store.upsert_edge(
+                EdgeInfo(
+                    kind="CALLS",
+                    source=f"/repo/chain_{i}.py::func_{i}",
+                    target=f"/repo/chain_{i + 1}.py::func_{i + 1}",
+                    file_path=f"/repo/chain_{i}.py",
+                    line=5,
+                )
+            )
+        self.store.commit()
+
+        # Use max_nodes=3 so BFS hits the cap quickly
+        result = self.store.get_impact_radius(
+            ["/repo/chain_0.py"], max_depth=10, max_nodes=3
+        )
+        assert result["truncated"] is True
+        assert result["total_impacted"] >= 1
 
     def test_query_children_of(self):
         edges = self.store.get_edges_by_source("/repo/auth.py")

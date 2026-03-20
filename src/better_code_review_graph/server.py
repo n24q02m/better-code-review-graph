@@ -58,6 +58,7 @@ def build_or_update_graph_tool(
 def get_impact_radius_tool(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
+    max_results: int = 500,
     repo_root: str | None = None,
     base: str = "HEAD~1",
 ) -> dict:
@@ -69,12 +70,14 @@ def get_impact_radius_tool(
     Args:
         changed_files: List of changed file paths (relative to repo root). Auto-detected if omitted.
         max_depth: Number of hops to traverse in the dependency graph. Default: 2.
+        max_results: Maximum impacted nodes to return. Default: 500.
         repo_root: Repository root path. Auto-detected if omitted.
         base: Git ref for auto-detecting changes. Default: HEAD~1.
     """
     return get_impact_radius(
         changed_files=changed_files,
         max_depth=max_depth,
+        max_results=max_results,
         repo_root=repo_root,
         base=base,
     )
