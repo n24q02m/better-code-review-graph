@@ -196,7 +196,7 @@ jobs:
   # =================== Publish to MCP Registry ===================
   publish-mcp-registry:
     name: Publish to MCP Registry
-    needs: [release, publish-pypi, merge-docker]
+    needs: [release, merge-docker]
     if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease != 'true'
     runs-on: ubuntu-latest
     steps:
