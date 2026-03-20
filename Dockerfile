@@ -7,6 +7,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src/ src/
 
 FROM python:3.13-slim-bookworm
+LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/better-code-review-graph"
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
