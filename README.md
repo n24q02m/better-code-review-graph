@@ -23,135 +23,178 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 
 | Feature | code-review-graph | better-code-review-graph |
 |:--------|:------------------|:-------------------------|
-| Multi-word search | Broken (literal substring match) | AND-logic word splitting (`"firebase auth"` matches both `verify_firebase_token` and `FirebaseAuth`) |
-| callers_of accuracy | Empty results (bare name targets) | Qualified name resolution -- same-file calls resolved to `file::name` |
-| Embedding model | all-MiniLM-L6-v2 + torch (1.1 GB) | qwen3-embed ONNX + LiteLLM (200 MB) |
-| Output size | Unbounded (500K+ chars possible) | Paginated (default 500 nodes, truncation metadata) |
-| Plugin hooks | Invalid PostEdit/PostGit events | Valid PostToolUse (Write, Edit, Bash) |
-| Plugin MCP | Duplicate registration (.mcp.json + plugin.json) | Single source (plugin.json only) |
-| Python version | 3.10+ | 3.13 (pinned) |
-| CI/CD | GitHub Actions basic | PSR + Docker multi-arch + MCP Registry |
-| Test coverage | Unknown | 95%+ enforced |
+| Multi-word search | Broken (literal substring) | AND-logic word splitting |
+| callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
+| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + LiteLLM (200 MB), dual-mode |
+| Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
+| Tool design | 9 individual tools | 3-tier: graph (mega) + config + help |
+| Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream-prs)). If all are merged, this repo will be archived.
 
 ---
 
-## Quick Start
+## Installation
 
-### Prerequisites
-
-- **Python 3.13** (required -- `requires-python = "==3.13.*"`)
-
-### Option 1: uvx (Recommended)
-
-```jsonc
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph", "serve"],
-      "env": {
-        // -- optional: cloud embeddings via LiteLLM
-        // "API_KEYS": "GOOGLE_API_KEY:AIza...",
-        // -- optional: LiteLLM Proxy (selfhosted gateway)
-        // "LITELLM_PROXY_URL": "http://10.0.0.20:4000",
-        // "LITELLM_PROXY_KEY": "sk-your-virtual-key"
-        // -- without API_KEYS, uses built-in local qwen3-embed ONNX (zero-config)
-      }
-    }
-  }
-}
-```
-
-### Option 2: pip
+### Claude Code
 
 ```bash
-pip install better-code-review-graph
-better-code-review-graph install   # creates .mcp.json in project root
+claude mcp add better-code-review-graph -- uvx --python 3.13 better-code-review-graph serve
 ```
 
-### Option 3: Docker
-
-```jsonc
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-v", "crg-data:/data",
-        "-e", "API_KEYS",
-        "n24q02m/better-code-review-graph:latest"
-      ],
-      "env": {
-        // -- optional: cloud embeddings
-        // "API_KEYS": "GOOGLE_API_KEY:AIza..."
-      }
-    }
-  }
-}
-```
-
-### Option 4: Claude Code Plugin
+### Claude Code Plugin
 
 ```bash
 claude plugin install n24q02m/better-code-review-graph@better-code-review-graph
 ```
 
-Then open your project and tell Claude:
+### Cursor (~/.cursor/mcp.json)
 
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
 ```
-Build the code review graph for this project
+
+### Codex (~/.codex/config.toml)
+
+```toml
+[mcp_servers.better-code-review-graph]
+command = "uvx"
+args = ["--python", "3.13", "better-code-review-graph", "serve"]
+```
+
+### Gemini CLI (~/.gemini/settings.json)
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
+```
+
+### OpenCode (~/.opencode.json)
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
+```
+
+### Windsurf (~/.codeium/windsurf/mcp_config.json)
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
+```
+
+### Cline (cline_mcp_settings.json)
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
+```
+
+### Amp (~/.config/amp/settings.json)
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
+    }
+  }
+}
+```
+
+### Docker
+
+```bash
+docker run -i --rm n24q02m/better-code-review-graph
+```
+
+### pip
+
+```bash
+pip install better-code-review-graph
+better-code-review-graph serve
 ```
 
 ---
 
-## MCP Tools
+## Tools
 
-Claude uses these automatically once the graph is built.
+### `graph` -- Knowledge graph operations
 
-| Tool | Description |
-|:-----|:------------|
-| `build_or_update_graph_tool` | Build or incrementally update the graph. Default: incremental (changed files only). |
-| `get_impact_radius_tool` | Blast radius of changed files. Shows which functions, classes, files are affected. Paginated with `max_results`. |
-| `get_review_context_tool` | Token-optimized review context with structural summary, source snippets, and review guidance. |
-| `query_graph_tool` | Predefined queries: callers_of, callees_of, imports_of, importers_of, children_of, tests_for, inheritors_of, file_summary. |
-| `semantic_search_nodes_tool` | Search code entities by name/keyword or semantic similarity (requires embeddings). |
-| `embed_graph_tool` | Compute vector embeddings for semantic search. Uses dual-mode backend. |
-| `list_graph_stats_tool` | Graph size, languages, node/edge breakdown, embedding count. |
-| `get_docs_section_tool` | Retrieve specific documentation sections for minimal token usage. |
-| `find_large_functions_tool` | Find functions/classes exceeding a line-count threshold for decomposition audits. |
+Actions: `build` | `update` | `query` | `search` | `impact` | `review` | `embed` | `stats` | `large_functions`
+
+| Action | Description |
+|:-------|:------------|
+| `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files. |
+| `update` | Alias for `build` with `full_rebuild=false` (incremental). |
+| `query` | Run predefined queries: `callers_of`, `callees_of`, `imports_of`, `importers_of`, `children_of`, `tests_for`, `inheritors_of`, `file_summary`. |
+| `search` | Search code entities by name/keyword or semantic similarity. |
+| `impact` | Blast radius of changed files. Auto-detects from git diff. Paginated with `max_results`. |
+| `review` | Token-optimized review context with structural summary, source snippets, and review guidance. |
+| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud LiteLLM. |
+| `stats` | Graph size, languages, node/edge breakdown, embedding count. |
+| `large_functions` | Find functions/classes exceeding a line-count threshold. |
+
+### `config` -- Server configuration
+
+Actions: `status` | `set` | `cache_clear`
+
+| Action | Description |
+|:-------|:------------|
+| `status` | Server info: version, graph path, node/edge counts, embedding backend. |
+| `set` | Update runtime settings (e.g., `log_level`). |
+| `cache_clear` | Remove all computed embeddings. |
+
+### `help` -- Full documentation
+
+Topics: `graph` | `config`
+
+Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
 
 ---
 
 ## Embedding Backends
 
-Embeddings enable semantic search (vector similarity instead of keyword matching). Two backends are available:
-
 | Backend | Config | Size | Description |
 |:--------|:-------|:-----|:------------|
-| **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. Downloaded on first `embed_graph_tool` call. |
-| **litellm** | `API_KEYS` or `LITELLM_PROXY_URL` | 0 MB | Cloud providers via LiteLLM (Gemini, OpenAI, Cohere, etc.). |
+| **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. |
+| **litellm** | `API_KEYS` or `LITELLM_PROXY_URL` | 0 MB | Cloud providers via LiteLLM. |
 
-- **Auto-detection**: If `API_KEYS` or `LITELLM_PROXY_URL` is set, uses LiteLLM. Otherwise, uses local ONNX.
-- **Override**: Set `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=litellm` explicitly.
-- **Fixed 768-dim storage**: All embeddings stored at 768 dimensions via MRL truncation. Switching backends does NOT invalidate existing vectors.
-- **Lazy loading**: Model downloads on first embed call, not on server start.
-
----
-
-## CLI Reference
-
-```bash
-better-code-review-graph install     # Register MCP server with Claude Code (creates .mcp.json)
-better-code-review-graph init        # Alias for install
-better-code-review-graph build       # Full graph build (parse all files)
-better-code-review-graph update      # Incremental update (changed files only)
-better-code-review-graph watch       # Auto-update on file changes
-better-code-review-graph status      # Show graph statistics
-better-code-review-graph serve       # Start MCP server (stdio transport)
-```
+- **Auto-detection**: `API_KEYS` or `LITELLM_PROXY_URL` set -> LiteLLM. Otherwise -> local ONNX.
+- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=litellm`.
+- **Fixed 768-dim storage**: Switching backends does NOT invalidate existing vectors.
 
 ---
 
@@ -159,15 +202,15 @@ better-code-review-graph serve       # Start MCP server (stdio transport)
 
 | Variable | Default | Description |
 |:---------|:--------|:------------|
-| `EMBEDDING_BACKEND` | (auto-detect) | `local` (qwen3-embed ONNX) or `litellm` (cloud API). Auto: API_KEYS/proxy -> litellm, else local. |
-| `EMBEDDING_MODEL` | `gemini/gemini-embedding-001` | LiteLLM embedding model (only used when backend=litellm). |
-| `API_KEYS` | - | LLM API keys for SDK mode (format: `ENV_VAR:key,...`). Enables LiteLLM backend. |
-| `LITELLM_PROXY_URL` | - | LiteLLM Proxy URL. Enables LiteLLM backend via proxy. |
+| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `litellm` |
+| `EMBEDDING_MODEL` | `gemini/gemini-embedding-001` | LiteLLM model (when backend=litellm) |
+| `API_KEYS` | - | LLM API keys (format: `ENV_VAR:key,...`). Enables LiteLLM. |
+| `LITELLM_PROXY_URL` | - | LiteLLM Proxy URL. Enables LiteLLM via proxy. |
 | `LITELLM_PROXY_KEY` | - | LiteLLM Proxy virtual key. |
 
 ### Ignore files
 
-Create `.code-review-graphignore` in your project root to exclude paths:
+Create `.code-review-graphignore` in your project root:
 
 ```
 generated/**
@@ -182,25 +225,11 @@ node_modules/**
 
 Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
 
-Each language has full Tree-sitter grammar support for functions, classes, imports, call sites, inheritance, and test detection.
-
----
-
-## Cross-Agent Compatibility
-
-| Feature | Claude Code | Copilot CLI | Codex | Gemini CLI | Antigravity | OpenCode | Cursor | Windsurf | Cline | Amp |
-|:--------|:-----------:|:-----------:|:-----:|:----------:|:-----------:|:--------:|:------:|:--------:|:-----:|:---:|
-| MCP tools (9 tools) | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
-| CLAUDE.md / AGENTS.md | Yes | Yes | Yes | Yes | Yes | Yes | Yes | Yes | -- | -- |
-| Skills (slash commands) | Yes | Yes | Yes | Yes | -- | Yes | -- | -- | -- | -- |
-| Hooks (PostToolUse) | Yes | -- | Yes | Yes | -- | -- | -- | -- | -- | -- |
-| Plugin (marketplace) | Yes | Yes | -- | -- | -- | -- | -- | -- | -- | -- |
-
 ---
 
 ## Upstream PRs
 
-All fixes in this fork are submitted as standalone PRs to the original [code-review-graph](https://github.com/tirth8205/code-review-graph):
+All fixes are submitted to [code-review-graph](https://github.com/tirth8205/code-review-graph):
 
 - [#37](https://github.com/tirth8205/code-review-graph/pull/37) -- Multi-word search AND logic
 - [#38](https://github.com/tirth8205/code-review-graph/pull/38) -- Parser call target resolution (fixes [#20](https://github.com/tirth8205/code-review-graph/issues/20))
@@ -220,20 +249,20 @@ uv run pytest
 uv run better-code-review-graph serve
 ```
 
-**Requirements:** Python 3.13 (not 3.14+), [uv](https://docs.astral.sh/uv/)
+**Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/)
 
 ---
 
 ## Compatible With
 
-[![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-F9DC7C?logo=anthropic&logoColor=black)](#quick-start)
-[![Claude Code](https://img.shields.io/badge/Claude_Code-000000?logo=anthropic&logoColor=white)](#quick-start)
-[![Cursor](https://img.shields.io/badge/Cursor-000000?logo=cursor&logoColor=white)](#quick-start)
-[![VS Code Copilot](https://img.shields.io/badge/VS_Code_Copilot-007ACC?logo=visualstudiocode&logoColor=white)](#quick-start)
-[![Antigravity](https://img.shields.io/badge/Antigravity-4285F4?logo=google&logoColor=white)](#quick-start)
-[![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-8E75B2?logo=googlegemini&logoColor=white)](#quick-start)
-[![OpenAI Codex](https://img.shields.io/badge/Codex-412991?logo=openai&logoColor=white)](#quick-start)
-[![OpenCode](https://img.shields.io/badge/OpenCode-F7DF1E?logoColor=black)](#quick-start)
+[![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-F9DC7C?logo=anthropic&logoColor=black)](#installation)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-000000?logo=anthropic&logoColor=white)](#installation)
+[![Cursor](https://img.shields.io/badge/Cursor-000000?logo=cursor&logoColor=white)](#installation)
+[![VS Code Copilot](https://img.shields.io/badge/VS_Code_Copilot-007ACC?logo=visualstudiocode&logoColor=white)](#installation)
+[![Antigravity](https://img.shields.io/badge/Antigravity-4285F4?logo=google&logoColor=white)](#installation)
+[![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-8E75B2?logo=googlegemini&logoColor=white)](#installation)
+[![OpenAI Codex](https://img.shields.io/badge/Codex-412991?logo=openai&logoColor=white)](#installation)
+[![OpenCode](https://img.shields.io/badge/OpenCode-F7DF1E?logoColor=black)](#installation)
 
 ## Also by n24q02m
 
