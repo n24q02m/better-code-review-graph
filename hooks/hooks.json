@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "code-review-graph update 2>/dev/null || true"
+            "command": "better-code-review-graph update 2>/dev/null || true"
           }
         ]
       }
