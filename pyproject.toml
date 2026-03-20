@@ -3,24 +3,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "code-review-graph"
-version = "1.8.2"
-description = "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code"
-readme = {file = "README.md", content-type = "text/markdown"}
+name = "better-code-review-graph"
+version = "0.1.0"
+description = "Knowledge graph for token-efficient code reviews — fixed search, configurable embeddings, qualified call resolution"
+readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
-requires-python = ">=3.10"
-authors = [
-    { name = "Tirth" },
-]
+requires-python = "==3.13.*"
+authors = [{ name = "n24q02m" }]
 keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
 ]
@@ -31,59 +24,53 @@ dependencies = [
     "tree-sitter-language-pack>=0.3.0,<1",
     "networkx>=3.2,<4",
     "watchdog>=4.0.0,<6",
+    "qwen3-embed>=1.5.0",
+    "litellm>=1.0.0",
+    "httpx",
+    "pydantic-settings",
 ]
 
 [project.scripts]
-code-review-graph = "code_review_graph.cli:main"
+better-code-review-graph = "better_code_review_graph.cli:main"
 
-[project.optional-dependencies]
-embeddings = [
-    "sentence-transformers>=3.0.0,<4",
-    "numpy>=1.26,<3",
-]
-google-embeddings = [
-    "google-generativeai>=0.8.0,<1",
-]
+[dependency-groups]
 dev = [
     "pytest>=8.0,<9",
     "pytest-asyncio>=0.23,<1",
-    "ruff>=0.3.0,<1",
+    "pytest-cov",
+    "pytest-timeout",
+    "ruff>=0.8.6",
+    "syrupy",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["code_review_graph"]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "code_review_graph/",
-    "skills/",
-    ".claude-plugin/",
-    "docs/",
-    "hooks/",
-    "LICENSE",
-    "README.md",
-    "pyproject.toml",
-]
+packages = ["src/better_code_review_graph"]
 
 [tool.ruff]
-line-length = 100
-target-version = "py310"
+line-length = 88
+target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W"]
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
+ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"code_review_graph/visualization.py" = ["E501"]  # embedded HTML/JS template
-
-[tool.bandit]
-# B101: assert used (fine in non-security code)
-# B404: import subprocess (we need git interaction)
-# B603: subprocess without shell=True (we use list args, not shell)
-# B607: partial executable path (calling "git" by name is standard)
-# B608: SQL f-string — false positive, we use parameterized "?" placeholders on a local SQLite DB
-skips = ["B101", "B404", "B603", "B607", "B608"]
+[tool.ty.rules]
+unresolved-import = "ignore"
+unresolved-attribute = "ignore"
+possibly-missing-attribute = "ignore"
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
-norecursedirs = ["tests/fixtures"]
+asyncio_mode = "auto"
+timeout = 30
+addopts = "--tb=short -q"
+markers = ["integration: integration tests (deselect with '-m not integration')"]
+
+[tool.coverage.run]
+source = ["src/better_code_review_graph"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
