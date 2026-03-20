@@ -202,9 +202,9 @@ Each language has full Tree-sitter grammar support for functions, classes, impor
 
 All fixes in this fork are submitted as standalone PRs to the original [code-review-graph](https://github.com/tirth8205/code-review-graph):
 
-- Multi-word search AND logic
-- Parser call target resolution (ref: issue #20)
-- Impact radius output pagination
+- [#37](https://github.com/tirth8205/code-review-graph/pull/37) -- Multi-word search AND logic
+- [#38](https://github.com/tirth8205/code-review-graph/pull/38) -- Parser call target resolution (fixes [#20](https://github.com/tirth8205/code-review-graph/issues/20))
+- [#39](https://github.com/tirth8205/code-review-graph/pull/39) -- Impact radius output pagination
 
 **If all upstream PRs are merged, this repository will be archived.**
 
