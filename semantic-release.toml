@@ -7,5 +7,8 @@ major_on_zero = false
 [semantic_release.branches.main]
 match = "main"
 
+[semantic_release.remote]
+type = "github"
+
 [semantic_release.changelog]
 changelog_file = "CHANGELOG.md"
