@@ -55,3 +55,6 @@ medium/
 
 # Superpowers brainstorm
 .superpowers/
+
+# Worktrees
+.worktrees/
