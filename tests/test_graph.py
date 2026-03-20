@@ -5,6 +5,7 @@ from pathlib import Path
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from tests.conftest import _make_node
 
 
 class TestGraphStore:
@@ -209,3 +210,48 @@ class TestGraphStore:
         self.store.set_metadata("test_key", "test_value")
         assert self.store.get_metadata("test_key") == "test_value"
         assert self.store.get_metadata("nonexistent") is None
+
+
+# --- Multi-word search tests (Task 2.1) ---
+
+
+def test_search_nodes_multi_word(tmp_graph_store):
+    """Multi-word queries should match nodes containing ALL words (AND logic)."""
+    store = tmp_graph_store
+    store.upsert_node(
+        _make_node(
+            "verify_firebase_token", "Function", "auth.py::verify_firebase_token"
+        )
+    )
+    store.upsert_node(_make_node("FirebaseAuth", "Class", "auth.py::FirebaseAuth"))
+    store.upsert_node(_make_node("get_user", "Function", "user.py::get_user"))
+    store.commit()
+
+    results = store.search_nodes("firebase auth", limit=10)
+    names = [r.name for r in results]
+    # Both words must appear: "firebase" AND "auth"
+    assert "verify_firebase_token" in names
+    assert "FirebaseAuth" in names
+    assert "get_user" not in names
+
+
+def test_search_nodes_multi_word_partial(tmp_graph_store):
+    """Each word must match -- nodes matching only one word are excluded."""
+    store = tmp_graph_store
+    store.upsert_node(
+        _make_node("RAGWorkflowState", "Class", "rag.py::RAGWorkflowState")
+    )
+    store.upsert_node(
+        _make_node("process_pipeline", "Function", "pipe.py::process_pipeline")
+    )
+    store.commit()
+
+    results = store.search_nodes("RAG pipeline", limit=10)
+    # RAGWorkflowState matches "RAG" but not "pipeline" -> excluded
+    # process_pipeline matches "pipeline" but not "RAG" -> excluded
+    assert len(results) == 0
+
+    # Single word should match
+    results_single = store.search_nodes("RAG", limit=10)
+    assert len(results_single) == 1
+    assert results_single[0].name == "RAGWorkflowState"

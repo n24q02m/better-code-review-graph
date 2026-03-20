@@ -316,41 +316,33 @@ class GraphStore:
         ).fetchall()
         return [r["file_path"] for r in rows]
 
-    def search_nodes(self, query: str, limit: int = 20) -> list[GraphNode]:
-        """Simple keyword search across node names.
+    def search_nodes(
+        self, query: str, kind: str | None = None, limit: int = 20
+    ) -> list[GraphNode]:
+        """Keyword search across node names and qualified names.
 
-        Multi-word queries match nodes containing ANY of the terms, ranked by
-        the number of terms matched (more matches first).  Single-word queries
-        behave exactly as before.
+        Multi-word queries require ALL words to match (AND logic).  Each word
+        must appear in either the node name or the qualified name.
         """
-        terms = query.strip().split()
-        if len(terms) <= 1:
-            # Original single-term behavior
-            pattern = f"%{query}%"
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE name LIKE ? OR qualified_name LIKE ? LIMIT ?",
-                (pattern, pattern, limit),
-            ).fetchall()
-            return [self._row_to_node(r) for r in rows]
+        words = query.lower().split()
+        if not words:
+            return []
 
-        # Multi-term: match any term, rank by number of terms matched
-        seen: dict[str, tuple[GraphNode, int]] = {}
-        for term in terms:
-            pattern = f"%{term}%"
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE name LIKE ? OR qualified_name LIKE ? LIMIT ?",
-                (pattern, pattern, limit * 3),
-            ).fetchall()
-            for r in rows:
-                node = self._row_to_node(r)
-                if node.qualified_name in seen:
-                    seen[node.qualified_name] = (node, seen[node.qualified_name][1] + 1)
-                else:
-                    seen[node.qualified_name] = (node, 1)
+        conditions: list[str] = []
+        params: list[Any] = []
+        for word in words:
+            conditions.append("(LOWER(name) LIKE ? OR LOWER(qualified_name) LIKE ?)")
+            params.extend([f"%{word}%", f"%{word}%"])
 
-        # Sort: more matches first, then by name relevance
-        items = sorted(seen.values(), key=lambda x: -x[1])
-        return [node for node, _ in items[:limit]]
+        where = " AND ".join(conditions)
+        if kind:
+            where = f"({where}) AND kind = ?"
+            params.append(kind)
+
+        sql = f"SELECT * FROM nodes WHERE {where} ORDER BY name LIMIT ?"  # nosec B608
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [self._row_to_node(r) for r in rows]
 
     # --- Impact / Graph traversal ---
 
@@ -364,6 +356,8 @@ class GraphStore:
           - impacted_nodes: nodes reachable via edges
           - impacted_files: unique set of affected files
           - edges: connecting edges
+          - truncated: True if BFS was stopped early due to max_nodes limit
+          - total_impacted: total number of impacted nodes found before truncation
         """
         nxg = self._build_networkx_graph()
 
@@ -379,6 +373,7 @@ class GraphStore:
         frontier = seeds.copy()
         depth = 0
         impacted: set[str] = set()
+        truncated = False
 
         while frontier and depth < max_depth:
             next_frontier: set[str] = set()
@@ -398,9 +393,13 @@ class GraphStore:
                             impacted.add(pred)
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
+                truncated = True
                 break
             frontier = next_frontier
             depth += 1
+
+        # Record total count before any truncation for the response
+        total_impacted = len(impacted - seeds)
 
         # Resolve to full node info
         changed_nodes = []
@@ -428,6 +427,8 @@ class GraphStore:
             "impacted_nodes": impacted_nodes,
             "impacted_files": impacted_files,
             "edges": relevant_edges,
+            "truncated": truncated,
+            "total_impacted": total_impacted,
         }
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
