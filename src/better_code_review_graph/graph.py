@@ -291,6 +291,12 @@ class GraphStore:
         rows = self._conn.execute(
             "SELECT * FROM edges WHERE target_qualified = ?", (qualified_name,)
         ).fetchall()
+        if not rows and "::" in qualified_name:
+            # Fallback: try matching bare name (last segment after ::)
+            bare_name = qualified_name.rsplit("::", 1)[-1]
+            rows = self._conn.execute(
+                "SELECT * FROM edges WHERE target_qualified = ?", (bare_name,)
+            ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
     def search_edges_by_target_name(

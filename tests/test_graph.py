@@ -5,7 +5,7 @@ from pathlib import Path
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from tests.conftest import _make_node
+from tests.conftest import _make_edge, _make_node
 
 
 class TestGraphStore:
@@ -255,3 +255,28 @@ def test_search_nodes_multi_word_partial(tmp_graph_store):
     results_single = store.search_nodes("RAG", limit=10)
     assert len(results_single) == 1
     assert results_single[0].name == "RAGWorkflowState"
+
+
+# --- Bare target fallback tests (Task 2.3) ---
+
+
+def test_get_edges_by_target_bare_fallback(tmp_graph_store):
+    """Query by qualified name should find edges stored with bare target."""
+    store = tmp_graph_store
+    # Simulate cross-file call with bare target (external, not resolved by parser)
+    store.upsert_node(_make_node("middleware", "Function", "middleware.py::middleware"))
+    store.upsert_edge(
+        _make_edge(
+            kind="CALLS",
+            source="router.py::setup",
+            target="middleware",  # bare
+            file_path="router.py",
+            line=10,
+        )
+    )
+    store.commit()
+
+    # Query with qualified name should still find the edge via fallback
+    edges = store.get_edges_by_target("middleware.py::middleware")
+    assert len(edges) == 1
+    assert edges[0].source_qualified == "router.py::setup"
