@@ -7,13 +7,14 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 ## Cau truc
 
 - `src/better_code_review_graph/` -- Package chinh (src layout)
-  - `server.py` -- FastMCP server, 9 MCP tools registration
+  - `server.py` -- FastMCP server, 3-tier tools: graph (mega) + config + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
   - `parser.py` -- Tree-sitter parsing (12 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
-  - `cli.py` -- CLI: install, init, build, update, watch, status, serve
+  - `docs/` -- Help tool documentation (graph.md, config.md)
+  - `cli.py` -- CLI: serve + update (for hooks)
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker
@@ -33,7 +34,6 @@ uv run ruff format .               # Format
 uv run ruff check --fix . && uv run ruff format .  # Fix
 uv run ty check                    # Type check (ty lenient config)
 uv run better-code-review-graph serve  # Chay MCP server (stdio)
-uv run better-code-review-graph build  # Build graph cho repo hien tai
 ```
 
 ## Cau hinh quan trong
@@ -51,14 +51,15 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
                                           |
                                      Embedding store --> Semantic search
                                           |
-                                     FastMCP server --> 9 MCP tools
+                                     FastMCP server --> 3 tools (graph + config + help)
 ```
 
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
 - **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or LiteLLM cloud (auto-detected from API_KEYS/LITELLM_PROXY_URL). Fixed 768-dim storage.
-- **Tools** (tools.py): 9 MCP tools wrapping graph operations. Output pagination via max_results.
+- **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
+- **Server** (server.py): 3-tier tool architecture -- graph mega-tool (9 actions via match/case), config, help. Returns JSON strings.
 
 ## Embedding backends
 
