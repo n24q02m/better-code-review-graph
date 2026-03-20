@@ -1,0 +1,32 @@
+# Git
+.git
+.github
+
+# IDE
+.vscode
+
+# Cache
+.ruff_cache
+.pytest_cache
+__pycache__
+
+# Development
+tests/
+temp/
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Config
+.pre-commit-config.yaml
+.editorconfig
+.python-version
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+SECURITY.md
+LICENSE
+CHANGELOG.md

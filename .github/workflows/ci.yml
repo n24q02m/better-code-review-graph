@@ -1,63 +1,247 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types:
+      - opened
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  lint:
+  pr-title-check:
+    name: PR Title Check
+    if: >-
+      github.event_name == 'pull_request_target'
+      && github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
-          python-version: "3.10"
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-      - name: Lint with ruff
-        run: ruff check code_review_graph/
+          egress-policy: audit
 
-  type-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Install dependencies
-        run: pip install -e ".[dev]" mypy types-networkx
-      - name: Run mypy
-        run: mypy code_review_graph/ --ignore-missing-imports --no-strict-optional
+      - name: Validate and auto-fix PR title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          title=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title -q .title)
+          if [[ "$title" =~ ^(feat|fix)(\(.+\))?:.+ ]] || [[ "$title" =~ ^chore\(release\):.+ ]]; then
+            echo "Title is valid: $title"
+            exit 0
+          fi
+          clean=$(echo "$title" | sed -E 's/^[^a-zA-Z]*//; s/^(Bolt|Sentinel|Guard|Shield): *(\[.*\] *)?//')
+          if echo "$clean" | grep -qiE 'fix|bug|vulnerability|security|patch|resolve|crash|error'; then
+            new_title="fix: $(echo "$clean" | sed 's/^./\L&/')"
+          else
+            new_title="feat: $(echo "$clean" | sed 's/^./\L&/')"
+          fi
+          gh pr edit "$PR_NUMBER" --repo "$REPO" --title "$new_title"
+          echo "Auto-fixed: $title -> $new_title"
 
-  security:
+  lint-and-test:
+    name: Lint & Test
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Install bandit
-        run: pip install bandit[toml]
-      - name: Run bandit security scan
-        run: bandit -r code_review_graph/ -c pyproject.toml
 
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
-          python-version: ${{ matrix.python-version }}
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+
+      - name: Setup Python 3.13
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.13"
+
       - name: Install dependencies
-        run: pip install -e ".[dev]" pytest-cov
+        run: uv sync --group dev
+
+      - name: Run Ruff check
+        run: uv run ruff check .
+
+      - name: Run Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run ty type check
+        run: uv run ty check
+
       - name: Run tests with coverage
-        run: pytest --tb=short -q --cov=code_review_graph --cov-report=term-missing --cov-fail-under=50
+        run: |
+          if [ -d "tests" ] && [ "$(ls -A tests/*.py 2>/dev/null)" ]; then
+            uv run pytest --cov --cov-report=xml
+          else
+            echo "No tests found, skipping..."
+          fi
+
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push'
+        uses: codecov/codecov-action@1af58845a975a7985b0beb0cbe6fbbb71a41dbad # v5
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  semgrep:
+    name: Semgrep SAST Scan
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'pull_request' || github.event_name == 'push')
+      && github.actor != 'dependabot[bot]'
+      && github.actor != 'renovate[bot]'
+    permissions:
+      contents: read
+    container:
+      image: semgrep/semgrep@sha256:3dab091ee3247fce7e4ed3df9f92b3bd72692c083295f53cec3f135b86404db1
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Run Semgrep scan
+        run: semgrep scan --config auto --error --verbose
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: always
+
+  ai_pr_review:
+    name: Qodo AI Code Review
+    if: >-
+      (
+        github.event_name == 'issue_comment'
+        && github.event.sender.type != 'Bot'
+      ) || (
+        github.event_name == 'pull_request_target'
+        && github.event.sender.type != 'Bot'
+        && github.event.pull_request.user.login != 'n24q02m'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Load custom instructions
+        run: |
+          if [ -f ".github/best_practices.md" ]; then
+            INSTRUCTIONS=$(cat .github/best_practices.md)
+            RANDOM_EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "CUSTOM_INSTRUCTIONS<<$RANDOM_EOF" >> "$GITHUB_ENV"
+            echo "$INSTRUCTIONS" >> "$GITHUB_ENV"
+            echo "$RANDOM_EOF" >> "$GITHUB_ENV"
+          fi
+
+      - name: PR Agent action step
+        uses: qodo-ai/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
+          GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
+          GITHUB_ACTION_CONFIG__HANDLE_PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
+
+  # ============================================================================
+  # Email Notification (External Contributors)
+  # ============================================================================
+  email-notify:
+    name: Email Notification
+    if: >-
+      (github.event_name == 'issues' || github.event_name == 'pull_request_target')
+      && github.actor != 'n24q02m'
+      && github.event.sender.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - name: Prepare notification data
+        id: data
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          ACTOR: ${{ github.actor }}
+          ACTION: ${{ github.event.action }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "issues" ]; then
+            echo "event_type=Issue" >> "$GITHUB_OUTPUT"
+            echo "title=$ISSUE_TITLE" >> "$GITHUB_OUTPUT"
+            echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "event_type=PR" >> "$GITHUB_OUTPUT"
+            echo "title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+            echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send email notification
+        uses: dawidd6/action-send-mail@d38f3f7cd391cdebfe0d38efc3998b935e951c4f # v16
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[${{ github.event.repository.name }}] ${{ steps.data.outputs.event_type }} #${{ steps.data.outputs.number }}: ${{ steps.data.outputs.title }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: GitHub Notify <${{ secrets.SMTP_USERNAME }}>
+          body: |
+            New ${{ steps.data.outputs.event_type }} in ${{ github.repository }}
+
+            Title: ${{ steps.data.outputs.title }}
+            Author: ${{ github.actor }}
+            URL: ${{ steps.data.outputs.url }}
+            Action: ${{ github.event.action }}

@@ -32,9 +32,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Node (if any JS tooling)
-node_modules/
-
 # Claude Code
 .claude/
 
@@ -42,11 +39,15 @@ node_modules/
 htmlcov/
 .coverage
 .coverage.*
+coverage.xml
 
 # pytest
 .pytest_cache/
 
-# mypy
+# Ruff
+.ruff_cache/
+
+# mypy / ty
 .mypy_cache/
 
 # Medium article
@@ -54,17 +55,3 @@ medium/
 
 # Superpowers brainstorm
 .superpowers/
-
-# Diagrams source files (PNGs are tracked, sources are not)
-diagrams/*.excalidraw
-diagrams/export_pngs.mjs
-diagrams/generate_diagrams.py
-*.excalidraw
-
-# Evaluation test repos (third-party checkouts)
-evaluate/test_repos/
-
-# Draft/duplicate files
-evaluate/results?2.csv
-evaluate/results?3.csv
-docs/assets/marketing-diagram*

@@ -1,0 +1,11 @@
+[semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+commit_message = "chore(release): v{version}"
+tag_format = "v{version}"
+major_on_zero = false
+
+[semantic_release.branches.main]
+match = "main"
+
+[semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
