@@ -12,20 +12,11 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-
-# Python version check
-if sys.version_info < (3, 13):
-    print("better-code-review-graph requires Python 3.13 or higher.")
-    print(f"  You are running Python {sys.version}")
-    print()
-    print("Install Python 3.13+: https://www.python.org/downloads/")
-    sys.exit(1)
-
 import argparse
 import json
 import logging
 import os
+import sys
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 
@@ -53,12 +44,12 @@ def _print_banner() -> None:
     version = _get_version()
 
     # ANSI escape codes
-    c = "\033[36m" if color else ""   # cyan
-    y = "\033[33m" if color else ""   # yellow
-    b = "\033[1m" if color else ""    # bold
-    d = "\033[2m" if color else ""    # dim
-    g = "\033[32m" if color else ""   # green
-    r = "\033[0m" if color else ""    # reset
+    c = "\033[36m" if color else ""  # cyan
+    y = "\033[33m" if color else ""  # yellow
+    b = "\033[1m" if color else ""  # bold
+    d = "\033[2m" if color else ""  # dim
+    g = "\033[32m" if color else ""  # green
+    r = "\033[0m" if color else ""  # reset
 
     print(f"""
 {c}  ●──●──●{r}
@@ -142,41 +133,59 @@ def main() -> None:
     install_cmd = sub.add_parser(
         "install", help="Register MCP server with Claude Code (creates .mcp.json)"
     )
-    install_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
     install_cmd.add_argument(
-        "--dry-run", action="store_true",
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
+    install_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
         help="Show what would be done without writing files",
     )
 
-    init_cmd = sub.add_parser(
-        "init", help="Alias for install"
-    )
-    init_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    init_cmd = sub.add_parser("init", help="Alias for install")
     init_cmd.add_argument(
-        "--dry-run", action="store_true",
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
+    init_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
         help="Show what would be done without writing files",
     )
 
     # build
     build_cmd = sub.add_parser("build", help="Full graph build (re-parse all files)")
-    build_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    build_cmd.add_argument(
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
 
     # update
-    update_cmd = sub.add_parser("update", help="Incremental update (only changed files)")
-    update_cmd.add_argument("--base", default="HEAD~1", help="Git diff base (default: HEAD~1)")
-    update_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    update_cmd = sub.add_parser(
+        "update", help="Incremental update (only changed files)"
+    )
+    update_cmd.add_argument(
+        "--base", default="HEAD~1", help="Git diff base (default: HEAD~1)"
+    )
+    update_cmd.add_argument(
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
 
     # watch
     watch_cmd = sub.add_parser("watch", help="Watch for changes and auto-update")
-    watch_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    watch_cmd.add_argument(
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
 
     # status
     status_cmd = sub.add_parser("status", help="Show graph statistics")
-    status_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    status_cmd.add_argument(
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
 
     # serve
     serve_cmd = sub.add_parser("serve", help="Start MCP server (stdio transport)")
-    serve_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
+    serve_cmd.add_argument(
+        "--repo", default=None, help="Repository root (auto-detected)"
+    )
 
     args = ap.parse_args()
 
@@ -190,6 +199,7 @@ def main() -> None:
 
     if args.command == "serve":
         from .server import serve_main
+
         serve_main(repo_root=args.repo)
         return
 

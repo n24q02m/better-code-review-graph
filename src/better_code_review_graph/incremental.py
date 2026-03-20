@@ -12,7 +12,6 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 
 from .graph import GraphStore
 from .parser import CodeParser
@@ -45,7 +44,7 @@ DEFAULT_IGNORE_PATTERNS = [
 ]
 
 
-def find_repo_root(start: Path | None = None) -> Optional[Path]:
+def find_repo_root(start: Path | None = None) -> Path | None:
     """Walk up from start to find the nearest .git directory."""
     current = start or Path.cwd()
     while current != current.parent:
@@ -206,9 +205,7 @@ def collect_all_files(repo_root: Path) -> list[str]:
     else:
         # Fallback: walk directory
         candidates = [
-            str(p.relative_to(repo_root))
-            for p in repo_root.rglob("*")
-            if p.is_file()
+            str(p.relative_to(repo_root)) for p in repo_root.rglob("*") if p.is_file()
         ]
 
     for rel_path in candidates:
@@ -455,9 +452,7 @@ def watch(repo_root: Path, store: GraphStore) -> None:
                 self._pending.add(abs_path)
                 if self._timer is not None:
                     self._timer.cancel()
-                self._timer = threading.Timer(
-                    _DEBOUNCE_SECONDS, self._flush
-                )
+                self._timer = threading.Timer(_DEBOUNCE_SECONDS, self._flush)
                 self._timer.start()
 
         def _flush(self):
@@ -483,14 +478,14 @@ def watch(repo_root: Path, store: GraphStore) -> None:
                 fhash = hashlib.sha256(source).hexdigest()
                 nodes, edges = parser.parse_bytes(path, source)
                 store.store_file_nodes_edges(abs_path, nodes, edges, fhash)
-                store.set_metadata(
-                    "last_updated", time.strftime("%Y-%m-%dT%H:%M:%S")
-                )
+                store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
                 store.commit()
                 rel = str(path.relative_to(repo_root))
                 logger.info(
                     "Updated: %s (%d nodes, %d edges)",
-                    rel, len(nodes), len(edges),
+                    rel,
+                    len(nodes),
+                    len(edges),
                 )
             except Exception as e:
                 logger.error("Error updating %s: %s", abs_path, e)
@@ -503,11 +498,10 @@ def watch(repo_root: Path, store: GraphStore) -> None:
     logger.info("Watching %s for changes... (Ctrl+C to stop)", repo_root)
     try:
         import time as _time
+
         while True:
             _time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
     logger.info("Watch stopped.")
-
-

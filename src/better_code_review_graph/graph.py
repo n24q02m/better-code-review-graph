@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import networkx as nx
 
@@ -79,11 +79,11 @@ class GraphNode:
     line_start: int
     line_end: int
     language: str
-    parent_name: Optional[str]
-    params: Optional[str]
-    return_type: Optional[str]
+    parent_name: str | None
+    params: str | None
+    return_type: str | None
     is_test: bool
-    file_hash: Optional[str]
+    file_hash: str | None
     extra: dict
 
 
@@ -106,7 +106,7 @@ class GraphStats:
     edges_by_kind: dict[str, int]
     languages: list[str]
     files_count: int
-    last_updated: Optional[str]
+    last_updated: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ class GraphStore:
         self._nxg_cache: nx.DiGraph | None = None
         self._cache_lock = threading.Lock()
 
-    def __enter__(self) -> "GraphStore":
+    def __enter__(self) -> GraphStore:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -172,11 +172,21 @@ class GraphStore:
                  extra=excluded.extra, updated_at=excluded.updated_at
             """,
             (
-                node.kind, node.name, qualified, node.file_path,
-                node.line_start, node.line_end, node.language,
-                node.parent_name, node.params, node.return_type,
-                node.modifiers, int(node.is_test), file_hash,
-                extra, now,
+                node.kind,
+                node.name,
+                qualified,
+                node.file_path,
+                node.line_start,
+                node.line_end,
+                node.language,
+                node.parent_name,
+                node.params,
+                node.return_type,
+                node.modifiers,
+                int(node.is_test),
+                file_hash,
+                extra,
+                now,
             ),
         )
         row = self._conn.execute(
@@ -208,7 +218,15 @@ class GraphStore:
             """INSERT INTO edges
                (kind, source_qualified, target_qualified, file_path, line, extra, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (edge.kind, edge.source, edge.target, edge.file_path, edge.line, extra, now),
+            (
+                edge.kind,
+                edge.source,
+                edge.target,
+                edge.file_path,
+                edge.line,
+                extra,
+                now,
+            ),
         )
         return self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -219,7 +237,11 @@ class GraphStore:
         self._invalidate_cache()
 
     def store_file_nodes_edges(
-        self, file_path: str, nodes: list[NodeInfo], edges: list[EdgeInfo], fhash: str = ""
+        self,
+        file_path: str,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        fhash: str = "",
     ) -> None:
         """Atomically replace all data for a file."""
         self.remove_file_data(file_path)
@@ -236,8 +258,10 @@ class GraphStore:
         )
         self._conn.commit()
 
-    def get_metadata(self, key: str) -> Optional[str]:
-        row = self._conn.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+    def get_metadata(self, key: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT value FROM metadata WHERE key=?", (key,)
+        ).fetchone()
         return row["value"] if row else None
 
     def commit(self) -> None:
@@ -245,7 +269,7 @@ class GraphStore:
 
     # --- Read operations ---
 
-    def get_node(self, qualified_name: str) -> Optional[GraphNode]:
+    def get_node(self, qualified_name: str) -> GraphNode | None:
         row = self._conn.execute(
             "SELECT * FROM nodes WHERE qualified_name = ?", (qualified_name,)
         ).fetchone()
@@ -269,7 +293,9 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
-    def search_edges_by_target_name(self, name: str, kind: str = "CALLS") -> list[GraphEdge]:
+    def search_edges_by_target_name(
+        self, name: str, kind: str = "CALLS"
+    ) -> list[GraphEdge]:
         """Search for edges where target_qualified matches an unqualified name.
 
         CALLS edges often store unqualified target names (e.g. ``generateTestCode``)
@@ -427,15 +453,20 @@ class GraphStore:
         total_edges = self._conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
 
         nodes_by_kind: dict[str, int] = {}
-        for row in self._conn.execute("SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind"):
+        for row in self._conn.execute(
+            "SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind"
+        ):
             nodes_by_kind[row["kind"]] = row["cnt"]
 
         edges_by_kind: dict[str, int] = {}
-        for row in self._conn.execute("SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind"):
+        for row in self._conn.execute(
+            "SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind"
+        ):
             edges_by_kind[row["kind"]] = row["cnt"]
 
         languages = [
-            r["language"] for r in self._conn.execute(
+            r["language"]
+            for r in self._conn.execute(
                 "SELECT DISTINCT language FROM nodes WHERE language IS NOT NULL AND language != ''"
             )
         ]
@@ -521,7 +552,7 @@ class GraphStore:
         results: list[GraphEdge] = []
         batch_size = 450  # Stay well under SQLite's default 999 limit
         for i in range(0, len(qns), batch_size):
-            batch = qns[i:i + batch_size]
+            batch = qns[i : i + batch_size]
             placeholders = ",".join("?" for _ in batch)
             rows = self._conn.execute(  # nosec B608
                 f"SELECT * FROM edges WHERE source_qualified IN ({placeholders})",
@@ -594,28 +625,33 @@ def _sanitize_name(s: str, max_len: int = 256) -> str:
     agent behaviour.
     """
     # Strip control chars 0x00-0x1F except \t (0x09) and \n (0x0A)
-    cleaned = "".join(
-        ch for ch in s
-        if ch in ("\t", "\n") or ord(ch) >= 0x20
-    )
+    cleaned = "".join(ch for ch in s if ch in ("\t", "\n") or ord(ch) >= 0x20)
     return cleaned[:max_len]
 
 
 def node_to_dict(n: GraphNode) -> dict:
     return {
-        "id": n.id, "kind": n.kind, "name": _sanitize_name(n.name),
-        "qualified_name": _sanitize_name(n.qualified_name), "file_path": n.file_path,
-        "line_start": n.line_start, "line_end": n.line_end,
+        "id": n.id,
+        "kind": n.kind,
+        "name": _sanitize_name(n.name),
+        "qualified_name": _sanitize_name(n.qualified_name),
+        "file_path": n.file_path,
+        "line_start": n.line_start,
+        "line_end": n.line_end,
         "language": n.language,
-        "parent_name": _sanitize_name(n.parent_name) if n.parent_name else n.parent_name,
+        "parent_name": _sanitize_name(n.parent_name)
+        if n.parent_name
+        else n.parent_name,
         "is_test": n.is_test,
     }
 
 
 def edge_to_dict(e: GraphEdge) -> dict:
     return {
-        "id": e.id, "kind": e.kind,
+        "id": e.id,
+        "kind": e.kind,
         "source": _sanitize_name(e.source_qualified),
         "target": _sanitize_name(e.target_qualified),
-        "file_path": e.file_path, "line": e.line,
+        "file_path": e.file_path,
+        "line": e.line,
     }

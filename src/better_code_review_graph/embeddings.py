@@ -7,10 +7,10 @@ Supports multiple providers:
 
 from __future__ import annotations
 
+import hashlib
+import os
 import sqlite3
 import struct
-import os
-import hashlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -51,12 +51,13 @@ class LocalEmbeddingProvider(EmbeddingProvider):
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
+
                 self._model = SentenceTransformer("all-MiniLM-L6-v2")
-            except ImportError:
+            except ImportError as err:
                 raise ImportError(
                     "sentence-transformers not installed. "
                     "Run: pip install code-review-graph[embeddings]"
-                )
+                ) from err
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -81,20 +82,21 @@ class GoogleEmbeddingProvider(EmbeddingProvider):
     def __init__(self, api_key: str, model: str = "gemini-embedding-001") -> None:
         try:
             from google import genai
+
             self._client = genai.Client(api_key=api_key)
             self.model = model
             self._dimension: int | None = None
-        except ImportError:
+        except ImportError as err:
             raise ImportError(
                 "google-generativeai not installed. "
                 "Run: pip install code-review-graph[google-embeddings]"
-            )
+            ) from err
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         batch_size = 100
         results = []
         for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
+            batch = texts[i : i + batch_size]
             response = self._client.models.embed_content(
                 model=self.model,
                 contents=batch,
@@ -158,6 +160,7 @@ def _check_available() -> bool:
     """Check whether local embedding support is available."""
     try:
         import sentence_transformers  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -192,7 +195,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
     if len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(x * x for x in b) ** 0.5
     if norm_a == 0 or norm_b == 0:
@@ -262,7 +265,11 @@ class EmbeddingStore:
             ).fetchone()
 
             # Re-embed if text changed OR provider changed
-            if existing and existing["text_hash"] == text_hash and existing["provider"] == provider_name:
+            if (
+                existing
+                and existing["text_hash"] == text_hash
+                and existing["provider"] == provider_name
+            ):
                 continue
             to_embed.append((node, text, text_hash))
 
@@ -273,7 +280,7 @@ class EmbeddingStore:
         texts = [t for _, t, _ in to_embed]
         vectors = self.provider.embed(texts)
 
-        for (node, _text, text_hash), vec in zip(to_embed, vectors):
+        for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
             blob = _encode_vector(vec)
             self._conn.execute(
                 """INSERT OR REPLACE INTO embeddings (qualified_name, vector, text_hash, provider)

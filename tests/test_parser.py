@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from code_review_graph.parser import CodeParser, NodeInfo, EdgeInfo
+from better_code_review_graph.parser import CodeParser
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -52,7 +52,9 @@ class TestCodeParser:
         # Should detect inheritance
         inherits = [e for e in edges if e.kind == "INHERITS"]
         assert len(inherits) >= 1
-        assert any("AuthService" in e.source and "BaseService" in e.target for e in inherits)
+        assert any(
+            "AuthService" in e.source and "BaseService" in e.target for e in inherits
+        )
 
     def test_parse_python_imports(self):
         nodes, edges = self.parser.parse_file(FIXTURES / "sample_python.py")
@@ -129,14 +131,20 @@ class TestCodeParser:
 
         # guarded_process() calls process_request() — both in the same file,
         # but guarded_process is wrapped in a decorated_definition node
-        resolved = [e for e in calls if e.target == f"{file_path}::process_request"
-                    and "guarded_process" in e.source]
+        resolved = [
+            e
+            for e in calls
+            if e.target == f"{file_path}::process_request"
+            and "guarded_process" in e.source
+        ]
         assert len(resolved) == 1
 
     def test_multiple_calls_to_same_function(self):
         """Multiple calls to the same function on different lines should each produce an edge."""
         _, edges = self.parser.parse_file(FIXTURES / "multi_call_example.py")
-        calls = [e for e in edges if e.kind == "CALLS" and "_internal_request" in e.target]
+        calls = [
+            e for e in edges if e.kind == "CALLS" and "_internal_request" in e.target
+        ]
         assert len(calls) == 2
         lines = {e.line for e in calls}
         assert len(lines) == 2  # distinct line numbers

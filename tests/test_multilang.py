@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from code_review_graph.parser import CodeParser
+from better_code_review_graph.parser import CodeParser
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -166,13 +166,16 @@ class TestCppParsing:
 def _has_csharp_parser():
     try:
         import tree_sitter_language_pack as tslp
+
         tslp.get_parser("csharp")
         return True
     except (LookupError, ImportError):
         return False
 
 
-@pytest.mark.skipif(not _has_csharp_parser(), reason="csharp tree-sitter grammar not installed")
+@pytest.mark.skipif(
+    not _has_csharp_parser(), reason="csharp tree-sitter grammar not installed"
+)
 class TestCSharpParsing:
     def setup_method(self):
         self.parser = CodeParser()
@@ -329,8 +332,7 @@ class TestSolidityParsing:
 
     def test_finds_file_level_events(self):
         funcs = [
-            n for n in self.nodes
-            if n.kind == "Function" and n.parent_name is None
+            n for n in self.nodes if n.kind == "Function" and n.parent_name is None
         ]
         names = {f.name for f in funcs}
         # file-level events declared outside any contract
@@ -344,8 +346,7 @@ class TestSolidityParsing:
 
     def test_finds_file_level_constants(self):
         constants = [
-            n for n in self.nodes
-            if n.extra.get("solidity_kind") == "constant"
+            n for n in self.nodes if n.extra.get("solidity_kind") == "constant"
         ]
         names = {c.name for c in constants}
         assert "MAX_SUPPLY" in names
@@ -365,12 +366,14 @@ class TestSolidityParsing:
     def test_finds_selective_imports(self):
         imports = [e for e in self.edges if e.kind == "IMPORTS_FROM"]
         targets = {e.target for e in imports}
-        assert "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol" in targets
+        assert (
+            "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol"
+            in targets
+        )
 
     def test_finds_state_variables(self):
         state_vars = [
-            n for n in self.nodes
-            if n.extra.get("solidity_kind") == "state_variable"
+            n for n in self.nodes if n.extra.get("solidity_kind") == "state_variable"
         ]
         names = {v.name for v in state_vars}
         assert "stakes" in names
@@ -384,7 +387,8 @@ class TestSolidityParsing:
 
     def test_state_variable_types(self):
         state_vars = {
-            n.name: n for n in self.nodes
+            n.name: n
+            for n in self.nodes
             if n.extra.get("solidity_kind") == "state_variable"
         }
         assert state_vars["totalStaked"].return_type == "uint256"
@@ -452,14 +456,16 @@ class TestSolidityParsing:
 
     def test_extracts_params(self):
         funcs = {
-            n.name: n for n in self.nodes
+            n.name: n
+            for n in self.nodes
             if n.kind == "Function" and n.parent_name == "RewardMath"
         }
         assert funcs["mulPrecise"].params == "(uint256 a, uint256 b)"
 
     def test_extracts_return_type(self):
         funcs = {
-            n.name: n for n in self.nodes
+            n.name: n
+            for n in self.nodes
             if n.kind == "Function" and n.parent_name == "RewardMath"
         }
         assert "uint256" in funcs["mulPrecise"].return_type

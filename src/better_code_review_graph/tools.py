@@ -33,41 +33,173 @@ from .incremental import (
 # These are kept in the graph (callees_of still shows them) but excluded
 # when doing reverse call tracing to reduce noise.
 _BUILTIN_CALL_NAMES: set[str] = {
-    "map", "filter", "reduce", "reduceRight", "forEach", "find", "findIndex",
-    "some", "every", "includes", "indexOf", "lastIndexOf",
-    "push", "pop", "shift", "unshift", "splice", "slice",
-    "concat", "join", "flat", "flatMap", "sort", "reverse", "fill",
-    "keys", "values", "entries", "from", "isArray", "of", "at",
-    "trim", "trimStart", "trimEnd", "split", "replace", "replaceAll",
-    "match", "matchAll", "search", "substring", "substr",
-    "toLowerCase", "toUpperCase", "startsWith", "endsWith",
-    "padStart", "padEnd", "repeat", "charAt", "charCodeAt",
-    "assign", "freeze", "defineProperty", "getOwnPropertyNames",
-    "hasOwnProperty", "create", "is", "fromEntries",
-    "log", "warn", "error", "info", "debug", "trace", "dir", "table",
-    "time", "timeEnd", "assert", "clear", "count",
-    "then", "catch", "finally", "resolve", "reject", "all", "allSettled", "race", "any",
-    "parse", "stringify",
-    "floor", "ceil", "round", "random", "max", "min", "abs", "pow", "sqrt",
-    "addEventListener", "removeEventListener", "querySelector", "querySelectorAll",
-    "getElementById", "createElement", "appendChild", "removeChild",
-    "setAttribute", "getAttribute", "preventDefault", "stopPropagation",
-    "setTimeout", "clearTimeout", "setInterval", "clearInterval",
-    "toString", "valueOf", "toJSON", "toISOString",
-    "getTime", "getFullYear", "now",
-    "isNaN", "parseInt", "parseFloat", "toFixed",
-    "encodeURIComponent", "decodeURIComponent",
-    "call", "apply", "bind", "next",
-    "emit", "on", "off", "once",
-    "pipe", "write", "read", "end", "close", "destroy",
-    "send", "status", "json", "redirect",
-    "set", "get", "delete", "has",
-    "findUnique", "findFirst", "findMany", "createMany",
-    "update", "updateMany", "deleteMany", "upsert",
-    "aggregate", "groupBy", "transaction",
-    "describe", "it", "test", "expect", "beforeEach", "afterEach",
-    "beforeAll", "afterAll", "mock", "spyOn",
-    "require", "fetch",
+    "map",
+    "filter",
+    "reduce",
+    "reduceRight",
+    "forEach",
+    "find",
+    "findIndex",
+    "some",
+    "every",
+    "includes",
+    "indexOf",
+    "lastIndexOf",
+    "push",
+    "pop",
+    "shift",
+    "unshift",
+    "splice",
+    "slice",
+    "concat",
+    "join",
+    "flat",
+    "flatMap",
+    "sort",
+    "reverse",
+    "fill",
+    "keys",
+    "values",
+    "entries",
+    "from",
+    "isArray",
+    "of",
+    "at",
+    "trim",
+    "trimStart",
+    "trimEnd",
+    "split",
+    "replace",
+    "replaceAll",
+    "match",
+    "matchAll",
+    "search",
+    "substring",
+    "substr",
+    "toLowerCase",
+    "toUpperCase",
+    "startsWith",
+    "endsWith",
+    "padStart",
+    "padEnd",
+    "repeat",
+    "charAt",
+    "charCodeAt",
+    "assign",
+    "freeze",
+    "defineProperty",
+    "getOwnPropertyNames",
+    "hasOwnProperty",
+    "create",
+    "is",
+    "fromEntries",
+    "log",
+    "warn",
+    "error",
+    "info",
+    "debug",
+    "trace",
+    "dir",
+    "table",
+    "time",
+    "timeEnd",
+    "assert",
+    "clear",
+    "count",
+    "then",
+    "catch",
+    "finally",
+    "resolve",
+    "reject",
+    "all",
+    "allSettled",
+    "race",
+    "any",
+    "parse",
+    "stringify",
+    "floor",
+    "ceil",
+    "round",
+    "random",
+    "max",
+    "min",
+    "abs",
+    "pow",
+    "sqrt",
+    "addEventListener",
+    "removeEventListener",
+    "querySelector",
+    "querySelectorAll",
+    "getElementById",
+    "createElement",
+    "appendChild",
+    "removeChild",
+    "setAttribute",
+    "getAttribute",
+    "preventDefault",
+    "stopPropagation",
+    "setTimeout",
+    "clearTimeout",
+    "setInterval",
+    "clearInterval",
+    "toString",
+    "valueOf",
+    "toJSON",
+    "toISOString",
+    "getTime",
+    "getFullYear",
+    "now",
+    "isNaN",
+    "parseInt",
+    "parseFloat",
+    "toFixed",
+    "encodeURIComponent",
+    "decodeURIComponent",
+    "call",
+    "apply",
+    "bind",
+    "next",
+    "emit",
+    "on",
+    "off",
+    "once",
+    "pipe",
+    "write",
+    "read",
+    "end",
+    "close",
+    "destroy",
+    "send",
+    "status",
+    "json",
+    "redirect",
+    "set",
+    "get",
+    "delete",
+    "has",
+    "findUnique",
+    "findFirst",
+    "findMany",
+    "createMany",
+    "update",
+    "updateMany",
+    "deleteMany",
+    "upsert",
+    "aggregate",
+    "groupBy",
+    "transaction",
+    "describe",
+    "it",
+    "test",
+    "expect",
+    "beforeEach",
+    "afterEach",
+    "beforeAll",
+    "afterAll",
+    "mock",
+    "spyOn",
+    "require",
+    "fetch",
 }
 
 
@@ -80,10 +212,11 @@ def _validate_repo_root(path: Path) -> Path:
     """
     resolved = path.resolve()
     if not resolved.is_dir():
-        raise ValueError(
-            f"repo_root is not an existing directory: {resolved}"
-        )
-    if not (resolved / ".git").exists() and not (resolved / ".code-review-graph").exists():
+        raise ValueError(f"repo_root is not an existing directory: {resolved}")
+    if (
+        not (resolved / ".git").exists()
+        and not (resolved / ".code-review-graph").exists()
+    ):
         raise ValueError(
             f"repo_root does not look like a project root (no .git or "
             f".code-review-graph directory found): {resolved}"
@@ -269,12 +402,19 @@ def query_graph(
         # For callers_of, skip common builtins early (bare names only)
         # "Who calls .map()?" returns hundreds of useless hits.
         # Qualified names (e.g. "utils.py::map") bypass this filter.
-        if pattern == "callers_of" and target in _BUILTIN_CALL_NAMES and "::" not in target:
+        if (
+            pattern == "callers_of"
+            and target in _BUILTIN_CALL_NAMES
+            and "::" not in target
+        ):
             return {
-                "status": "ok", "pattern": pattern, "target": target,
+                "status": "ok",
+                "pattern": pattern,
+                "target": target,
                 "description": _QUERY_PATTERNS[pattern],
                 "summary": f"'{target}' is a common builtin — callers_of skipped to avoid noise.",
-                "results": [], "edges": [],
+                "results": [],
+                "edges": [],
             }
 
         # Resolve target - try as-is, then as absolute path, then search
@@ -339,7 +479,9 @@ def query_graph(
             abs_target = str(root / target) if node is None else node.file_path
             for e in store.get_edges_by_target(abs_target):
                 if e.kind == "IMPORTS_FROM":
-                    results.append({"importer": e.source_qualified, "file": e.file_path})
+                    results.append(
+                        {"importer": e.source_qualified, "file": e.file_path}
+                    )
                     edges_out.append(edge_to_dict(e))
 
         elif pattern == "children_of":
@@ -464,7 +606,7 @@ def get_review_context(
                             snippets[rel_path] = relevant_lines
                         else:
                             snippets[rel_path] = "\n".join(
-                                f"{i+1}: {line}" for i, line in enumerate(lines)
+                                f"{i + 1}: {line}" for i, line in enumerate(lines)
                             )
                     except (OSError, UnicodeDecodeError):
                         snippets[rel_path] = "(could not read file)"
@@ -493,9 +635,7 @@ def get_review_context(
         store.close()
 
 
-def _extract_relevant_lines(
-    lines: list[str], nodes: list, file_path: str
-) -> str:
+def _extract_relevant_lines(lines: list[str], nodes: list, file_path: str) -> str:
     """Extract only the lines relevant to changed nodes."""
     ranges = []
     for n in nodes:
@@ -506,7 +646,7 @@ def _extract_relevant_lines(
 
     if not ranges:
         # Show first N lines as fallback
-        return "\n".join(f"{i+1}: {line}" for i, line in enumerate(lines[:50]))
+        return "\n".join(f"{i + 1}: {line}" for i, line in enumerate(lines[:50]))
 
     # Merge overlapping ranges
     ranges.sort()
@@ -522,7 +662,7 @@ def _extract_relevant_lines(
         if parts:
             parts.append("...")
         for i in range(start, end):
-            parts.append(f"{i+1}: {lines[i]}")
+            parts.append(f"{i + 1}: {lines[i]}")
 
     return "\n".join(parts)
 
@@ -532,14 +672,13 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
     guidance_parts = []
 
     # Check for test coverage
-    changed_funcs = [
-        n for n in impact["changed_nodes"] if n.kind == "Function"
-    ]
+    changed_funcs = [n for n in impact["changed_nodes"] if n.kind == "Function"]
     test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
     tested_funcs = {e.source_qualified for e in test_edges}
 
     untested = [
-        f for f in changed_funcs
+        f
+        for f in changed_funcs
         if f.qualified_name not in tested_funcs and not f.is_test
     ]
     if untested:
@@ -556,7 +695,9 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
         )
 
     # Check for inheritance changes
-    inheritance_edges = [e for e in impact["edges"] if e.kind in ("INHERITS", "IMPLEMENTS")]
+    inheritance_edges = [
+        e for e in impact["edges"] if e.kind in ("INHERITS", "IMPLEMENTS")
+    ]
     if inheritance_edges:
         guidance_parts.append(
             f"- {len(inheritance_edges)} inheritance/implementation relationship(s) affected. "
@@ -572,7 +713,9 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
         )
 
     if not guidance_parts:
-        guidance_parts.append("- Changes appear well-contained with minimal blast radius.")
+        guidance_parts.append(
+            "- Changes appear well-contained with minimal blast radius."
+        )
 
     return "\n".join(guidance_parts)
 
@@ -650,9 +793,8 @@ def semantic_search_nodes(
             "status": "ok",
             "query": query,
             "search_mode": search_mode,
-            "summary": f"Found {len(results)} node(s) matching '{query}'" + (
-                f" (kind={kind})" if kind else ""
-            ),
+            "summary": f"Found {len(results)} node(s) matching '{query}'"
+            + (f" (kind={kind})" if kind else ""),
             "results": [node_to_dict(r) for r in results],
         }
     finally:
@@ -701,7 +843,9 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
             summary_parts.append("")
             summary_parts.append(f"Embeddings: {emb_count} nodes embedded")
             if not emb_store.available:
-                summary_parts.append("  (install sentence-transformers for semantic search)")
+                summary_parts.append(
+                    "  (install sentence-transformers for semantic search)"
+                )
         finally:
             emb_store.close()
 
@@ -775,6 +919,7 @@ def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
 # Tool 8: get_docs_section
 # ---------------------------------------------------------------------------
 
+
 def get_docs_section(section_name: str, repo_root: str | None = None) -> dict[str, Any]:
     """Return a specific section from the LLM-optimized reference.
 
@@ -822,14 +967,20 @@ def get_docs_section(section_name: str, repo_root: str | None = None) -> dict[st
                 }
 
     available = [
-        "usage", "review-delta", "review-pr", "commands",
-        "legal", "watch", "embeddings", "languages", "troubleshooting",
+        "usage",
+        "review-delta",
+        "review-pr",
+        "commands",
+        "legal",
+        "watch",
+        "embeddings",
+        "languages",
+        "troubleshooting",
     ]
     return {
         "status": "not_found",
         "error": (
-            f"Section '{section_name}' not found. "
-            f"Available: {', '.join(available)}"
+            f"Section '{section_name}' not found. Available: {', '.join(available)}"
         ),
     }
 
@@ -873,7 +1024,9 @@ def find_large_functions(
         results = []
         for n in nodes:
             d = node_to_dict(n)
-            d["line_count"] = (n.line_end - n.line_start + 1) if n.line_start and n.line_end else 0
+            d["line_count"] = (
+                (n.line_end - n.line_start + 1) if n.line_start and n.line_end else 0
+            )
             # Make file_path relative for readability
             try:
                 d["relative_path"] = str(Path(n.file_path).relative_to(root))

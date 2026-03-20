@@ -11,7 +11,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import tree_sitter_language_pack as tslp
 
@@ -30,10 +29,10 @@ class NodeInfo:
     line_start: int
     line_end: int
     language: str = ""
-    parent_name: Optional[str] = None  # enclosing class/module
-    params: Optional[str] = None
-    return_type: Optional[str] = None
-    modifiers: Optional[str] = None
+    parent_name: str | None = None  # enclosing class/module
+    params: str | None = None
+    return_type: str | None = None
+    modifiers: str | None = None
     is_test: bool = False
     extra: dict = field(default_factory=dict)
 
@@ -88,16 +87,22 @@ _CLASS_TYPES: dict[str, list[str]] = {
     "c": ["struct_specifier", "type_definition"],
     "cpp": ["class_specifier", "struct_specifier"],
     "csharp": [
-        "class_declaration", "interface_declaration",
-        "enum_declaration", "struct_declaration",
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+        "struct_declaration",
     ],
     "ruby": ["class", "module"],
     "kotlin": ["class_declaration", "object_declaration"],
     "swift": ["class_declaration", "struct_declaration", "protocol_declaration"],
     "php": ["class_declaration", "interface_declaration"],
     "solidity": [
-        "contract_declaration", "interface_declaration", "library_declaration",
-        "struct_declaration", "enum_declaration", "error_declaration",
+        "contract_declaration",
+        "interface_declaration",
+        "library_declaration",
+        "struct_declaration",
+        "enum_declaration",
+        "error_declaration",
         "user_defined_type_definition",
     ],
 }
@@ -122,8 +127,11 @@ _FUNCTION_TYPES: dict[str, list[str]] = {
     # as Function nodes (public ones auto-generate getters) and distinguished
     # via extra["solidity_kind"].
     "solidity": [
-        "function_definition", "constructor_definition", "modifier_definition",
-        "event_definition", "fallback_receive_definition",
+        "function_definition",
+        "constructor_definition",
+        "modifier_definition",
+        "event_definition",
+        "fallback_receive_definition",
     ],
 }
 
@@ -209,7 +217,7 @@ class CodeParser:
 
     def __init__(self) -> None:
         self._parsers: dict[str, object] = {}
-        self._module_file_cache: dict[str, Optional[str]] = {}
+        self._module_file_cache: dict[str, str | None] = {}
 
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
@@ -219,7 +227,7 @@ class CodeParser:
                 return None
         return self._parsers[language]
 
-    def detect_language(self, path: Path) -> Optional[str]:
+    def detect_language(self, path: Path) -> str | None:
         return EXTENSION_TO_LANGUAGE.get(path.suffix.lower())
 
     def parse_file(self, path: Path) -> tuple[list[NodeInfo], list[EdgeInfo]]:
@@ -230,7 +238,9 @@ class CodeParser:
             return [], []
         return self.parse_bytes(path, source)
 
-    def parse_bytes(self, path: Path, source: bytes) -> tuple[list[NodeInfo], list[EdgeInfo]]:
+    def parse_bytes(
+        self, path: Path, source: bytes
+    ) -> tuple[list[NodeInfo], list[EdgeInfo]]:
         """Parse pre-read bytes and return extracted nodes and edges.
 
         This avoids re-reading the file from disk, eliminating TOCTOU gaps
@@ -250,24 +260,34 @@ class CodeParser:
         file_path_str = str(path)
 
         # File node
-        nodes.append(NodeInfo(
-            kind="File",
-            name=file_path_str,
-            file_path=file_path_str,
-            line_start=1,
-            line_end=source.count(b"\n") + 1,
-            language=language,
-        ))
+        nodes.append(
+            NodeInfo(
+                kind="File",
+                name=file_path_str,
+                file_path=file_path_str,
+                line_start=1,
+                line_end=source.count(b"\n") + 1,
+                language=language,
+            )
+        )
 
         # Pre-scan for import mappings and defined names
         import_map, defined_names = self._collect_file_scope(
-            tree.root_node, language, source,
+            tree.root_node,
+            language,
+            source,
         )
 
         # Walk the tree
         self._extract_from_tree(
-            tree.root_node, source, language, file_path_str, nodes, edges,
-            import_map=import_map, defined_names=defined_names,
+            tree.root_node,
+            source,
+            language,
+            file_path_str,
+            nodes,
+            edges,
+            import_map=import_map,
+            defined_names=defined_names,
         )
 
         return nodes, edges
@@ -280,10 +300,10 @@ class CodeParser:
         file_path: str,
         nodes: list[NodeInfo],
         edges: list[EdgeInfo],
-        enclosing_class: Optional[str] = None,
-        enclosing_func: Optional[str] = None,
-        import_map: Optional[dict[str, str]] = None,
-        defined_names: Optional[set[str]] = None,
+        enclosing_class: str | None = None,
+        enclosing_func: str | None = None,
+        import_map: dict[str, str] | None = None,
+        defined_names: set[str] | None = None,
     ) -> None:
         """Recursively walk the AST and extract nodes/edges."""
         class_types = set(_CLASS_TYPES.get(language, []))
@@ -310,30 +330,41 @@ class CodeParser:
                     nodes.append(node)
 
                     # CONTAINS edge
-                    edges.append(EdgeInfo(
-                        kind="CONTAINS",
-                        source=file_path,
-                        target=self._qualify(name, file_path, enclosing_class),
-                        file_path=file_path,
-                        line=child.start_point[0] + 1,
-                    ))
+                    edges.append(
+                        EdgeInfo(
+                            kind="CONTAINS",
+                            source=file_path,
+                            target=self._qualify(name, file_path, enclosing_class),
+                            file_path=file_path,
+                            line=child.start_point[0] + 1,
+                        )
+                    )
 
                     # Inheritance edges
                     bases = self._get_bases(child, language, source)
                     for base in bases:
-                        edges.append(EdgeInfo(
-                            kind="INHERITS",
-                            source=self._qualify(name, file_path, enclosing_class),
-                            target=base,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        ))
+                        edges.append(
+                            EdgeInfo(
+                                kind="INHERITS",
+                                source=self._qualify(name, file_path, enclosing_class),
+                                target=base,
+                                file_path=file_path,
+                                line=child.start_point[0] + 1,
+                            )
+                        )
 
                     # Recurse into class body
                     self._extract_from_tree(
-                        child, source, language, file_path, nodes, edges,
-                        enclosing_class=name, enclosing_func=None,
-                        import_map=import_map, defined_names=defined_names,
+                        child,
+                        source,
+                        language,
+                        file_path,
+                        nodes,
+                        edges,
+                        enclosing_class=name,
+                        enclosing_func=None,
+                        import_map=import_map,
+                        defined_names=defined_names,
                     )
                     continue
 
@@ -367,13 +398,15 @@ class CodeParser:
                         if enclosing_class
                         else file_path
                     )
-                    edges.append(EdgeInfo(
-                        kind="CONTAINS",
-                        source=container,
-                        target=qualified,
-                        file_path=file_path,
-                        line=child.start_point[0] + 1,
-                    ))
+                    edges.append(
+                        EdgeInfo(
+                            kind="CONTAINS",
+                            source=container,
+                            target=qualified,
+                            file_path=file_path,
+                            line=child.start_point[0] + 1,
+                        )
+                    )
 
                     # Solidity: modifier invocations on functions → CALLS edges
                     if language == "solidity":
@@ -381,22 +414,32 @@ class CodeParser:
                             if sub.type == "modifier_invocation":
                                 for ident in sub.children:
                                     if ident.type == "identifier":
-                                        edges.append(EdgeInfo(
-                                            kind="CALLS",
-                                            source=qualified,
-                                            target=ident.text.decode(
-                                                "utf-8", errors="replace",
-                                            ),
-                                            file_path=file_path,
-                                            line=sub.start_point[0] + 1,
-                                        ))
+                                        edges.append(
+                                            EdgeInfo(
+                                                kind="CALLS",
+                                                source=qualified,
+                                                target=ident.text.decode(
+                                                    "utf-8",
+                                                    errors="replace",
+                                                ),
+                                                file_path=file_path,
+                                                line=sub.start_point[0] + 1,
+                                            )
+                                        )
                                         break
 
                     # Recurse to find calls inside the function
                     self._extract_from_tree(
-                        child, source, language, file_path, nodes, edges,
-                        enclosing_class=enclosing_class, enclosing_func=name,
-                        import_map=import_map, defined_names=defined_names,
+                        child,
+                        source,
+                        language,
+                        file_path,
+                        nodes,
+                        edges,
+                        enclosing_class=enclosing_class,
+                        enclosing_func=name,
+                        import_map=import_map,
+                        defined_names=defined_names,
                     )
                     continue
 
@@ -404,13 +447,15 @@ class CodeParser:
             if node_type in import_types:
                 imports = self._extract_import(child, language, source)
                 for imp_target in imports:
-                    edges.append(EdgeInfo(
-                        kind="IMPORTS_FROM",
-                        source=file_path,
-                        target=imp_target,
-                        file_path=file_path,
-                        line=child.start_point[0] + 1,
-                    ))
+                    edges.append(
+                        EdgeInfo(
+                            kind="IMPORTS_FROM",
+                            source=file_path,
+                            target=imp_target,
+                            file_path=file_path,
+                            line=child.start_point[0] + 1,
+                        )
+                    )
                 continue
 
             # --- Calls ---
@@ -419,16 +464,21 @@ class CodeParser:
                 if call_name and enclosing_func:
                     caller = self._qualify(enclosing_func, file_path, enclosing_class)
                     target = self._resolve_call_target(
-                        call_name, file_path, language,
-                        import_map or {}, defined_names or set(),
+                        call_name,
+                        file_path,
+                        language,
+                        import_map or {},
+                        defined_names or set(),
                     )
-                    edges.append(EdgeInfo(
-                        kind="CALLS",
-                        source=caller,
-                        target=target,
-                        file_path=file_path,
-                        line=child.start_point[0] + 1,
-                    ))
+                    edges.append(
+                        EdgeInfo(
+                            kind="CALLS",
+                            source=caller,
+                            target=target,
+                            file_path=file_path,
+                            line=child.start_point[0] + 1,
+                        )
+                    )
 
             # --- Solidity-specific constructs ---
             if language == "solidity":
@@ -439,15 +489,21 @@ class CodeParser:
                             for ident in sub.children:
                                 if ident.type == "identifier":
                                     caller = self._qualify(
-                                        enclosing_func, file_path, enclosing_class,
+                                        enclosing_func,
+                                        file_path,
+                                        enclosing_class,
                                     )
-                                    edges.append(EdgeInfo(
-                                        kind="CALLS",
-                                        source=caller,
-                                        target=ident.text.decode("utf-8", errors="replace"),
-                                        file_path=file_path,
-                                        line=child.start_point[0] + 1,
-                                    ))
+                                    edges.append(
+                                        EdgeInfo(
+                                            kind="CALLS",
+                                            source=caller,
+                                            target=ident.text.decode(
+                                                "utf-8", errors="replace"
+                                            ),
+                                            file_path=file_path,
+                                            line=child.start_point[0] + 1,
+                                        )
+                                    )
 
                 # State variable declarations → Function nodes (public ones
                 # auto-generate getters, and all are critical for reviews)
@@ -467,30 +523,36 @@ class CodeParser:
                             var_mutability = sub.type
                     if var_name:
                         qualified = self._qualify(var_name, file_path, enclosing_class)
-                        nodes.append(NodeInfo(
-                            kind="Function",
-                            name=var_name,
-                            file_path=file_path,
-                            line_start=child.start_point[0] + 1,
-                            line_end=child.end_point[0] + 1,
-                            language=language,
-                            parent_name=enclosing_class,
-                            return_type=var_type,
-                            modifiers=var_visibility,
-                            extra={
-                                "solidity_kind": "state_variable",
-                                "mutability": var_mutability,
-                            },
-                        ))
-                        edges.append(EdgeInfo(
-                            kind="CONTAINS",
-                            source=self._qualify(
-                                enclosing_class, file_path, None,
-                            ),
-                            target=qualified,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        ))
+                        nodes.append(
+                            NodeInfo(
+                                kind="Function",
+                                name=var_name,
+                                file_path=file_path,
+                                line_start=child.start_point[0] + 1,
+                                line_end=child.end_point[0] + 1,
+                                language=language,
+                                parent_name=enclosing_class,
+                                return_type=var_type,
+                                modifiers=var_visibility,
+                                extra={
+                                    "solidity_kind": "state_variable",
+                                    "mutability": var_mutability,
+                                },
+                            )
+                        )
+                        edges.append(
+                            EdgeInfo(
+                                kind="CONTAINS",
+                                source=self._qualify(
+                                    enclosing_class,
+                                    file_path,
+                                    None,
+                                ),
+                                target=qualified,
+                                file_path=file_path,
+                                line=child.start_point[0] + 1,
+                            )
+                        )
                         continue
 
                 # File-level and contract-level constant declarations
@@ -504,31 +566,37 @@ class CodeParser:
                             var_type = sub.text.decode("utf-8", errors="replace")
                     if var_name:
                         qualified = self._qualify(
-                            var_name, file_path, enclosing_class,
+                            var_name,
+                            file_path,
+                            enclosing_class,
                         )
-                        nodes.append(NodeInfo(
-                            kind="Function",
-                            name=var_name,
-                            file_path=file_path,
-                            line_start=child.start_point[0] + 1,
-                            line_end=child.end_point[0] + 1,
-                            language=language,
-                            parent_name=enclosing_class,
-                            return_type=var_type,
-                            extra={"solidity_kind": "constant"},
-                        ))
+                        nodes.append(
+                            NodeInfo(
+                                kind="Function",
+                                name=var_name,
+                                file_path=file_path,
+                                line_start=child.start_point[0] + 1,
+                                line_end=child.end_point[0] + 1,
+                                language=language,
+                                parent_name=enclosing_class,
+                                return_type=var_type,
+                                extra={"solidity_kind": "constant"},
+                            )
+                        )
                         container = (
                             self._qualify(enclosing_class, file_path, None)
                             if enclosing_class
                             else file_path
                         )
-                        edges.append(EdgeInfo(
-                            kind="CONTAINS",
-                            source=container,
-                            target=qualified,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        ))
+                        edges.append(
+                            EdgeInfo(
+                                kind="CONTAINS",
+                                source=container,
+                                target=qualified,
+                                file_path=file_path,
+                                line=child.start_point[0] + 1,
+                            )
+                        )
                         continue
 
                 # Using directives: using LibName for Type → DEPENDS_ON edge
@@ -539,7 +607,8 @@ class CodeParser:
                             for ident in sub.children:
                                 if ident.type == "identifier":
                                     lib_name = ident.text.decode(
-                                        "utf-8", errors="replace",
+                                        "utf-8",
+                                        errors="replace",
                                     )
                     if lib_name:
                         source_name = (
@@ -547,24 +616,36 @@ class CodeParser:
                             if enclosing_class
                             else file_path
                         )
-                        edges.append(EdgeInfo(
-                            kind="DEPENDS_ON",
-                            source=source_name,
-                            target=lib_name,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        ))
+                        edges.append(
+                            EdgeInfo(
+                                kind="DEPENDS_ON",
+                                source=source_name,
+                                target=lib_name,
+                                file_path=file_path,
+                                line=child.start_point[0] + 1,
+                            )
+                        )
                     continue
 
             # Recurse for other node types
             self._extract_from_tree(
-                child, source, language, file_path, nodes, edges,
-                enclosing_class=enclosing_class, enclosing_func=enclosing_func,
-                import_map=import_map, defined_names=defined_names,
+                child,
+                source,
+                language,
+                file_path,
+                nodes,
+                edges,
+                enclosing_class=enclosing_class,
+                enclosing_func=enclosing_func,
+                import_map=import_map,
+                defined_names=defined_names,
             )
 
     def _collect_file_scope(
-        self, root, language: str, source: bytes,
+        self,
+        root,
+        language: str,
+        source: bytes,
     ) -> tuple[dict[str, str], set[str]]:
         """Pre-scan top-level AST to collect import mappings and defined names.
 
@@ -598,8 +679,11 @@ class CodeParser:
 
             # Collect defined function/class names
             if target_type in func_types or target_type in class_types:
-                name = self._get_name(target, language,
-                                      "class" if target_type in class_types else "function")
+                name = self._get_name(
+                    target,
+                    language,
+                    "class" if target_type in class_types else "function",
+                )
                 if name:
                     defined_names.add(name)
 
@@ -610,7 +694,11 @@ class CodeParser:
         return import_map, defined_names
 
     def _collect_import_names(
-        self, node, language: str, source: bytes, import_map: dict[str, str],
+        self,
+        node,
+        language: str,
+        source: bytes,
+        import_map: dict[str, str],
     ) -> None:
         """Extract imported names and their source modules into import_map."""
         if language == "python":
@@ -650,7 +738,10 @@ class CodeParser:
                         self._collect_js_import_names(child, module, import_map)
 
     def _collect_js_import_names(
-        self, clause_node, module: str, import_map: dict[str, str],
+        self,
+        clause_node,
+        module: str,
+        import_map: dict[str, str],
     ) -> None:
         """Walk JS/TS import_clause to extract named and default imports."""
         for child in clause_node.children:
@@ -671,8 +762,11 @@ class CodeParser:
                             import_map[names[-1]] = module
 
     def _resolve_module_to_file(
-        self, module: str, file_path: str, language: str,
-    ) -> Optional[str]:
+        self,
+        module: str,
+        file_path: str,
+        language: str,
+    ) -> str | None:
         """Resolve a module/import path to an absolute file path.
 
         Uses self._module_file_cache to avoid repeated filesystem lookups.
@@ -687,8 +781,11 @@ class CodeParser:
         return resolved
 
     def _do_resolve_module(
-        self, module: str, file_path: str, language: str,
-    ) -> Optional[str]:
+        self,
+        module: str,
+        file_path: str,
+        language: str,
+    ) -> str | None:
         """Language-aware module-to-file resolution."""
         caller_dir = Path(file_path).parent
 
@@ -741,19 +838,21 @@ class CodeParser:
             return self._qualify(call_name, file_path, None)
         if call_name in import_map:
             resolved = self._resolve_module_to_file(
-                import_map[call_name], file_path, language,
+                import_map[call_name],
+                file_path,
+                language,
             )
             if resolved:
                 return self._qualify(call_name, resolved, None)
         return call_name
 
-    def _qualify(self, name: str, file_path: str, enclosing_class: Optional[str]) -> str:
+    def _qualify(self, name: str, file_path: str, enclosing_class: str | None) -> str:
         """Create a qualified name: file_path::ClassName.name or file_path::name."""
         if enclosing_class:
             return f"{file_path}::{enclosing_class}.{name}"
         return f"{file_path}::{name}"
 
-    def _get_name(self, node, language: str, kind: str) -> Optional[str]:
+    def _get_name(self, node, language: str, kind: str) -> str | None:
         """Extract the name from a class/function definition node."""
         # Solidity: constructor and receive/fallback have no identifier child
         if language == "solidity":
@@ -774,8 +873,12 @@ class CodeParser:
         # Most languages use a 'name' child
         for child in node.children:
             if child.type in (
-                "identifier", "name", "type_identifier", "property_identifier",
-                "simple_identifier", "constant",
+                "identifier",
+                "name",
+                "type_identifier",
+                "property_identifier",
+                "simple_identifier",
+                "constant",
             ):
                 return child.text.decode("utf-8", errors="replace")
         # For Go type declarations, look for type_spec
@@ -785,7 +888,7 @@ class CodeParser:
                     return self._get_name(child, language, kind)
         return None
 
-    def _get_params(self, node, language: str, source: bytes) -> Optional[str]:
+    def _get_params(self, node, language: str, source: bytes) -> str | None:
         """Extract parameter list as a string."""
         for child in node.children:
             if child.type in ("parameters", "formal_parameters", "parameter_list"):
@@ -801,10 +904,15 @@ class CodeParser:
                 return f"({', '.join(params)})"
         return None
 
-    def _get_return_type(self, node, language: str, source: bytes) -> Optional[str]:
+    def _get_return_type(self, node, language: str, source: bytes) -> str | None:
         """Extract return type annotation if present."""
         for child in node.children:
-            if child.type in ("type", "return_type", "type_annotation", "return_type_definition"):
+            if child.type in (
+                "type",
+                "return_type",
+                "type_annotation",
+                "return_type_definition",
+            ):
                 return child.text.decode("utf-8", errors="replace")
         # Python: look for -> annotation
         if language == "python":
@@ -826,8 +934,12 @@ class CodeParser:
             # Look for superclass/interfaces in extends/implements clauses
             for child in node.children:
                 if child.type in (
-                    "superclass", "super_interfaces", "extends_type",
-                    "implements_type", "type_identifier", "supertype",
+                    "superclass",
+                    "super_interfaces",
+                    "extends_type",
+                    "implements_type",
+                    "type_identifier",
+                    "supertype",
                     "delegation_specifier",
                 ):
                     text = child.text.decode("utf-8", errors="replace")
@@ -844,7 +956,11 @@ class CodeParser:
             for child in node.children:
                 if child.type in ("extends_clause", "implements_clause"):
                     for sub in child.children:
-                        if sub.type in ("identifier", "type_identifier", "nested_identifier"):
+                        if sub.type in (
+                            "identifier",
+                            "type_identifier",
+                            "nested_identifier",
+                        ):
                             bases.append(sub.text.decode("utf-8", errors="replace"))
         elif language == "solidity":
             # contract Foo is Bar, Baz { ... }
@@ -854,7 +970,9 @@ class CodeParser:
                         if sub.type == "user_defined_type":
                             for ident in sub.children:
                                 if ident.type == "identifier":
-                                    bases.append(ident.text.decode("utf-8", errors="replace"))
+                                    bases.append(
+                                        ident.text.decode("utf-8", errors="replace")
+                                    )
         elif language == "go":
             # Embedded structs / interface composition
             for child in node.children:
@@ -865,7 +983,9 @@ class CodeParser:
                                 if field_node.type == "field_declaration_list":
                                     for f in field_node.children:
                                         if f.type == "type_identifier":
-                                            bases.append(f.text.decode("utf-8", errors="replace"))
+                                            bases.append(
+                                                f.text.decode("utf-8", errors="replace")
+                                            )
         return bases
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
@@ -911,7 +1031,7 @@ class CodeParser:
             # #include <header> or #include "header"
             for child in node.children:
                 if child.type in ("system_lib_string", "string_literal"):
-                    val = child.text.decode("utf-8", errors="replace").strip("<>\"")
+                    val = child.text.decode("utf-8", errors="replace").strip('<>"')
                     imports.append(val)
         elif language in ("java", "csharp"):
             # import/using package.Class
@@ -937,7 +1057,7 @@ class CodeParser:
 
         return imports
 
-    def _get_call_name(self, node, language: str, source: bytes) -> Optional[str]:
+    def _get_call_name(self, node, language: str, source: bytes) -> str | None:
         """Extract the function/method name being called."""
         if not node.children:
             return None
@@ -954,14 +1074,18 @@ class CodeParser:
 
         # Method call: obj.method(args)
         member_types = (
-            "attribute", "member_expression",
-            "field_expression", "selector_expression",
+            "attribute",
+            "member_expression",
+            "field_expression",
+            "selector_expression",
         )
         if first.type in member_types:
             # Get the rightmost identifier (the method name)
             for child in reversed(first.children):
                 if child.type in (
-                    "identifier", "property_identifier", "field_identifier",
+                    "identifier",
+                    "property_identifier",
+                    "field_identifier",
                     "field_name",
                 ):
                     return child.text.decode("utf-8", errors="replace")

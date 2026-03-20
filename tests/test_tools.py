@@ -3,13 +3,8 @@
 import tempfile
 from pathlib import Path
 
-from code_review_graph.graph import GraphStore
-from code_review_graph.parser import NodeInfo, EdgeInfo
-from code_review_graph.tools import (
-    list_graph_stats,
-    query_graph,
-    semantic_search_nodes,
-)
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 class TestTools:
@@ -25,48 +20,98 @@ class TestTools:
     def _seed_data(self):
         """Seed the store with test data."""
         # File nodes
-        self.store.upsert_node(NodeInfo(
-            kind="File", name="/repo/auth.py", file_path="/repo/auth.py",
-            line_start=1, line_end=50, language="python",
-        ))
-        self.store.upsert_node(NodeInfo(
-            kind="File", name="/repo/main.py", file_path="/repo/main.py",
-            line_start=1, line_end=30, language="python",
-        ))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="File",
+                name="/repo/auth.py",
+                file_path="/repo/auth.py",
+                line_start=1,
+                line_end=50,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="File",
+                name="/repo/main.py",
+                file_path="/repo/main.py",
+                line_start=1,
+                line_end=30,
+                language="python",
+            )
+        )
         # Class
-        self.store.upsert_node(NodeInfo(
-            kind="Class", name="AuthService", file_path="/repo/auth.py",
-            line_start=5, line_end=40, language="python",
-        ))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Class",
+                name="AuthService",
+                file_path="/repo/auth.py",
+                line_start=5,
+                line_end=40,
+                language="python",
+            )
+        )
         # Functions
-        self.store.upsert_node(NodeInfo(
-            kind="Function", name="login", file_path="/repo/auth.py",
-            line_start=10, line_end=20, language="python",
-            parent_name="AuthService",
-        ))
-        self.store.upsert_node(NodeInfo(
-            kind="Function", name="process", file_path="/repo/main.py",
-            line_start=5, line_end=15, language="python",
-        ))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="login",
+                file_path="/repo/auth.py",
+                line_start=10,
+                line_end=20,
+                language="python",
+                parent_name="AuthService",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="process",
+                file_path="/repo/main.py",
+                line_start=5,
+                line_end=15,
+                language="python",
+            )
+        )
         # Test
-        self.store.upsert_node(NodeInfo(
-            kind="Test", name="test_login", file_path="/repo/test_auth.py",
-            line_start=1, line_end=10, language="python", is_test=True,
-        ))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Test",
+                name="test_login",
+                file_path="/repo/test_auth.py",
+                line_start=1,
+                line_end=10,
+                language="python",
+                is_test=True,
+            )
+        )
 
         # Edges
-        self.store.upsert_edge(EdgeInfo(
-            kind="CONTAINS", source="/repo/auth.py",
-            target="/repo/auth.py::AuthService", file_path="/repo/auth.py",
-        ))
-        self.store.upsert_edge(EdgeInfo(
-            kind="CONTAINS", source="/repo/auth.py::AuthService",
-            target="/repo/auth.py::AuthService.login", file_path="/repo/auth.py",
-        ))
-        self.store.upsert_edge(EdgeInfo(
-            kind="CALLS", source="/repo/main.py::process",
-            target="/repo/auth.py::AuthService.login", file_path="/repo/main.py", line=10,
-        ))
+        self.store.upsert_edge(
+            EdgeInfo(
+                kind="CONTAINS",
+                source="/repo/auth.py",
+                target="/repo/auth.py::AuthService",
+                file_path="/repo/auth.py",
+            )
+        )
+        self.store.upsert_edge(
+            EdgeInfo(
+                kind="CONTAINS",
+                source="/repo/auth.py::AuthService",
+                target="/repo/auth.py::AuthService.login",
+                file_path="/repo/auth.py",
+            )
+        )
+        self.store.upsert_edge(
+            EdgeInfo(
+                kind="CALLS",
+                source="/repo/main.py::process",
+                target="/repo/auth.py::AuthService.login",
+                file_path="/repo/main.py",
+                line=10,
+            )
+        )
         self.store.commit()
 
     def test_search_nodes(self):
@@ -78,7 +123,6 @@ class TestTools:
     def test_search_nodes_by_kind(self):
         results = self.store.search_nodes("auth")
         # Should find both AuthService class and auth.py file
-        kinds = {r.kind for r in results}
         assert len(results) >= 1
 
     def test_stats(self):
@@ -91,10 +135,11 @@ class TestTools:
     def test_impact_from_auth(self):
         result = self.store.get_impact_radius(["/repo/auth.py"], max_depth=2)
         # Changing auth.py should impact main.py (which calls login)
-        impacted_files = result["impacted_files"]
         impacted_qns = {n.qualified_name for n in result["impacted_nodes"]}
         # process() in main.py calls login(), so it should be impacted
-        assert "/repo/main.py::process" in impacted_qns or "/repo/main.py" in impacted_qns
+        assert (
+            "/repo/main.py::process" in impacted_qns or "/repo/main.py" in impacted_qns
+        )
 
     def test_query_children_of(self):
         edges = self.store.get_edges_by_source("/repo/auth.py")

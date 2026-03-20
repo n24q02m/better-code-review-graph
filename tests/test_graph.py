@@ -3,8 +3,8 @@
 import tempfile
 from pathlib import Path
 
-from code_review_graph.graph import GraphStore, GraphStats
-from code_review_graph.parser import NodeInfo, EdgeInfo
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 class TestGraphStore:
@@ -18,22 +18,36 @@ class TestGraphStore:
 
     def _make_file_node(self, path="/test/file.py"):
         return NodeInfo(
-            kind="File", name=path, file_path=path,
-            line_start=1, line_end=100, language="python",
+            kind="File",
+            name=path,
+            file_path=path,
+            line_start=1,
+            line_end=100,
+            language="python",
         )
 
-    def _make_func_node(self, name="my_func", path="/test/file.py", parent=None, is_test=False):
+    def _make_func_node(
+        self, name="my_func", path="/test/file.py", parent=None, is_test=False
+    ):
         return NodeInfo(
             kind="Test" if is_test else "Function",
-            name=name, file_path=path,
-            line_start=10, line_end=20, language="python",
-            parent_name=parent, is_test=is_test,
+            name=name,
+            file_path=path,
+            line_start=10,
+            line_end=20,
+            language="python",
+            parent_name=parent,
+            is_test=is_test,
         )
 
     def _make_class_node(self, name="MyClass", path="/test/file.py"):
         return NodeInfo(
-            kind="Class", name=name, file_path=path,
-            line_start=5, line_end=50, language="python",
+            kind="Class",
+            name=name,
+            file_path=path,
+            line_start=5,
+            line_end=50,
+            language="python",
         )
 
     def test_upsert_and_get_node(self):
@@ -73,7 +87,7 @@ class TestGraphStore:
             file_path="/test/file.py",
             line=15,
         )
-        eid = self.store.upsert_edge(edge)
+        self.store.upsert_edge(edge)
         self.store.commit()
 
         edges = self.store.get_edges_by_source("/test/file.py::func_a")
@@ -98,8 +112,10 @@ class TestGraphStore:
         nodes = [self._make_file_node(), self._make_func_node()]
         edges = [
             EdgeInfo(
-                kind="CONTAINS", source="/test/file.py",
-                target="/test/file.py::my_func", file_path="/test/file.py",
+                kind="CONTAINS",
+                source="/test/file.py",
+                target="/test/file.py::my_func",
+                file_path="/test/file.py",
             )
         ]
         self.store.store_file_nodes_edges("/test/file.py", nodes, edges)
@@ -123,10 +139,14 @@ class TestGraphStore:
         self.store.upsert_node(self._make_file_node())
         self.store.upsert_node(self._make_func_node())
         self.store.upsert_node(self._make_class_node())
-        self.store.upsert_edge(EdgeInfo(
-            kind="CONTAINS", source="/test/file.py",
-            target="/test/file.py::my_func", file_path="/test/file.py",
-        ))
+        self.store.upsert_edge(
+            EdgeInfo(
+                kind="CONTAINS",
+                source="/test/file.py",
+                target="/test/file.py::my_func",
+                file_path="/test/file.py",
+            )
+        )
         self.store.commit()
 
         stats = self.store.get_stats()
@@ -143,10 +163,15 @@ class TestGraphStore:
         self.store.upsert_node(self._make_func_node("func_a", "/a.py"))
         self.store.upsert_node(self._make_file_node("/b.py"))
         self.store.upsert_node(self._make_func_node("func_b", "/b.py"))
-        self.store.upsert_edge(EdgeInfo(
-            kind="CALLS", source="/a.py::func_a",
-            target="/b.py::func_b", file_path="/a.py", line=10,
-        ))
+        self.store.upsert_edge(
+            EdgeInfo(
+                kind="CALLS",
+                source="/a.py::func_a",
+                target="/b.py::func_b",
+                file_path="/a.py",
+                line=10,
+            )
+        )
         self.store.commit()
 
         result = self.store.get_impact_radius(["/a.py"], max_depth=2)
@@ -158,12 +183,18 @@ class TestGraphStore:
     def test_upsert_edge_preserves_multiple_call_sites(self):
         """Multiple CALLS edges to the same target from the same source on different lines."""
         edge1 = EdgeInfo(
-            kind="CALLS", source="/test/file.py::caller",
-            target="/test/file.py::helper", file_path="/test/file.py", line=10,
+            kind="CALLS",
+            source="/test/file.py::caller",
+            target="/test/file.py::helper",
+            file_path="/test/file.py",
+            line=10,
         )
         edge2 = EdgeInfo(
-            kind="CALLS", source="/test/file.py::caller",
-            target="/test/file.py::helper", file_path="/test/file.py", line=20,
+            kind="CALLS",
+            source="/test/file.py::caller",
+            target="/test/file.py::helper",
+            file_path="/test/file.py",
+            line=20,
         )
         self.store.upsert_edge(edge1)
         self.store.upsert_edge(edge2)

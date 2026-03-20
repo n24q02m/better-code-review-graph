@@ -2,14 +2,14 @@
 
 from unittest.mock import patch
 
-from code_review_graph.embeddings import (
+from better_code_review_graph.embeddings import (
     EmbeddingStore,
     _cosine_similarity,
     _decode_vector,
     _encode_vector,
     _node_to_text,
 )
-from code_review_graph.graph import GraphNode
+from better_code_review_graph.graph import GraphNode
 
 
 class TestVectorEncoding:
@@ -18,7 +18,7 @@ class TestVectorEncoding:
         blob = _encode_vector(original)
         decoded = _decode_vector(blob)
         assert len(decoded) == len(original)
-        for a, b in zip(original, decoded):
+        for a, b in zip(original, decoded, strict=True):
             assert abs(a - b) < 1e-5
 
     def test_empty_vector(self):
@@ -60,13 +60,22 @@ class TestCosineSimilarity:
 
 class TestNodeToText:
     def _make_node(self, **kwargs):
-        defaults = dict(
-            id=1, kind="Function", name="my_func",
-            qualified_name="file.py::my_func", file_path="file.py",
-            line_start=1, line_end=10, language="python",
-            parent_name=None, params=None, return_type=None,
-            is_test=False, file_hash=None, extra={},
-        )
+        defaults = {
+            "id": 1,
+            "kind": "Function",
+            "name": "my_func",
+            "qualified_name": "file.py::my_func",
+            "file_path": "file.py",
+            "line_start": 1,
+            "line_end": 10,
+            "language": "python",
+            "parent_name": None,
+            "params": None,
+            "return_type": None,
+            "is_test": False,
+            "file_hash": None,
+            "extra": {},
+        }
         defaults.update(kwargs)
         return GraphNode(**defaults)
 
@@ -98,21 +107,27 @@ class TestNodeToText:
 class TestEmbeddingStore:
     def test_store_initializes(self, tmp_path):
         db = tmp_path / "embeddings.db"
-        with patch("code_review_graph.embeddings.get_provider", return_value=None):
+        with patch(
+            "better_code_review_graph.embeddings.get_provider", return_value=None
+        ):
             store = EmbeddingStore(db)
             assert store.count() == 0
             store.close()
 
     def test_count_empty(self, tmp_path):
         db = tmp_path / "embeddings.db"
-        with patch("code_review_graph.embeddings.get_provider", return_value=None):
+        with patch(
+            "better_code_review_graph.embeddings.get_provider", return_value=None
+        ):
             store = EmbeddingStore(db)
             assert store.count() == 0
             store.close()
 
     def test_embed_nodes_returns_zero_when_unavailable(self, tmp_path):
         db = tmp_path / "embeddings.db"
-        with patch("code_review_graph.embeddings.get_provider", return_value=None):
+        with patch(
+            "better_code_review_graph.embeddings.get_provider", return_value=None
+        ):
             store = EmbeddingStore(db)
             result = store.embed_nodes([])
             assert result == 0
@@ -120,7 +135,9 @@ class TestEmbeddingStore:
 
     def test_search_returns_empty_when_unavailable(self, tmp_path):
         db = tmp_path / "embeddings.db"
-        with patch("code_review_graph.embeddings.get_provider", return_value=None):
+        with patch(
+            "better_code_review_graph.embeddings.get_provider", return_value=None
+        ):
             store = EmbeddingStore(db)
             results = store.search("query")
             assert results == []
@@ -128,7 +145,9 @@ class TestEmbeddingStore:
 
     def test_remove_node(self, tmp_path):
         db = tmp_path / "embeddings.db"
-        with patch("code_review_graph.embeddings.get_provider", return_value=None):
+        with patch(
+            "better_code_review_graph.embeddings.get_provider", return_value=None
+        ):
             store = EmbeddingStore(db)
             # Should not raise even if node doesn't exist
             store.remove_node("nonexistent::func")

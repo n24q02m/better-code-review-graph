@@ -1,7 +1,7 @@
 """Sample Python file for testing the parser."""
 
 import os
-from pathlib import Path
+from pathlib import Path  # noqa: F401
 
 
 class BaseService:
@@ -41,8 +41,10 @@ def process_request(service: AuthService, token: str) -> dict:
 
 def _log_action(func):
     """Simple decorator."""
+
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
+
     return wrapper
 
 

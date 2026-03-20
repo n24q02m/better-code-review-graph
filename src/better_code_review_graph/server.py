@@ -6,8 +6,6 @@ Communicates via stdio (standard MCP transport).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastmcp import FastMCP
 
 from .tools import (
@@ -37,7 +35,7 @@ mcp = FastMCP(
 @mcp.tool()
 def build_or_update_graph_tool(
     full_rebuild: bool = False,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
     base: str = "HEAD~1",
 ) -> dict:
     """Build or incrementally update the code knowledge graph.
@@ -58,9 +56,9 @@ def build_or_update_graph_tool(
 
 @mcp.tool()
 def get_impact_radius_tool(
-    changed_files: Optional[list[str]] = None,
+    changed_files: list[str] | None = None,
     max_depth: int = 2,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
     base: str = "HEAD~1",
 ) -> dict:
     """Analyze the blast radius of changed files in the codebase.
@@ -75,8 +73,10 @@ def get_impact_radius_tool(
         base: Git ref for auto-detecting changes. Default: HEAD~1.
     """
     return get_impact_radius(
-        changed_files=changed_files, max_depth=max_depth,
-        repo_root=repo_root, base=base,
+        changed_files=changed_files,
+        max_depth=max_depth,
+        repo_root=repo_root,
+        base=base,
     )
 
 
@@ -84,7 +84,7 @@ def get_impact_radius_tool(
 def query_graph_tool(
     pattern: str,
     target: str,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
 ) -> dict:
     """Run a predefined graph query to explore code relationships.
 
@@ -108,11 +108,11 @@ def query_graph_tool(
 
 @mcp.tool()
 def get_review_context_tool(
-    changed_files: Optional[list[str]] = None,
+    changed_files: list[str] | None = None,
     max_depth: int = 2,
     include_source: bool = True,
     max_lines_per_file: int = 200,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
     base: str = "HEAD~1",
 ) -> dict:
     """Generate a focused, token-efficient review context for code changes.
@@ -129,18 +129,21 @@ def get_review_context_tool(
         base: Git ref for change detection. Default: HEAD~1.
     """
     return get_review_context(
-        changed_files=changed_files, max_depth=max_depth,
-        include_source=include_source, max_lines_per_file=max_lines_per_file,
-        repo_root=repo_root, base=base,
+        changed_files=changed_files,
+        max_depth=max_depth,
+        include_source=include_source,
+        max_lines_per_file=max_lines_per_file,
+        repo_root=repo_root,
+        base=base,
     )
 
 
 @mcp.tool()
 def semantic_search_nodes_tool(
     query: str,
-    kind: Optional[str] = None,
+    kind: str | None = None,
     limit: int = 20,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
 ) -> dict:
     """Search for code entities by name, keyword, or semantic similarity.
 
@@ -160,7 +163,7 @@ def semantic_search_nodes_tool(
 
 @mcp.tool()
 def embed_graph_tool(
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
 ) -> dict:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
@@ -179,7 +182,7 @@ def embed_graph_tool(
 
 @mcp.tool()
 def list_graph_stats_tool(
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
 ) -> dict:
     """Get aggregate statistics about the code knowledge graph.
 
@@ -213,10 +216,10 @@ def get_docs_section_tool(
 @mcp.tool()
 def find_large_functions_tool(
     min_lines: int = 50,
-    kind: Optional[str] = None,
-    file_path_pattern: Optional[str] = None,
+    kind: str | None = None,
+    file_path_pattern: str | None = None,
     limit: int = 50,
-    repo_root: Optional[str] = None,
+    repo_root: str | None = None,
 ) -> dict:
     """Find functions, classes, or files exceeding a line-count threshold.
 
@@ -231,8 +234,11 @@ def find_large_functions_tool(
         repo_root: Repository root path. Auto-detected if omitted.
     """
     return find_large_functions(
-        min_lines=min_lines, kind=kind, file_path_pattern=file_path_pattern,
-        limit=limit, repo_root=repo_root,
+        min_lines=min_lines,
+        kind=kind,
+        file_path_pattern=file_path_pattern,
+        limit=limit,
+        repo_root=repo_root,
     )
 
 

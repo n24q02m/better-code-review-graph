@@ -3,8 +3,8 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from code_review_graph.graph import GraphStore
-from code_review_graph.incremental import (
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.incremental import (
     _is_binary,
     _load_ignore_patterns,
     _should_ignore,
@@ -119,7 +119,7 @@ class TestIsBinary:
 
 
 class TestGitOperations:
-    @patch("code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_changed_files(self, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -132,7 +132,7 @@ class TestGitOperations:
         assert "git" in call_args[0][0]
         assert call_args[1].get("timeout") == 30
 
-    @patch("code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_changed_files_fallback(self, mock_run, tmp_path):
         # First call fails, second succeeds
         mock_run.side_effect = [
@@ -143,13 +143,13 @@ class TestGitOperations:
         assert result == ["staged.py"]
         assert mock_run.call_count == 2
 
-    @patch("code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_changed_files_timeout(self, mock_run, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_changed_files(tmp_path)
         assert result == []
 
-    @patch("code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_staged_and_unstaged(self, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -162,7 +162,7 @@ class TestGitOperations:
         # old.py should NOT be in results (renamed away)
         assert "old.py" not in result
 
-    @patch("code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_all_tracked_files(self, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -182,7 +182,7 @@ class TestFullBuild:
         db_path = tmp_path / "test.db"
         store = GraphStore(db_path)
         try:
-            mock_target = "code_review_graph.incremental.get_all_tracked_files"
+            mock_target = "better_code_review_graph.incremental.get_all_tracked_files"
             with patch(mock_target, return_value=["sample.py"]):
                 result = full_build(tmp_path, store)
             assert result["files_parsed"] == 1
@@ -210,9 +210,7 @@ class TestIncrementalUpdate:
         db_path = tmp_path / "test.db"
         store = GraphStore(db_path)
         try:
-            result = incremental_update(
-                tmp_path, store, changed_files=["mod.py"]
-            )
+            result = incremental_update(tmp_path, store, changed_files=["mod.py"])
             assert result["files_updated"] >= 1
             assert result["total_nodes"] > 0
         finally:
