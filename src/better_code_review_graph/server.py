@@ -151,7 +151,7 @@ def semantic_search_nodes_tool(
     """Search for code entities by name, keyword, or semantic similarity.
 
     Uses vector embeddings for semantic search when available (run embed_graph_tool
-    first, requires sentence-transformers). Falls back to keyword matching otherwise.
+    first). Falls back to keyword matching otherwise.
 
     Args:
         query: Search string to match against node names.
@@ -170,8 +170,8 @@ def embed_graph_tool(
 ) -> dict:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
-    Requires: pip install code-review-graph[embeddings]
-    Uses the all-MiniLM-L6-v2 model (fast, 384-dim vectors).
+    Uses dual-mode embedding: local ONNX (qwen3-embed, default) or LiteLLM cloud.
+    Set EMBEDDING_BACKEND, API_KEYS, or LITELLM_PROXY_URL to configure.
     Only computes embeddings for nodes that don't already have them.
 
     After running this, semantic_search_nodes_tool will use vector similarity

@@ -17,7 +17,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .embeddings import EmbeddingStore, embed_all_nodes, semantic_search
+from .embeddings import (
+    EmbeddingStore,
+    embed_all_nodes,
+    init_backend,
+    resolve_backend,
+    semantic_search,
+)
 from .graph import GraphStore, edge_to_dict, node_to_dict
 from .incremental import (
     find_project_root,
@@ -766,7 +772,8 @@ def semantic_search_nodes(
     store, root = _get_store(repo_root)
     try:
         db_path = get_db_path(root)
-        emb_store = EmbeddingStore(db_path)
+        backend = init_backend()
+        emb_store = EmbeddingStore(db_path, backend)
         search_mode = "keyword"
 
         try:
@@ -854,15 +861,15 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
             summary_parts.append(f"  {kind}: {count}")
 
         # Add embedding info if available
-        emb_store = EmbeddingStore(get_db_path(root))
+        backend = init_backend()
+        emb_store = EmbeddingStore(get_db_path(root), backend)
         try:
             emb_count = emb_store.count()
+            mode = resolve_backend()
             summary_parts.append("")
-            summary_parts.append(f"Embeddings: {emb_count} nodes embedded")
-            if not emb_store.available:
-                summary_parts.append(
-                    "  (install sentence-transformers for semantic search)"
-                )
+            summary_parts.append(
+                f"Embeddings: {emb_count} nodes embedded (backend: {mode})"
+            )
         finally:
             emb_store.close()
 
@@ -890,8 +897,8 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
 def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
-    Requires: `pip install code-review-graph[embeddings]`
-    Uses the all-MiniLM-L6-v2 model (fast, 384-dim).
+    Uses dual-mode embedding: local ONNX (qwen3-embed, default) or LiteLLM cloud.
+    Fixed 768-dim storage via MRL truncation.
 
     Only embeds nodes that don't already have up-to-date embeddings.
 
@@ -903,29 +910,23 @@ def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
     """
     store, root = _get_store(repo_root)
     db_path = get_db_path(root)
-    emb_store = EmbeddingStore(db_path)
+    backend = init_backend()
+    emb_store = EmbeddingStore(db_path, backend)
     try:
-        if not emb_store.available:
-            return {
-                "status": "error",
-                "error": (
-                    "sentence-transformers is not installed. "
-                    "Install with: pip install code-review-graph[embeddings]"
-                ),
-            }
-
+        mode = resolve_backend()
         newly_embedded = embed_all_nodes(store, emb_store)
         total = emb_store.count()
 
         return {
             "status": "ok",
             "summary": (
-                f"Embedded {newly_embedded} new node(s). "
+                f"Embedded {newly_embedded} new node(s) using {mode} backend. "
                 f"Total embeddings: {total}. "
                 "Semantic search is now active."
             ),
             "newly_embedded": newly_embedded,
             "total_embeddings": total,
+            "backend": mode,
         }
     finally:
         emb_store.close()

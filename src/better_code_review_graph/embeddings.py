@@ -1,169 +1,356 @@
-"""Vector embedding support for semantic code search.
+"""Dual-mode embedding: local ONNX (default) + LiteLLM cloud.
 
-Supports multiple providers:
-1. Local (sentence-transformers) - Private, fast, offline.
-2. Google Gemini - High-quality, cloud-based. Requires explicit opt-in.
+Supports two backends:
+- **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
+  download on first use. Default backend.
+- **litellm**: Cloud providers via LiteLLM (Gemini, OpenAI, Cohere, etc.).
+  Auto-detected from API_KEYS or LITELLM_PROXY_URL env vars.
+
+Backend selection (always returns a valid backend):
+1. Explicit EMBEDDING_BACKEND env var
+2. 'litellm' if API keys or proxy URL are configured
+3. 'local' (default, always available)
+
+All embeddings are stored at fixed 768 dimensions (MRL truncation).
+Switching backend does NOT invalidate existing vectors.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import struct
-from abc import ABC, abstractmethod
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
 
 # ---------------------------------------------------------------------------
-# Provider Interface and Implementations
+# Constants
+# ---------------------------------------------------------------------------
+
+_DEFAULT_DIMS = 768  # Fixed storage dimension (MRL truncation)
+
+# Retry config for transient errors (rate limits, 5xx, network).
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0  # seconds, doubles each retry
+
+_RETRYABLE_PATTERNS = (
+    "rate limit",
+    "rate_limit",
+    "429",
+    "quota",
+    "too many requests",
+    "500",
+    "502",
+    "503",
+    "504",
+    "timeout",
+    "timed out",
+    "connection",
+    "temporarily unavailable",
+    "overloaded",
+    "resource exhausted",
+    "resource_exhausted",
+)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Check if an exception is transient and worth retrying."""
+    msg = str(exc).lower()
+    return any(p in msg for p in _RETRYABLE_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Backend Protocol
 # ---------------------------------------------------------------------------
 
 
-class EmbeddingProvider(ABC):
-    @abstractmethod
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        pass
+class EmbeddingBackend(Protocol):
+    """Protocol for embedding backends."""
 
-    @abstractmethod
-    def embed_query(self, text: str) -> list[float]:
-        """Embed a search query (may use a different task type than indexing)."""
-        pass
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed a batch of texts. Returns list of embedding vectors."""
+        ...
+
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text. Returns embedding vector."""
+        ...
+
+    def check_available(self) -> int:
+        """Check if backend is available.
+
+        Returns:
+            Embedding dimensions if available, 0 if not.
+        """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Qwen3EmbedBackend (local ONNX)
+# ---------------------------------------------------------------------------
+
+
+class Qwen3EmbedBackend:
+    """Local ONNX embedding via qwen3-embed (Qwen3-Embedding-0.6B).
+
+    Uses last-token pooling with instruction-aware queries.
+    Model is downloaded on first use (~0.57GB).
+    Batch size is forced to 1 (static ONNX graph).
+    """
+
+    DEFAULT_MODEL = "n24q02m/Qwen3-Embedding-0.6B-ONNX"
+
+    def __init__(self, model_name: str | None = None):
+        self._model_name = model_name or self.DEFAULT_MODEL
+        self._model = None
 
     @property
-    @abstractmethod
-    def dimension(self) -> int:
-        pass
-
-    @property
-    @abstractmethod
     def name(self) -> str:
-        pass
-
-
-class LocalEmbeddingProvider(EmbeddingProvider):
-    def __init__(self) -> None:
-        self._model = None  # Lazy-loaded
+        return f"local:{self._model_name}"
 
     def _get_model(self):
-        if self._model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
+        """Lazy-load the embedding model.
 
-                self._model = SentenceTransformer("all-MiniLM-L6-v2")
-            except ImportError as err:
-                raise ImportError(
-                    "sentence-transformers not installed. "
-                    "Run: pip install code-review-graph[embeddings]"
-                ) from err
+        On first call, downloads the ONNX model (~570 MB) from HuggingFace
+        if not already cached.
+        """
+        if self._model is None:
+            from qwen3_embed import TextEmbedding
+
+            self._model = TextEmbedding(model_name=self._model_name)
         return self._model
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed texts using local ONNX model."""
+        if not texts:
+            return []
+
         model = self._get_model()
-        vectors = model.encode(texts, show_progress_bar=False)
-        return [v.tolist() for v in vectors]
+        kwargs: dict[str, Any] = {}
+        if dimensions and dimensions > 0:
+            kwargs["dim"] = dimensions
+        embeddings = list(model.embed(texts, **kwargs))
+        return [emb.tolist() for emb in embeddings]
 
-    def embed_query(self, text: str) -> list[float]:
-        return self.embed([text])[0]
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text (document/passage)."""
+        results = self.embed_texts([text], dimensions)
+        return results[0]
 
-    @property
-    def dimension(self) -> int:
+    def embed_single_query(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a query with instruction prefix (asymmetric retrieval)."""
         model = self._get_model()
-        return model.get_sentence_embedding_dimension()
+        kwargs: dict[str, Any] = {}
+        if dimensions and dimensions > 0:
+            kwargs["dim"] = dimensions
+        result = list(model.query_embed(text, **kwargs))
+        return result[0].tolist()
 
-    @property
-    def name(self) -> str:
-        return "local:all-MiniLM-L6-v2"
-
-
-class GoogleEmbeddingProvider(EmbeddingProvider):
-    def __init__(self, api_key: str, model: str = "gemini-embedding-001") -> None:
+    def check_available(self) -> int:
+        """Check if qwen3-embed is available."""
         try:
-            from google import genai
+            model = self._get_model()
+            result = list(model.embed(["test"]))
+            if result:
+                return len(result[0])
+            return 0  # pragma: no cover
+        except Exception:
+            return 0
 
-            self._client = genai.Client(api_key=api_key)
-            self.model = model
-            self._dimension: int | None = None
-        except ImportError as err:
-            raise ImportError(
-                "google-generativeai not installed. "
-                "Run: pip install code-review-graph[google-embeddings]"
-            ) from err
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        batch_size = 100
-        results = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            response = self._client.models.embed_content(
-                model=self.model,
-                contents=batch,
-                config={"task_type": "RETRIEVAL_DOCUMENT"},
-            )
-            results.extend([e.values for e in response.embeddings])
-        if self._dimension is None and results:
-            self._dimension = len(results[0])
-        return results
+# ---------------------------------------------------------------------------
+# LiteLLM Backend (cloud)
+# ---------------------------------------------------------------------------
 
-    def embed_query(self, text: str) -> list[float]:
-        response = self._client.models.embed_content(
-            model=self.model,
-            contents=[text],
-            config={"task_type": "RETRIEVAL_QUERY"},
+
+class LiteLLMBackend:
+    """Cloud embedding via LiteLLM (Gemini, OpenAI, Cohere, etc.)."""
+
+    MAX_BATCH_SIZE = 100
+
+    def __init__(
+        self,
+        model: str | None = None,
+        api_base: str | None = None,
+        api_key: str | None = None,
+    ):
+        self.model = model or os.getenv(
+            "EMBEDDING_MODEL", "gemini/gemini-embedding-001"
         )
-        vec = response.embeddings[0].values
-        if self._dimension is None:
-            self._dimension = len(vec)
-        return vec
-
-    @property
-    def dimension(self) -> int:
-        if self._dimension is not None:
-            return self._dimension
-        # Default for gemini-embedding-001; updated dynamically after first call
-        return 768
+        self.api_base = api_base or os.getenv("LITELLM_PROXY_URL")
+        self.api_key = api_key or os.getenv("LITELLM_PROXY_KEY")
+        self._setup_litellm()
 
     @property
     def name(self) -> str:
-        return f"google:{self.model}"
+        return f"litellm:{self.model}"
+
+    def _setup_litellm(self) -> None:
+        """Silence LiteLLM logging and configure API keys from API_KEYS env."""
+        os.environ.setdefault("LITELLM_LOG", "ERROR")
+        import litellm
+
+        litellm.suppress_debug_info = True  # type: ignore[assignment]
+        litellm.set_verbose = False
+        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
+        logging.getLogger("LiteLLM").handlers = [logging.NullHandler()]
+
+        # Parse API_KEYS env var: "ENV_NAME:value,ENV_NAME:value"
+        api_keys_str = os.getenv("API_KEYS", "")
+        if api_keys_str:
+            for pair in api_keys_str.split(","):
+                pair = pair.strip()
+                if ":" in pair:
+                    env_name, value = pair.split(":", 1)
+                    os.environ.setdefault(env_name.strip(), value.strip())
+
+    def _embed_batch_inner(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed a single batch with retry logic for transient errors."""
+        from litellm import embedding as litellm_embedding
+
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "input": texts,
+            "encoding_format": "float",
+        }
+        if dimensions:
+            kwargs["dimensions"] = dimensions
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                response = litellm_embedding(**kwargs)
+                data = sorted(response.data, key=lambda x: x["index"])
+                return [d["embedding"] for d in data]
+            except Exception as e:
+                last_exc = e
+                if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
+                    delay = _RETRY_BASE_DELAY * (2**attempt)
+                    time.sleep(delay)
+                else:
+                    break
+
+        raise last_exc  # type: ignore[misc]
+
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed texts with auto batch splitting."""
+        if not texts:
+            return []
+
+        if len(texts) <= self.MAX_BATCH_SIZE:
+            return self._embed_batch_inner(texts, dimensions)
+
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), self.MAX_BATCH_SIZE):
+            batch = texts[i : i + self.MAX_BATCH_SIZE]
+            batch_result = self._embed_batch_inner(batch, dimensions)
+            all_embeddings.extend(batch_result)
+
+        return all_embeddings
+
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text."""
+        results = self.embed_texts([text], dimensions)
+        return results[0]
+
+    def check_available(self) -> int:
+        """Check if the LiteLLM model is available via test request."""
+        try:
+            from litellm import embedding as litellm_embedding
+
+            kwargs: dict[str, Any] = {
+                "model": self.model,
+                "input": ["test"],
+                "encoding_format": "float",
+            }
+            if self.api_base:
+                kwargs["api_base"] = self.api_base
+            if self.api_key:
+                kwargs["api_key"] = self.api_key
+            response = litellm_embedding(**kwargs)
+            if response.data:
+                return len(response.data[0]["embedding"])
+            return 0  # pragma: no cover
+        except Exception:
+            return 0
 
 
-def get_provider(provider: str | None = None) -> EmbeddingProvider | None:
-    """Get an embedding provider by name.
+# ---------------------------------------------------------------------------
+# Factory functions
+# ---------------------------------------------------------------------------
+
+
+def resolve_backend() -> str:
+    """Auto-detect backend from env vars.
+
+    Priority:
+    1. Explicit EMBEDDING_BACKEND env var
+    2. 'litellm' if LITELLM_PROXY_URL or API_KEYS are set
+    3. 'local' (default, always available)
+    """
+    explicit = os.getenv("EMBEDDING_BACKEND")
+    if explicit:
+        return explicit
+    if os.getenv("LITELLM_PROXY_URL") or os.getenv("API_KEYS"):
+        return "litellm"
+    return "local"
+
+
+def init_backend(mode: str | None = None) -> EmbeddingBackend:
+    """Create an embedding backend instance.
 
     Args:
-        provider: Provider name. One of "local", "google", or None for local.
-                  Google requires GOOGLE_API_KEY env var and explicit opt-in.
+        mode: 'local', 'litellm', or None (auto-detect).
+
+    Returns:
+        Initialized backend instance.
     """
-    if provider == "google":
-        api_key = os.environ.get("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "GOOGLE_API_KEY environment variable is required for "
-                "the Google embedding provider."
-            )
-        try:
-            return GoogleEmbeddingProvider(api_key=api_key)
-        except ImportError:
-            return None
-
-    # Default: local
-    try:
-        return LocalEmbeddingProvider()
-    except ImportError:
-        return None
-
-
-def _check_available() -> bool:
-    """Check whether local embedding support is available."""
-    try:
-        import sentence_transformers  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    mode = mode or resolve_backend()
+    if mode == "litellm":
+        return LiteLLMBackend()
+    if mode == "local":
+        return Qwen3EmbedBackend()
+    raise ValueError(f"Unknown backend type: {mode}")
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +407,17 @@ def _node_to_text(node: GraphNode) -> str:
 
 
 class EmbeddingStore:
-    """Manages vector embeddings for graph nodes in SQLite."""
+    """Manages vector embeddings for graph nodes in SQLite.
 
-    def __init__(self, db_path: str | Path, provider: str | None = None) -> None:
-        self.provider = get_provider(provider)
-        self.available = self.provider is not None
+    Uses a fixed 768-dim storage via MRL truncation. The backend name is
+    tracked per row so that switching backends triggers re-embedding.
+    """
+
+    def __init__(
+        self, db_path: str | Path, backend: EmbeddingBackend | None = None
+    ) -> None:
+        self.backend = backend
+        self.available = backend is not None
         self.db_path = Path(db_path)
         self._conn = sqlite3.connect(str(self.db_path), timeout=30)
         self._conn.row_factory = sqlite3.Row
@@ -244,14 +437,23 @@ class EmbeddingStore:
     def close(self) -> None:
         self._conn.close()
 
+    def _get_backend_name(self) -> str:
+        if self.backend is None:
+            return "none"
+        return getattr(self.backend, "name", "unknown")
+
     def embed_nodes(self, nodes: list[GraphNode], batch_size: int = 64) -> int:
-        """Compute and store embeddings for a list of nodes."""
-        if not self.provider:
+        """Compute and store embeddings for a list of nodes.
+
+        Skips File nodes and nodes whose text + provider haven't changed.
+        """
+        if not self.backend:
             return 0
+
+        provider_name = self._get_backend_name()
 
         # Filter to nodes that need embedding
         to_embed: list[tuple[GraphNode, str, str]] = []
-        provider_name = self.provider.name
 
         for node in nodes:
             if node.kind == "File":
@@ -264,7 +466,6 @@ class EmbeddingStore:
                 (node.qualified_name,),
             ).fetchone()
 
-            # Re-embed if text changed OR provider changed
             if (
                 existing
                 and existing["text_hash"] == text_hash
@@ -278,12 +479,13 @@ class EmbeddingStore:
 
         # Encode in batches
         texts = [t for _, t, _ in to_embed]
-        vectors = self.provider.embed(texts)
+        vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
 
         for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
             blob = _encode_vector(vec)
             self._conn.execute(
-                """INSERT OR REPLACE INTO embeddings (qualified_name, vector, text_hash, provider)
+                """INSERT OR REPLACE INTO embeddings
+                   (qualified_name, vector, text_hash, provider)
                    VALUES (?, ?, ?, ?)""",
                 (node.qualified_name, blob, text_hash, provider_name),
             )
@@ -292,19 +494,28 @@ class EmbeddingStore:
         return len(to_embed)
 
     def search(self, query: str, limit: int = 20) -> list[tuple[str, float]]:
-        """Search for nodes by semantic similarity."""
-        if not self.provider:
+        """Search for nodes by semantic similarity.
+
+        Uses embed_single_query if available (asymmetric retrieval),
+        otherwise falls back to embed_single.
+        """
+        if not self.backend:
             return []
 
-        provider_name = self.provider.name
-        query_vec = self.provider.embed_query(query)
+        # Count embeddings first
+        count = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+        if count == 0:
+            return []
 
-        # Process in chunks, only matching current provider
+        # Embed query -- use query-specific method if available
+        if hasattr(self.backend, "embed_single_query"):
+            query_vec = self.backend.embed_single_query(query, dimensions=_DEFAULT_DIMS)
+        else:
+            query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
+
+        # Brute-force cosine similarity scan
         scored: list[tuple[str, float]] = []
-        cursor = self._conn.execute(
-            "SELECT qualified_name, vector FROM embeddings WHERE provider = ?",
-            (provider_name,),
-        )
+        cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
         chunk_size = 500
         while True:
             rows = cursor.fetchmany(chunk_size)
@@ -326,6 +537,11 @@ class EmbeddingStore:
 
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+
+
+# ---------------------------------------------------------------------------
+# Module-level convenience functions
+# ---------------------------------------------------------------------------
 
 
 def embed_all_nodes(graph_store: GraphStore, embedding_store: EmbeddingStore) -> int:
