@@ -348,9 +348,7 @@ class TestLiveMCP:
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "config", {"action": "status"}
-                )
+                result = await session.call_tool("config", {"action": "status"})
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("status") == "ok"
@@ -450,9 +448,7 @@ class TestLiveMCP:
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "graph", {"action": "search"}
-                )
+                result = await session.call_tool("graph", {"action": "search"})
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
                     assert "error" in data
@@ -462,9 +458,7 @@ class TestLiveMCP:
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "config", {"action": "nonexistent"}
-                )
+                result = await session.call_tool("config", {"action": "nonexistent"})
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
                     assert "error" in data
@@ -475,9 +469,7 @@ class TestLiveMCP:
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "help", {"topic": "nonexistent_xyz"}
-                )
+                result = await session.call_tool("help", {"topic": "nonexistent_xyz"})
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
                     assert "error" in data or "valid_topics" in data

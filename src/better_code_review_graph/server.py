@@ -327,9 +327,7 @@ def _config_set(key: str, value: str) -> str:
 
     valid_keys = {"log_level"}
     if key not in valid_keys:
-        return _json(
-            {"error": f"Invalid key: {key}", "valid_keys": sorted(valid_keys)}
-        )
+        return _json({"error": f"Invalid key: {key}", "valid_keys": sorted(valid_keys)})
 
     if key == "log_level":
         level = value.upper()
@@ -349,7 +347,8 @@ def _config_set(key: str, value: str) -> str:
         logging.getLogger().setLevel(level)
         return _json({"status": "updated", "key": key, "value": level})
 
-    return _json({"error": f"Unhandled key: {key}"})
+    # Unreachable: valid_keys guard above catches all unknown keys
+    return _json({"error": f"Unhandled key: {key}"})  # pragma: no cover
 
 
 def _config_cache_clear(repo_root: str | None) -> str:

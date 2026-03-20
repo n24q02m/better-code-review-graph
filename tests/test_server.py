@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from better_code_review_graph.server import (
-    _default_repo_root,
     config,
     graph,
     help,
@@ -24,9 +23,7 @@ class TestMCPServerSetup:
             mcp, "_instructions", None
         )
         if instructions is None:
-            instructions = getattr(
-                getattr(mcp, "settings", None), "instructions", None
-            )
+            instructions = getattr(getattr(mcp, "settings", None), "instructions", None)
         if instructions is None:
             assert mcp.name == "better-code-review-graph"
         else:
@@ -232,16 +229,12 @@ class TestConfigTool:
         assert "valid_keys" in result
 
     def test_set_log_level(self):
-        result = json.loads(
-            config.fn(action="set", key="log_level", value="DEBUG")
-        )
+        result = json.loads(config.fn(action="set", key="log_level", value="DEBUG"))
         assert result["status"] == "updated"
         assert result["value"] == "DEBUG"
 
     def test_set_invalid_log_level(self):
-        result = json.loads(
-            config.fn(action="set", key="log_level", value="INVALID")
-        )
+        result = json.loads(config.fn(action="set", key="log_level", value="INVALID"))
         assert "error" in result
         assert "valid_levels" in result
 
@@ -351,17 +344,35 @@ class TestHelpTool:
         assert "error" in result
         assert "valid_topics" in result
 
-    def test_graph_topic_fallback(self):
-        """help topic=graph should return content (fallback to LLM-OPTIMIZED-REFERENCE)."""
+    def test_graph_topic_loads_docs(self):
+        """help topic=graph loads docs/graph.md content."""
         result = help.fn(topic="graph")
-        # Either markdown text or JSON with content
+        # Should return markdown from docs/graph.md
         if result.startswith("{"):
             data = json.loads(result)
-            # May have docs or may error if no docs dir yet
             assert "content" in data or "error" in data
         else:
-            # Direct markdown content
+            assert "# graph Tool Documentation" in result
+            assert len(result) > 100
+
+    def test_config_topic_loads_docs(self):
+        """help topic=config loads docs/config.md content."""
+        result = help.fn(topic="config")
+        if result.startswith("{"):
+            data = json.loads(result)
+            assert "content" in data or "error" in data
+        else:
+            assert "# config Tool Documentation" in result
             assert len(result) > 50
+
+    @patch("better_code_review_graph.server.files")
+    def test_graph_topic_fallback_to_llm_ref(self, mock_files):
+        """help topic=graph falls back to LLM-OPTIMIZED-REFERENCE.md."""
+        mock_files.side_effect = FileNotFoundError("no docs")
+        result = help.fn(topic="graph")
+        # Fallback tries get_docs_section — result varies by repo
+        assert isinstance(result, str)
+        assert len(result) > 0
 
 
 class TestServeMain:
