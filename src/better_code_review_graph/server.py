@@ -1,6 +1,6 @@
-"""MCP server entry point for Code Review Graph.
+"""MCP server entry point for Better Code Review Graph.
 
-Run as: code-review-graph serve
+Run as: better-code-review-graph serve
 Communicates via stdio (standard MCP transport).
 """
 
@@ -25,7 +25,7 @@ from .tools import (
 _default_repo_root: str | None = None
 
 mcp = FastMCP(
-    "code-review-graph",
+    "better-code-review-graph",
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
         "context-aware code reviews. Parses your codebase with Tree-sitter, "
@@ -236,7 +236,7 @@ def find_large_functions_tool(
     )
 
 
-def main(repo_root: str | None = None) -> None:
+def serve_main(repo_root: str | None = None) -> None:
     """Run the MCP server via stdio."""
     global _default_repo_root
     _default_repo_root = repo_root
@@ -244,4 +244,4 @@ def main(repo_root: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    serve_main()

@@ -1,26 +1,25 @@
-"""CLI entry point for code-review-graph.
+"""CLI entry point for better-code-review-graph.
 
 Usage:
-    code-review-graph install
-    code-review-graph init
-    code-review-graph build [--base BASE]
-    code-review-graph update [--base BASE]
-    code-review-graph watch
-    code-review-graph status
-    code-review-graph serve
-    code-review-graph visualize
+    better-code-review-graph install
+    better-code-review-graph init
+    better-code-review-graph build [--base BASE]
+    better-code-review-graph update [--base BASE]
+    better-code-review-graph watch
+    better-code-review-graph status
+    better-code-review-graph serve
 """
 
 from __future__ import annotations
 
 import sys
 
-# Python version check — must come before any other imports
-if sys.version_info < (3, 10):
-    print("code-review-graph requires Python 3.10 or higher.")
+# Python version check
+if sys.version_info < (3, 13):
+    print("better-code-review-graph requires Python 3.13 or higher.")
     print(f"  You are running Python {sys.version}")
     print()
-    print("Install Python 3.10+: https://www.python.org/downloads/")
+    print("Install Python 3.13+: https://www.python.org/downloads/")
     sys.exit(1)
 
 import argparse
@@ -34,7 +33,7 @@ from pathlib import Path
 def _get_version() -> str:
     """Get the installed package version."""
     try:
-        return pkg_version("code-review-graph")
+        return pkg_version("better-code-review-graph")
     except Exception:
         return "dev"
 
@@ -54,16 +53,16 @@ def _print_banner() -> None:
     version = _get_version()
 
     # ANSI escape codes
-    c = "\033[36m" if color else ""   # cyan — graph art
-    y = "\033[33m" if color else ""   # yellow — center node
+    c = "\033[36m" if color else ""   # cyan
+    y = "\033[33m" if color else ""   # yellow
     b = "\033[1m" if color else ""    # bold
     d = "\033[2m" if color else ""    # dim
-    g = "\033[32m" if color else ""   # green — commands
+    g = "\033[32m" if color else ""   # green
     r = "\033[0m" if color else ""    # reset
 
     print(f"""
 {c}  ●──●──●{r}
-{c}  │╲ │ ╱│{r}       {b}code-review-graph{r}  {d}v{version}{r}
+{c}  │╲ │ ╱│{r}       {b}better-code-review-graph{r}  {d}v{version}{r}
 {c}  ●──{y}◆{c}──●{r}
 {c}  │╱ │ ╲│{r}       {d}Structural knowledge graph for{r}
 {c}  ●──●──●{r}       {d}smarter code reviews{r}
@@ -75,10 +74,9 @@ def _print_banner() -> None:
     {g}update{r}      Incremental update {d}(changed files only){r}
     {g}watch{r}       Auto-update on file changes
     {g}status{r}      Show graph statistics
-    {g}visualize{r}   Generate interactive HTML graph
     {g}serve{r}       Start MCP server
 
-  {d}Run{r} {b}code-review-graph <command> --help{r} {d}for details{r}
+  {d}Run{r} {b}better-code-review-graph <command> --help{r} {d}for details{r}
 """)
 
 
@@ -95,9 +93,9 @@ def _handle_init(args: argparse.Namespace) -> None:
 
     mcp_config = {
         "mcpServers": {
-            "code-review-graph": {
+            "better-code-review-graph": {
                 "command": "uvx",
-                "args": ["code-review-graph", "serve"],
+                "args": ["--python", "3.13", "better-code-review-graph", "serve"],
             }
         }
     }
@@ -106,7 +104,7 @@ def _handle_init(args: argparse.Namespace) -> None:
     if mcp_path.exists():
         try:
             existing = json.loads(mcp_path.read_text())
-            if "code-review-graph" in existing.get("mcpServers", {}):
+            if "better-code-review-graph" in existing.get("mcpServers", {}):
                 print(f"Already configured in {mcp_path}")
                 return
             existing.setdefault("mcpServers", {}).update(mcp_config["mcpServers"])
@@ -125,14 +123,14 @@ def _handle_init(args: argparse.Namespace) -> None:
     print(f"Created {mcp_path}")
     print()
     print("Next steps:")
-    print("  1. code-review-graph build    # build the knowledge graph")
-    print("  2. Restart Claude Code        # to pick up the new MCP server")
+    print("  1. better-code-review-graph build    # build the knowledge graph")
+    print("  2. Restart Claude Code               # to pick up the new MCP server")
 
 
 def main() -> None:
     """Main CLI entry point."""
     ap = argparse.ArgumentParser(
-        prog="code-review-graph",
+        prog="better-code-review-graph",
         description="Persistent incremental knowledge graph for code reviews",
     )
     ap.add_argument(
@@ -176,10 +174,6 @@ def main() -> None:
     status_cmd = sub.add_parser("status", help="Show graph statistics")
     status_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
 
-    # visualize
-    vis_cmd = sub.add_parser("visualize", help="Generate interactive HTML graph visualization")
-    vis_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
-
     # serve
     serve_cmd = sub.add_parser("serve", help="Start MCP server (stdio transport)")
     serve_cmd.add_argument("--repo", default=None, help="Repository root (auto-detected)")
@@ -187,7 +181,7 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.version:
-        print(f"code-review-graph {_get_version()}")
+        print(f"better-code-review-graph {_get_version()}")
         return
 
     if not args.command:
@@ -195,7 +189,7 @@ def main() -> None:
         return
 
     if args.command == "serve":
-        from .main import main as serve_main
+        from .server import serve_main
         serve_main(repo_root=args.repo)
         return
 
@@ -255,13 +249,6 @@ def main() -> None:
 
         elif args.command == "watch":
             watch(repo_root, store)
-
-        elif args.command == "visualize":
-            from .visualization import generate_html
-            html_path = repo_root / ".code-review-graph" / "graph.html"
-            generate_html(store, html_path)
-            print(f"Visualization: {html_path}")
-            print("Open in browser to explore your codebase graph.")
 
     finally:
         store.close()
