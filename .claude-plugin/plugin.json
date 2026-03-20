@@ -1,20 +1,19 @@
 {
-  "name": "code-review-graph",
+  "name": "better-code-review-graph",
   "description": "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code",
-  "version": "1.7.2",
+  "version": "0.1.0",
   "author": {
-    "name": "Tirth Kanani",
-    "email": "tirthkanani18@gmail.com",
-    "url": "https://github.com/tirth8205"
+    "name": "n24q02m",
+    "url": "https://github.com/n24q02m"
   },
-  "homepage": "https://github.com/tirth8205/code-review-graph",
-  "repository": "https://github.com/tirth8205/code-review-graph",
+  "homepage": "https://github.com/n24q02m/better-code-review-graph",
+  "repository": "https://github.com/n24q02m/better-code-review-graph",
   "license": "MIT",
   "keywords": ["code-review", "knowledge-graph", "incremental", "tree-sitter", "mcp", "claude-code"],
   "mcpServers": {
-    "code-review-graph": {
+    "better-code-review-graph": {
       "command": "uvx",
-      "args": ["code-review-graph", "serve"]
+      "args": ["--python", "3.13", "better-code-review-graph", "serve"]
     }
   },
   "skills": "./skills/"
