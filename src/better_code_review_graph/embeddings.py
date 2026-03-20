@@ -69,7 +69,7 @@ def _is_retryable(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 
 
-class EmbeddingBackend(Protocol):
+class EmbeddingBackend(Protocol):  # pragma: no cover
     """Protocol for embedding backends."""
 
     def embed_texts(
