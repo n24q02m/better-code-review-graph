@@ -7,7 +7,7 @@ Run as: better-code-review-graph serve
 from __future__ import annotations
 
 import json
-from importlib.resources import files  # nosemgrep: python37-compatibility-importlib2
+from importlib.resources import files
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations

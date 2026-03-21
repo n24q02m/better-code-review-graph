@@ -105,8 +105,8 @@ jobs:
           files: coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  semgrep:
-    name: Semgrep SAST Scan
+  codeql:
+    name: CodeQL Analysis
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'pull_request' || github.event_name == 'push')
@@ -114,15 +114,23 @@ jobs:
       && github.actor != 'renovate[bot]'
     permissions:
       contents: read
-    container:
-      image: semgrep/semgrep@sha256:3dab091ee3247fce7e4ed3df9f92b3bd72692c083295f53cec3f135b86404db1
+      security-events: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      - name: Run Semgrep scan
-        run: >-
-          semgrep scan --config auto --error --verbose
-          --exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2
-          --exclude-rule python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+      - name: Harden Runner
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
 
   dependency-review:
     name: Dependency Review
