@@ -1,0 +1,81 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits"
+  ],
+  "schedule": [
+    "before 5am"
+  ],
+  "timezone": "Asia/Ho_Chi_Minh",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 3,
+  "labels": [
+    "dependencies"
+  ],
+  "rangeStrategy": "bump",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 5am"
+    ]
+  },
+  "packageRules": [
+    {
+      "description": "Auto-merge non-major devDependencies",
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Auto-merge patch production dependencies",
+      "matchDepTypes": [
+        "dependencies"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Group all non-major updates",
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "non-major dependencies",
+      "groupSlug": "non-major"
+    },
+    {
+      "description": "Pin GitHub Actions to SHA for security",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Pin PSR to v10",
+      "matchPackagePatterns": [
+        "^python-semantic-release/"
+      ],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "allowedVersions": ">=10.0.0"
+    },
+    {
+      "description": "Pin Python runtime to 3.13.x",
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": ">=3.13.0 <3.14.0"
+    }
+  ]
+}

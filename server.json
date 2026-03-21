@@ -16,7 +16,33 @@
       "runtimeArgs": ["--python", "3.13"],
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'litellm' (cloud). Auto-detected if omitted.",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "EMBEDDING_BACKEND"
+        },
+        {
+          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key). Enables LiteLLM backend.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        },
+        {
+          "description": "LiteLLM Proxy URL for self-hosted gateway. Enables LiteLLM backend via proxy.",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LITELLM_PROXY_URL"
+        },
+        {
+          "description": "LiteLLM Proxy virtual key.",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "LITELLM_PROXY_KEY"
+        }
+      ]
     },
     {
       "registryType": "oci",
@@ -24,7 +50,15 @@
       "runtimeHint": "docker",
       "transport": {
         "type": "stdio"
-      }
+      },
+      "environmentVariables": [
+        {
+          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key)",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "API_KEYS"
+        }
+      ]
     }
   ]
 }
