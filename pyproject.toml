@@ -75,3 +75,15 @@ branch = true
 fail_under = 95
 show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+tag_format = "v{version}"
+commit_message = "chore(release): v{version}"
+major_on_zero = false
+
+[tool.semantic_release.changelog]
+changelog_file = "CHANGELOG.md"
+
+[tool.semantic_release.remote]
+type = "github"
