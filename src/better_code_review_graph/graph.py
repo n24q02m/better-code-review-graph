@@ -514,30 +514,27 @@ class GraphStore:
         Returns:
             List of GraphNode objects, ordered by line count descending.
         """
-        conditions = [
-            "line_start IS NOT NULL",
-            "line_end IS NOT NULL",
-            "(line_end - line_start + 1) >= ?",
+        params: list = [
+            min_lines,
+            max_lines, max_lines,
+            kind, kind,
+            f"%{file_path_pattern}%" if file_path_pattern else None,
+            f"%{file_path_pattern}%" if file_path_pattern else None,
+            limit
         ]
-        params: list = [min_lines]
 
-        if max_lines is not None:
-            conditions.append("(line_end - line_start + 1) <= ?")
-            params.append(max_lines)
-        if kind:
-            conditions.append("kind = ?")
-            params.append(kind)
-        if file_path_pattern:
-            conditions.append("file_path LIKE ?")
-            params.append(f"%{file_path_pattern}%")
-
-        params.append(limit)
-        where = " AND ".join(conditions)
-        rows = self._conn.execute(
-            f"SELECT * FROM nodes WHERE {where} "  # nosec B608
-            "ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
-            params,
-        ).fetchall()
+        sql = """
+            SELECT * FROM nodes
+            WHERE line_start IS NOT NULL
+              AND line_end IS NOT NULL
+              AND (line_end - line_start + 1) >= ?
+              AND (? IS NULL OR (line_end - line_start + 1) <= ?)
+              AND (? IS NULL OR kind = ?)
+              AND (? IS NULL OR file_path LIKE ?)
+            ORDER BY (line_end - line_start + 1) DESC
+            LIMIT ?
+        """
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Public edge access (for visualization etc.) ---
