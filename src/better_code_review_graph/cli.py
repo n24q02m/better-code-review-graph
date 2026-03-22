@@ -36,9 +36,7 @@ def main() -> None:
     ap.add_argument(
         "-v", "--version", action="store_true", help="Show version and exit"
     )
-    ap.add_argument(
-        "--repo", default=None, help="Repository root (auto-detected)"
-    )
+    ap.add_argument("--repo", default=None, help="Repository root (auto-detected)")
 
     args = ap.parse_args()
 

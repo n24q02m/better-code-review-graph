@@ -40,9 +40,7 @@ class TestMainCLI:
         assert "better-code-review-graph" in captured.out
 
     def test_repo_flag(self):
-        with patch(
-            "sys.argv", ["better-code-review-graph", "--repo", "/my/repo"]
-        ):
+        with patch("sys.argv", ["better-code-review-graph", "--repo", "/my/repo"]):
             with patch("better_code_review_graph.server.serve_main") as mock_serve:
                 main()
                 mock_serve.assert_called_once_with(repo_root="/my/repo")
