@@ -42,7 +42,7 @@ All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream
 ### Claude Code Plugin (Recommended)
 
 ```bash
-claude plugin install n24q02m/better-code-review-graph@better-code-review-graph
+claude plugin add n24q02m/better-code-review-graph
 ```
 
 Includes MCP server, hooks (SessionStart auto-build, PostToolUse auto-update), and skills (build-graph, review-delta, review-pr).
