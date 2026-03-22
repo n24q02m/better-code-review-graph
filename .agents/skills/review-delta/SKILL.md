@@ -14,7 +14,7 @@ Perform a focused, token-efficient code review of only the changed code and its 
 
 1. **Ensure the graph is current** by calling `graph(action="update")`.
 
-2. **Get review context** by calling `graph(action="review")`. This returns:
+2. **Get review context** by calling `review()`. This returns:
    - Changed files (auto-detected from git diff)
    - Impacted nodes and files (blast radius)
    - Source code snippets for changed areas
@@ -28,7 +28,7 @@ Perform a focused, token-efficient code review of only the changed code and its 
 4. **Perform the review** using the context. For each changed file:
    - Review the source snippet for correctness, style, and potential bugs
    - Check if impacted callers/dependents need updates
-   - Verify test coverage using `graph(action="query", pattern="tests_for", target=<function_name>)`
+   - Verify test coverage using `query(action="query", pattern="tests_for", target=<function_name>)`
    - Flag any untested changed functions
 
 5. **Report findings** in a structured format:

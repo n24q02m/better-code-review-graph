@@ -27,7 +27,7 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
 | Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + LiteLLM (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
-| Tool design | 9 individual tools | 3-tier: graph (mega) + config + help |
+| Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream-prs)). If all are merged, this repo will be archived.
@@ -151,21 +151,31 @@ better-code-review-graph serve
 
 ## Tools
 
-### `graph` -- Knowledge graph operations
+### `graph` -- Graph lifecycle
 
-Actions: `build` | `update` | `query` | `search` | `impact` | `review` | `embed` | `stats` | `large_functions`
+Actions: `build` | `update` | `stats` | `embed`
 
 | Action | Description |
 |:-------|:------------|
 | `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files. |
 | `update` | Alias for `build` with `full_rebuild=false` (incremental). |
-| `query` | Run predefined queries: `callers_of`, `callees_of`, `imports_of`, `importers_of`, `children_of`, `tests_for`, `inheritors_of`, `file_summary`. |
+| `stats` | Graph size, languages, node/edge breakdown, embedding count. |
+| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud LiteLLM. |
+
+### `query` -- Graph queries
+
+Actions: `query` | `search` | `impact` | `large_functions`
+
+| Action | Description |
+|:-------|:------------|
+| `query` | Predefined pattern queries: `callers_of`, `callees_of`, `imports_of`, `importers_of`, `children_of`, `tests_for`, `inheritors_of`, `file_summary`. |
 | `search` | Search code entities by name/keyword or semantic similarity. |
 | `impact` | Blast radius of changed files. Auto-detects from git diff. Paginated with `max_results`. |
-| `review` | Token-optimized review context with structural summary, source snippets, and review guidance. |
-| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud LiteLLM. |
-| `stats` | Graph size, languages, node/edge breakdown, embedding count. |
 | `large_functions` | Find functions/classes exceeding a line-count threshold. |
+
+### `review` -- Code review context
+
+Token-optimized review context with structural summary, source snippets, and review guidance. Auto-detects changed files from git diff.
 
 ### `config` -- Server configuration
 
@@ -179,7 +189,7 @@ Actions: `status` | `set` | `cache_clear`
 
 ### `help` -- Full documentation
 
-Topics: `graph` | `config`
+Topics: `graph` | `query` | `review` | `config`
 
 Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
 

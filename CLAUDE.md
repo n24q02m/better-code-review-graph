@@ -7,13 +7,13 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 ## Cau truc
 
 - `src/better_code_review_graph/` -- Package chinh (src layout)
-  - `server.py` -- FastMCP server, 3-tier tools: graph (mega) + config + help
+  - `server.py` -- FastMCP server, 5 tools: graph + query + review (3 main) + config + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
   - `parser.py` -- Tree-sitter parsing (12 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
-  - `docs/` -- Help tool documentation (graph.md, config.md)
+  - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
   - `cli.py` -- CLI: serve + update (for hooks)
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
@@ -51,7 +51,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
                                           |
                                      Embedding store --> Semantic search
                                           |
-                                     FastMCP server --> 3 tools (graph + config + help)
+                                     FastMCP server --> 5 tools (graph + query + review + config + help)
 ```
 
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
@@ -59,7 +59,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
 - **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or LiteLLM cloud (auto-detected from API_KEYS/LITELLM_PROXY_URL). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
-- **Server** (server.py): 3-tier tool architecture -- graph mega-tool (9 actions via match/case), config, help. Returns JSON strings.
+- **Server** (server.py): 5 tools — graph (build/update/stats/embed), query (query/search/impact/large_functions), review, config, help. Returns JSON strings.
 
 ## Embedding backends
 

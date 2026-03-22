@@ -135,16 +135,16 @@ class TestLiveMCP:
         )
 
     # ------------------------------------------------------------------
-    # 1. Tool listing — exactly 3 tools
+    # 1. Tool listing — exactly 5 tools
     # ------------------------------------------------------------------
     async def test_list_tools(self):
-        """Server exposes exactly 3 tools: graph, config, help."""
+        """Server exposes exactly 5 tools: graph, query, review, config, help."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
                 names = {t.name for t in tools.tools}
-                expected = {"graph", "config", "help"}
+                expected = {"graph", "query", "review", "config", "help"}
                 assert expected == names, f"Expected {expected}, got {names}"
 
     # ------------------------------------------------------------------
@@ -189,8 +189,11 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("total_nodes", 0) > 0
 
-    async def test_graph_search(self, sample_repo: Path):
-        """graph action=search returns results for a known symbol."""
+    # ------------------------------------------------------------------
+    # 3. Query tool — happy path
+    # ------------------------------------------------------------------
+    async def test_query_search(self, sample_repo: Path):
+        """query action=search returns results for a known symbol."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -203,20 +206,19 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "query",
                     {
                         "action": "search",
-                        "query": "calculator",
+                        "search_query": "calculator",
                         "repo_root": str(sample_repo),
                     },
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
-                results = data.get("results", [])
-                assert len(results) > 0, "Expected at least one search result"
+                assert len(data.get("results", [])) > 0
 
-    async def test_graph_query_file_summary(self, sample_repo: Path):
-        """graph action=query with file_summary pattern returns nodes."""
+    async def test_query_file_summary(self, sample_repo: Path):
+        """query action=query with file_summary pattern."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -229,7 +231,7 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "query",
                     {
                         "action": "query",
                         "pattern": "file_summary",
@@ -239,11 +241,10 @@ class TestLiveMCP:
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
-                results = data.get("results", [])
-                assert len(results) > 0
+                assert len(data.get("results", [])) > 0
 
-    async def test_graph_impact(self, sample_repo: Path):
-        """graph action=impact returns impact data for changed files."""
+    async def test_query_impact(self, sample_repo: Path):
+        """query action=impact returns impact data."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -256,7 +257,7 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "query",
                     {
                         "action": "impact",
                         "changed_files": ["calculator.py"],
@@ -267,8 +268,11 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("status") == "ok"
 
-    async def test_graph_review(self, sample_repo: Path):
-        """graph action=review produces review context."""
+    # ------------------------------------------------------------------
+    # 4. Review tool — happy path
+    # ------------------------------------------------------------------
+    async def test_review(self, sample_repo: Path):
+        """review tool produces review context."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -281,9 +285,8 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "review",
                     {
-                        "action": "review",
                         "changed_files": ["calculator.py"],
                         "repo_root": str(sample_repo),
                         "include_source": False,
@@ -314,8 +317,8 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("newly_embedded", 0) > 0
 
-    async def test_graph_large_functions(self, sample_repo: Path):
-        """graph action=large_functions works with low threshold."""
+    async def test_query_large_functions(self, sample_repo: Path):
+        """query action=large_functions works with low threshold."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -328,7 +331,7 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "query",
                     {
                         "action": "large_functions",
                         "min_lines": 3,
@@ -337,8 +340,7 @@ class TestLiveMCP:
                 )
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
-                results = data.get("results", [])
-                assert len(results) > 0
+                assert len(data.get("results", [])) > 0
 
     # ------------------------------------------------------------------
     # 3. Config tool — happy path
@@ -399,23 +401,21 @@ class TestLiveMCP:
                     assert len(content) > 0 or "error" not in data
 
     # ------------------------------------------------------------------
-    # 5. Error paths
+    # 6. Error paths
     # ------------------------------------------------------------------
     async def test_graph_unknown_action(self):
         """graph with unknown action returns error."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "graph", {"action": "nonexistent_action"}
-                )
+                result = await session.call_tool("graph", {"action": "nonexistent"})
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
                     assert "error" in data
                     assert "valid_actions" in data
 
-    async def test_graph_query_invalid_pattern(self, sample_repo: Path):
-        """graph action=query with invalid pattern returns error."""
+    async def test_query_invalid_pattern(self, sample_repo: Path):
+        """query action=query with invalid pattern returns error."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -428,7 +428,7 @@ class TestLiveMCP:
                     },
                 )
                 result = await session.call_tool(
-                    "graph",
+                    "query",
                     {
                         "action": "query",
                         "pattern": "nonexistent_pattern",
@@ -437,18 +437,29 @@ class TestLiveMCP:
                     },
                 )
                 data = _parse_result_text(result)
-                if isinstance(data, dict):
-                    text = json.dumps(data).lower()
-                else:
-                    text = str(data).lower()
+                text = (
+                    json.dumps(data).lower()
+                    if isinstance(data, dict)
+                    else str(data).lower()
+                )
                 assert "error" in text or "unknown" in text
 
-    async def test_graph_search_missing_query(self):
-        """graph action=search without query returns error."""
+    async def test_query_search_missing_query(self):
+        """query action=search without search_query returns error."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("graph", {"action": "search"})
+                result = await session.call_tool("query", {"action": "search"})
+                data = _parse_result_text(result)
+                if isinstance(data, dict):
+                    assert "error" in data
+
+    async def test_query_unknown_action(self):
+        """query with unknown action returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("query", {"action": "nonexistent"})
                 data = _parse_result_text(result)
                 if isinstance(data, dict):
                     assert "error" in data

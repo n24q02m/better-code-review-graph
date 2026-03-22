@@ -1,6 +1,6 @@
 """MCP server entry point for Better Code Review Graph.
 
-3-tier tool architecture: graph (mega-tool) + config + help.
+5-tool architecture: graph + query + review (3 main) + config + help.
 Run as: better-code-review-graph serve
 """
 
@@ -38,23 +38,22 @@ mcp = FastMCP(
     "better-code-review-graph",
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
-        "context-aware code reviews. 3 tools: graph (build/query/search/review), "
-        "config (status/set), help (full docs). "
-        "Use `help` tool for complete documentation."
+        "context-aware code reviews. 5 tools: graph (build/embed/stats), "
+        "query (search/impact/patterns), review (code review context), "
+        "config (status/set), help (full docs)."
     ),
 )
 
 
 # ---------------------------------------------------------------------------
-# Tool 1: graph (mega-tool — 9 actions)
+# Tool 1: graph — lifecycle (build, update, stats, embed)
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool(
     description=(
-        "Code knowledge graph operations. "
-        "Actions: build|update|query|search|impact|review|embed|stats|large_functions. "
-        "Use `help` tool for full documentation."
+        "Graph lifecycle. Actions: build|update|stats|embed. "
+        "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
         title="Graph",
@@ -66,41 +65,16 @@ mcp = FastMCP(
 )
 def graph(
     action: str,
-    # build/update params
     full_rebuild: bool = False,
     base: str = "HEAD~1",
-    # query params
-    pattern: str | None = None,
-    target: str | None = None,
-    # search params
-    query: str | None = None,
-    kind: str | None = None,
-    limit: int = 20,
-    # impact/review params
-    changed_files: list[str] | None = None,
-    max_depth: int = 2,
-    max_results: int = 500,
-    include_source: bool = True,
-    max_lines_per_file: int = 200,
-    # large_functions params
-    min_lines: int = 50,
-    file_path_pattern: str | None = None,
-    # common
     repo_root: str | None = None,
 ) -> str:
-    """Code knowledge graph operations.
+    """Graph lifecycle operations.
 
-    Actions:
     - build: Full or incremental graph build (full_rebuild, base, repo_root)
     - update: Alias for build with full_rebuild=False
-    - query: Run predefined graph queries (pattern, target, repo_root)
-      Patterns: callers_of|callees_of|imports_of|importers_of|children_of|tests_for|inheritors_of|file_summary
-    - search: Search nodes by name/keyword/vector (query, kind, limit, repo_root)
-    - impact: Blast radius of changed files (changed_files, max_depth, max_results, base, repo_root)
-    - review: Token-efficient review context (changed_files, max_depth, include_source, max_lines_per_file, base, repo_root)
-    - embed: Compute vector embeddings for semantic search (repo_root)
-    - stats: Graph statistics (repo_root)
-    - large_functions: Find oversized functions/classes (min_lines, kind, file_path_pattern, limit, repo_root)
+    - stats: Graph statistics — nodes, edges, languages, embeddings
+    - embed: Compute vector embeddings for semantic search
     """
     match action:
         case "build":
@@ -109,14 +83,72 @@ def graph(
                     full_rebuild=full_rebuild, repo_root=repo_root, base=base
                 )
             )
-
         case "update":
             return _json(
                 build_or_update_graph(
                     full_rebuild=False, repo_root=repo_root, base=base
                 )
             )
+        case "stats":
+            return _json(list_graph_stats(repo_root=repo_root))
+        case "embed":
+            return _json(embed_graph(repo_root=repo_root))
+        case _:
+            return _json(
+                {
+                    "error": f"Unknown action: {action}",
+                    "valid_actions": ["build", "update", "stats", "embed"],
+                }
+            )
 
+
+# ---------------------------------------------------------------------------
+# Tool 2: query — read operations (query, search, impact, large_functions)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    description=(
+        "Query the knowledge graph. Actions: query|search|impact|large_functions. "
+        "Use `help` tool for full docs."
+    ),
+    annotations=ToolAnnotations(
+        title="Query",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def query(
+    action: str,
+    # query params
+    pattern: str | None = None,
+    target: str | None = None,
+    # search params
+    search_query: str | None = None,
+    kind: str | None = None,
+    limit: int = 20,
+    # impact params
+    changed_files: list[str] | None = None,
+    max_depth: int = 2,
+    max_results: int = 500,
+    base: str = "HEAD~1",
+    # large_functions params
+    min_lines: int = 50,
+    file_path_pattern: str | None = None,
+    # common
+    repo_root: str | None = None,
+) -> str:
+    """Query the knowledge graph.
+
+    - query: Predefined graph queries (pattern, target, repo_root)
+      Patterns: callers_of|callees_of|imports_of|importers_of|children_of|tests_for|inheritors_of|file_summary
+    - search: Search nodes by name/keyword/vector (search_query, kind, limit, repo_root)
+    - impact: Blast radius of changed files (changed_files, max_depth, max_results, base, repo_root)
+    - large_functions: Find oversized functions/classes (min_lines, kind, file_path_pattern, limit, repo_root)
+    """
+    match action:
         case "query":
             if not pattern:
                 return _json(
@@ -139,16 +171,14 @@ def graph(
             return _json(
                 query_graph(pattern=pattern, target=target, repo_root=repo_root)
             )
-
         case "search":
-            if not query:
-                return _json({"error": "query is required for search action"})
+            if not search_query:
+                return _json({"error": "search_query is required for search action"})
             return _json(
                 semantic_search_nodes(
-                    query=query, kind=kind, limit=limit, repo_root=repo_root
+                    query=search_query, kind=kind, limit=limit, repo_root=repo_root
                 )
             )
-
         case "impact":
             return _json(
                 get_impact_radius(
@@ -159,25 +189,6 @@ def graph(
                     base=base,
                 )
             )
-
-        case "review":
-            return _json(
-                get_review_context(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    include_source=include_source,
-                    max_lines_per_file=max_lines_per_file,
-                    repo_root=repo_root,
-                    base=base,
-                )
-            )
-
-        case "embed":
-            return _json(embed_graph(repo_root=repo_root))
-
-        case "stats":
-            return _json(list_graph_stats(repo_root=repo_root))
-
         case "large_functions":
             return _json(
                 find_large_functions(
@@ -188,20 +199,14 @@ def graph(
                     repo_root=repo_root,
                 )
             )
-
         case _:
             return _json(
                 {
                     "error": f"Unknown action: {action}",
                     "valid_actions": [
-                        "build",
-                        "update",
                         "query",
                         "search",
                         "impact",
-                        "review",
-                        "embed",
-                        "stats",
                         "large_functions",
                     ],
                 }
@@ -209,7 +214,59 @@ def graph(
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: config (status, set, cache_clear)
+# Tool 3: review — token-efficient code review context
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    description=(
+        "Token-efficient review context for code changes. "
+        "Combines impact analysis with source snippets and review guidance. "
+        "Use `help` tool for full docs."
+    ),
+    annotations=ToolAnnotations(
+        title="Review",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def review(
+    changed_files: list[str] | None = None,
+    max_depth: int = 2,
+    include_source: bool = True,
+    max_lines_per_file: int = 200,
+    base: str = "HEAD~1",
+    repo_root: str | None = None,
+) -> str:
+    """Generate focused review context for code changes.
+
+    Auto-detects changed files from git diff. Returns structural summary,
+    impacted nodes/files, source snippets, and review guidance.
+
+    Args:
+        changed_files: Files to review (auto-detected from git if omitted)
+        max_depth: Impact radius depth (default: 2)
+        include_source: Include source code snippets (default: true)
+        max_lines_per_file: Max source lines per file (default: 200)
+        base: Git ref for change detection (default: HEAD~1)
+        repo_root: Repository root path (auto-detected)
+    """
+    return _json(
+        get_review_context(
+            changed_files=changed_files,
+            max_depth=max_depth,
+            include_source=include_source,
+            max_lines_per_file=max_lines_per_file,
+            repo_root=repo_root,
+            base=base,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tool 4: config (status, set, cache_clear)
 # ---------------------------------------------------------------------------
 
 
@@ -217,7 +274,7 @@ def graph(
     description=(
         "Server configuration and status. "
         "Actions: status|set|cache_clear. "
-        "Use `help` tool for full documentation."
+        "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
         title="Config",
@@ -235,7 +292,6 @@ def config(
 ) -> str:
     """Server configuration and status.
 
-    Actions:
     - status: Show graph path, node/edge counts, embedding backend, last updated
     - set: Update runtime setting (key + value). Keys: log_level
     - cache_clear: Wipe all embeddings from the graph
@@ -243,7 +299,6 @@ def config(
     match action:
         case "status":
             return _config_status(repo_root)
-
         case "set":
             if not key:
                 return _json(
@@ -255,10 +310,8 @@ def config(
             if value is None:
                 return _json({"error": "value is required for set action"})
             return _config_set(key, value)
-
         case "cache_clear":
             return _config_cache_clear(repo_root)
-
         case _:
             return _json(
                 {
@@ -347,7 +400,6 @@ def _config_set(key: str, value: str) -> str:
         logging.getLogger().setLevel(level)
         return _json({"status": "updated", "key": key, "value": level})
 
-    # Unreachable: valid_keys guard above catches all unknown keys
     return _json({"error": f"Unhandled key: {key}"})  # pragma: no cover
 
 
@@ -379,14 +431,14 @@ def _config_cache_clear(repo_root: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 3: help (documentation)
+# Tool 5: help (documentation)
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool(
     description=(
-        "Full documentation for graph and config tools. "
-        "Topics: graph|config. "
+        "Full documentation for all tools. "
+        "Topics: graph|query|review|config. "
         "Use when compressed tool descriptions are insufficient."
     ),
     annotations=ToolAnnotations(
@@ -401,10 +453,17 @@ def help(topic: str = "graph") -> str:
     """Load full documentation for a tool.
 
     Topics:
-    - graph: All 9 graph actions with parameters and examples
-    - config: Config actions (status, set, cache_clear)
+    - graph: Graph lifecycle (build, update, stats, embed)
+    - query: Query operations (query, search, impact, large_functions)
+    - review: Code review context generation
+    - config: Server configuration (status, set, cache_clear)
     """
-    valid_topics = {"graph": "graph.md", "config": "config.md"}
+    valid_topics = {
+        "graph": "graph.md",
+        "query": "query.md",
+        "review": "review.md",
+        "config": "config.md",
+    }
     filename = valid_topics.get(topic)
     if not filename:
         return _json(
@@ -415,8 +474,7 @@ def help(topic: str = "graph") -> str:
         doc_file = files("better_code_review_graph.docs").joinpath(filename)
         return doc_file.read_text()
     except (FileNotFoundError, ModuleNotFoundError):
-        # Fallback: try loading the old LLM-OPTIMIZED-REFERENCE.md sections
-        if topic == "graph":
+        if topic in ("graph", "query"):
             result = get_docs_section(
                 section_name="commands", repo_root=_default_repo_root
             )

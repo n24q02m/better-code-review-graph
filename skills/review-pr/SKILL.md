@@ -18,18 +18,18 @@ Perform a comprehensive code review of a pull request or branch diff using the k
 
 2. **Update the graph** by calling `graph(action="build", base="main")` to ensure the graph reflects the current state.
 
-3. **Get the full review context** by calling `graph(action="review", base="main")`:
+3. **Get the full review context** by calling `review(base="main")`:
    - This uses `main` (or the specified base branch) as the diff base
    - Returns all changed files across all commits in the PR
 
-4. **Analyze impact** by calling `graph(action="impact", base="main")`:
+4. **Analyze impact** by calling `query(action="impact", base="main")`:
    - Review the blast radius across the entire PR
    - Identify high-risk areas (widely depended-upon code)
 
 5. **Deep-dive each changed file**:
    - Read the full source of files with significant changes
-   - Use `graph(action="query", pattern="callers_of", target=<func>)` for high-risk functions
-   - Use `graph(action="query", pattern="tests_for", target=<func>)` to verify test coverage
+   - Use `query(action="query", pattern="callers_of", target=<func>)` for high-risk functions
+   - Use `query(action="query", pattern="tests_for", target=<func>)` to verify test coverage
    - Check for breaking changes in public APIs
 
 6. **Generate structured review output**:
@@ -62,5 +62,5 @@ Perform a comprehensive code review of a pull request or branch diff using the k
 ## Tips
 
 - For large PRs, focus on the highest-impact files first (most dependents)
-- Use `graph(action="search", query=<term>)` to find related code the PR might have missed
+- Use `query(action="search", search_query=<term>)` to find related code the PR might have missed
 - Check if renamed/moved functions have updated all callers
