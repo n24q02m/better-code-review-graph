@@ -14,7 +14,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
-  - `cli.py` -- CLI: serve + update (for hooks)
+  - `cli.py` -- CLI: default serve + update (for hooks)
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker
@@ -33,7 +33,7 @@ uv run ruff check .                # Lint
 uv run ruff format .               # Format
 uv run ruff check --fix . && uv run ruff format .  # Fix
 uv run ty check                    # Type check (ty lenient config)
-uv run better-code-review-graph serve  # Chay MCP server (stdio)
+uv run better-code-review-graph        # Chay MCP server (stdio, default)
 ```
 
 ## Cau hinh quan trong
