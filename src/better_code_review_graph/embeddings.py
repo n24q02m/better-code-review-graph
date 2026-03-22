@@ -239,7 +239,7 @@ class LiteLLMBackend:
         kwargs: dict[str, Any] = {
             "model": self.model,
             "input": texts,
-            "encoding_format": "float",
+            "drop_params": True,
         }
         if dimensions:
             kwargs["dimensions"] = dimensions
@@ -301,7 +301,7 @@ class LiteLLMBackend:
             kwargs: dict[str, Any] = {
                 "model": self.model,
                 "input": ["test"],
-                "encoding_format": "float",
+                "drop_params": True,
             }
             if self.api_base:
                 kwargs["api_base"] = self.api_base
