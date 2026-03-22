@@ -190,7 +190,7 @@ Returns complete documentation for each tool. Use when the compressed descriptio
 
 ### Supported Languages
 
-Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
+Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++, Solidity
 
 ### Ignore Files
 
