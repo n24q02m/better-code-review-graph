@@ -9,7 +9,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - `src/better_code_review_graph/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server, 5 tools: graph + query + review (3 main) + config + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
-  - `parser.py` -- Tree-sitter parsing (12 langs) + call target resolution
+  - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
@@ -94,4 +94,4 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
-- Supported languages: Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
+- Supported languages: Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++, Solidity
