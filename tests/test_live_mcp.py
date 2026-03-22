@@ -130,7 +130,7 @@ class TestLiveMCP:
     def _server_params() -> StdioServerParameters:
         return StdioServerParameters(
             command="uv",
-            args=["run", "better-code-review-graph", "serve"],
+            args=["run", "better-code-review-graph"],
             env={**os.environ, "EMBEDDING_BACKEND": "local"},
         )
 
