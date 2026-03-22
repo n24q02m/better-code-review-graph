@@ -30,7 +30,7 @@ repos:
     hooks:
       - id: ty
         name: ty type check
-        entry: uv run ty check
+        entry: mise exec -- uv run ty check
         language: system
         types: [python]
         pass_filenames: false
@@ -40,7 +40,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest (Python)
-        entry: uv run pytest --tb=short -q --timeout=30
+        entry: mise exec -- uv run pytest --tb=short -q --timeout=30
         language: system
         types: [python]
         pass_filenames: false

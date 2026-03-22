@@ -61,7 +61,7 @@
       "pinDigests": true
     },
     {
-      "description": "Pin PSR to v10",
+      "description": "Pin PSR to v10 — block Renovate downgrades",
       "matchPackagePatterns": [
         "^python-semantic-release/"
       ],
@@ -76,6 +76,32 @@
         "python"
       ],
       "allowedVersions": ">=3.13.0 <3.14.0"
+    },
+    {
+      "description": "Pin Node.js runtime to 24.x",
+      "matchPackageNames": [
+        "node"
+      ],
+      "allowedVersions": ">=24.0.0 <25.0.0"
+    },
+    {
+      "description": "Pin Java runtime to 21.x LTS",
+      "matchPackageNames": [
+        "java"
+      ],
+      "allowedVersions": ">=21.0.0 <22.0.0"
+    },
+    {
+      "description": "Disable runtime version updates from mise (pinned in CLAUDE.md)",
+      "matchManagers": [
+        "mise"
+      ],
+      "matchDepNames": [
+        "python",
+        "node",
+        "java"
+      ],
+      "enabled": false
     }
   ]
 }
