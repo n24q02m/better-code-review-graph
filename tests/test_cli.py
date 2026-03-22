@@ -1,4 +1,4 @@
-"""Tests for the CLI module (cli.py) — serve + update."""
+"""Tests for the CLI module (cli.py) — default serve + hook update."""
 
 from __future__ import annotations
 
@@ -27,12 +27,11 @@ class TestGetVersion:
 
 
 class TestMainCLI:
-    def test_no_command_prints_usage(self, capsys):
+    def test_no_command_starts_server(self):
         with patch("sys.argv", ["better-code-review-graph"]):
-            main()
-        captured = capsys.readouterr()
-        assert "better-code-review-graph" in captured.out
-        assert "graph action=" in captured.out
+            with patch("better_code_review_graph.server.serve_main") as mock_serve:
+                main()
+                mock_serve.assert_called_once_with(repo_root=None)
 
     def test_version_flag(self, capsys):
         with patch("sys.argv", ["better-code-review-graph", "-v"]):
@@ -40,15 +39,9 @@ class TestMainCLI:
         captured = capsys.readouterr()
         assert "better-code-review-graph" in captured.out
 
-    def test_serve_command(self):
-        with patch("sys.argv", ["better-code-review-graph", "serve"]):
-            with patch("better_code_review_graph.server.serve_main") as mock_serve:
-                main()
-                mock_serve.assert_called_once_with(repo_root=None)
-
-    def test_serve_command_with_repo(self):
+    def test_repo_flag(self):
         with patch(
-            "sys.argv", ["better-code-review-graph", "serve", "--repo", "/my/repo"]
+            "sys.argv", ["better-code-review-graph", "--repo", "/my/repo"]
         ):
             with patch("better_code_review_graph.server.serve_main") as mock_serve:
                 main()
@@ -65,7 +58,7 @@ class TestMainCLI:
                     main()
                 assert exc_info.value.code == 1
 
-    def test_update_command(self, tmp_path, capsys):
+    def test_update_command(self, tmp_path):
         """update with a valid repo runs incremental update."""
         import subprocess
 

@@ -1,9 +1,10 @@
 """CLI entry point for better-code-review-graph.
 
 Usage:
-    better-code-review-graph          # Show version + usage
-    better-code-review-graph serve    # Start MCP server (stdio)
-    better-code-review-graph update   # Incremental graph update (for hooks)
+    better-code-review-graph             # Start MCP server (stdio)
+    better-code-review-graph --version   # Show version
+    better-code-review-graph --repo DIR  # Start with custom repo root
+    better-code-review-graph update      # Incremental update (hooks only)
 """
 
 from __future__ import annotations
@@ -22,7 +23,12 @@ def _get_version() -> str:
 
 
 def main() -> None:
-    """Main CLI entry point."""
+    """Main CLI entry point — starts the MCP server by default."""
+    # Hook-only command: `better-code-review-graph update [--base X] [--repo DIR]`
+    if len(sys.argv) >= 2 and sys.argv[1] == "update":
+        _run_update()
+        return
+
     ap = argparse.ArgumentParser(
         prog="better-code-review-graph",
         description="Persistent incremental knowledge graph for code reviews",
@@ -30,20 +36,7 @@ def main() -> None:
     ap.add_argument(
         "-v", "--version", action="store_true", help="Show version and exit"
     )
-    sub = ap.add_subparsers(dest="command")
-
-    serve_cmd = sub.add_parser("serve", help="Start MCP server (stdio transport)")
-    serve_cmd.add_argument(
-        "--repo", default=None, help="Repository root (auto-detected)"
-    )
-
-    update_cmd = sub.add_parser(
-        "update", help="Incremental graph update (used by hooks)"
-    )
-    update_cmd.add_argument(
-        "--base", default="HEAD~1", help="Git diff base (default: HEAD~1)"
-    )
-    update_cmd.add_argument(
+    ap.add_argument(
         "--repo", default=None, help="Repository root (auto-detected)"
     )
 
@@ -53,34 +46,21 @@ def main() -> None:
         print(f"better-code-review-graph {_get_version()}")
         return
 
-    if args.command == "serve":
-        from .server import serve_main
+    from .server import serve_main
 
-        serve_main(repo_root=args.repo)
-        return
-
-    if args.command == "update":
-        _run_update(args)
-        return
-
-    # No command: show version + usage
-    print(f"better-code-review-graph {_get_version()}")
-    print()
-    print("Usage: better-code-review-graph serve")
-    print()
-    print("All graph operations are available through MCP tools:")
-    print("  graph action=build       Build the knowledge graph")
-    print("  graph action=update      Incremental update")
-    print("  graph action=query       Query code relationships")
-    print("  graph action=search      Search nodes")
-    print("  graph action=stats       View graph statistics")
-    print("  config action=status     Server status")
+    serve_main(repo_root=args.repo)
 
 
-def _run_update(args: argparse.Namespace) -> None:
+def _run_update() -> None:
     """Run incremental graph update (called by PostToolUse hook)."""
     import logging
     from pathlib import Path
+
+    # Parse update-specific args
+    ap = argparse.ArgumentParser(prog="better-code-review-graph update")
+    ap.add_argument("--base", default="HEAD~1", help="Git diff base")
+    ap.add_argument("--repo", default=None, help="Repository root")
+    args = ap.parse_args(sys.argv[2:])
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
