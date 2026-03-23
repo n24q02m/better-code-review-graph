@@ -684,3 +684,72 @@ class TestFullMultiLang:
                 assert "Circle" in names or "totalArea" in names, (
                     f"Expected TypeScript nodes in file summary, got {names}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# TestFullCloudEmbed
+# ---------------------------------------------------------------------------
+
+API_KEYS = os.environ.get("API_KEYS", "")
+
+
+def _cloud_server_params() -> StdioServerParameters:
+    return StdioServerParameters(
+        command="uv",
+        args=["run", "better-code-review-graph"],
+        env={**os.environ, "API_KEYS": API_KEYS},
+    )
+
+
+@pytest.mark.full
+@pytest.mark.skipif(not API_KEYS, reason="API_KEYS not set")
+class TestFullCloudEmbed:
+    """Tests with cloud embedding for semantic search via API_KEYS."""
+
+    async def test_graph_embed_cloud(self, sample_repo: Path):
+        """Embed graph with cloud API keys should succeed."""
+        async with stdio_client(_cloud_server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _build_graph(session, sample_repo)
+
+                embed_result = await session.call_tool(
+                    "graph",
+                    {"action": "embed", "repo_root": str(sample_repo)},
+                )
+                embed_data = _parse_result_text(embed_result)
+                assert embed_data["status"] == "ok"
+                assert embed_data["newly_embedded"] > 0
+
+    async def test_query_semantic_search_cloud(self, sample_repo: Path):
+        """Semantic search with cloud embeddings should find relevant results."""
+        async with stdio_client(_cloud_server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await _build_graph(session, sample_repo)
+
+                # Embed first
+                await session.call_tool(
+                    "graph",
+                    {"action": "embed", "repo_root": str(sample_repo)},
+                )
+
+                # Semantic search
+                result = await session.call_tool(
+                    "query",
+                    {
+                        "action": "search",
+                        "search_query": "calculation arithmetic",
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                data = _parse_result_text(result)
+                assert data["status"] == "ok"
+                results = data.get("results", [])
+                assert len(results) > 0, f"No semantic search results: {data}"
+                # Should find calculator-related functions
+                names = [r.get("name", "") for r in results]
+                found = any(
+                    n in names for n in ("add", "multiply", "calculate", "Calculator")
+                )
+                assert found, f"Expected calculator nodes, got {names}"
