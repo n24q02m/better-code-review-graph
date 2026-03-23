@@ -1,12 +1,12 @@
 ---
 name: review-pr
-description: Review a PR or branch diff using the knowledge graph for full structural context. Outputs a structured review with blast-radius analysis.
+description: Comprehensive PR review -- full branch diff against base, commit-by-commit analysis, breaking change detection, conventional commit verification.
 argument-hint: "[PR number or branch name]"
 ---
 
 # Review PR
 
-Perform a comprehensive code review of a pull request or branch diff using the knowledge graph.
+Comprehensive code review of a pull request or branch diff against its base. Unlike review-delta (quick review of uncommitted local changes), this reviews ALL commits in a branch for PR submission readiness.
 
 **Token optimization:** Before starting, call `help(topic="graph")` for the full actions reference. Never include full files unless explicitly asked.
 
@@ -18,21 +18,32 @@ Perform a comprehensive code review of a pull request or branch diff using the k
 
 2. **Update the graph** by calling `graph(action="build", base="main")` to ensure the graph reflects the current state.
 
-3. **Get the full review context** by calling `review(base="main")`:
-   - This uses `main` (or the specified base branch) as the diff base
-   - Returns all changed files across all commits in the PR
+3. **Commit-by-commit analysis** (for PRs with >3 commits):
+   - `git log --oneline main..HEAD` to list all commits
+   - Group related commits by area (feature, fix, refactor, test, docs)
+   - Verify each commit message follows Conventional Commits (`type(scope): description`)
+   - Flag commits that mix unrelated changes
 
-4. **Analyze impact** by calling `query(action="impact", base="main")`:
+4. **Get the full review context** by calling `review(base="main")`:
+   - Returns all changed files across all commits in the PR
+   - Includes impacted nodes and blast radius
+
+5. **Analyze impact** by calling `query(action="impact", base="main")`:
    - Review the blast radius across the entire PR
    - Identify high-risk areas (widely depended-upon code)
 
-5. **Deep-dive each changed file**:
-   - Read the full source of files with significant changes
-   - Use `query(action="query", pattern="callers_of", target=<func>)` for high-risk functions
-   - Use `query(action="query", pattern="tests_for", target=<func>)` to verify test coverage
-   - Check for breaking changes in public APIs
+6. **Breaking change detection** for public APIs:
+   - Identify exported/public functions, classes, types that changed
+   - Check for: removed parameters, changed return types, renamed exports, removed functions
+   - Use `query(action="query", pattern="callers_of", target=<func>)` to find all consumers
+   - Flag any change where callers outside the PR would break
 
-6. **Generate structured review output**:
+7. **Deep-dive each changed file**:
+   - Read the full source of files with significant changes
+   - Use `query(action="query", pattern="tests_for", target=<func>)` to verify test coverage
+   - Check for untested new functions
+
+8. **Generate structured review output**:
 
    ```
    ## PR Review: <title>
@@ -40,10 +51,15 @@ Perform a comprehensive code review of a pull request or branch diff using the k
    ### Summary
    <1-3 sentence overview>
 
+   ### Conventional Commits Check
+   - [x] `feat(parser): add Go support` -- valid
+   - [ ] `fixed stuff` -- invalid, should be `fix(scope): description`
+
    ### Risk Assessment
    - **Overall risk**: Low / Medium / High
    - **Blast radius**: X files, Y functions impacted
    - **Test coverage**: N changed functions covered / M total
+   - **Breaking changes**: None / List of breaking changes
 
    ### File-by-File Review
    #### <file_path>
@@ -56,11 +72,20 @@ Perform a comprehensive code review of a pull request or branch diff using the k
 
    ### Recommendations
    1. <actionable suggestion>
-   2. <actionable suggestion>
    ```
+
+## Key Differences from review-delta
+
+| Aspect | review-delta | review-pr |
+|---|---|---|
+| Scope | Uncommitted changes only | Full branch diff (all commits) |
+| Speed | Fast, minimal context | Thorough, more context |
+| Use case | Quick check before commit | PR submission readiness |
+| Commit analysis | N/A | Commit-by-commit + conventional commit check |
+| Breaking changes | Not checked | Explicitly detected |
 
 ## Tips
 
-- For large PRs, focus on the highest-impact files first (most dependents)
+- For large PRs (>10 files), focus on the highest-impact files first (most dependents)
 - Use `query(action="search", search_query=<term>)` to find related code the PR might have missed
 - Check if renamed/moved functions have updated all callers

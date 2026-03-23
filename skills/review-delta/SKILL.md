@@ -1,12 +1,12 @@
 ---
 name: review-delta
-description: Review only changes since last commit using impact analysis. Token-efficient delta review with automatic blast-radius detection.
+description: Review uncommitted changes using impact analysis. Quick local delta review with blast-radius detection.
 argument-hint: "[file or function name]"
 ---
 
 # Review Delta
 
-Perform a focused, token-efficient code review of only the changed code and its blast radius.
+Perform a focused, token-efficient code review of uncommitted changes and their blast radius. Use this for quick local reviews BEFORE committing. For full branch/PR reviews, use review-pr instead.
 
 **Token optimization:** Before starting, call `help(topic="graph")` for the full actions reference. Use ONLY changed nodes + 2-hop neighbors in context.
 
@@ -32,11 +32,33 @@ Perform a focused, token-efficient code review of only the changed code and its 
    - Flag any untested changed functions
 
 5. **Report findings** in a structured format:
-   - **Summary**: One-line overview of the changes
-   - **Risk level**: Low / Medium / High (based on blast radius)
-   - **Issues found**: Bugs, style issues, missing tests
-   - **Blast radius**: List of impacted files/functions
-   - **Recommendations**: Actionable suggestions
+
+   ```
+   ## Delta Review
+
+   ### Summary
+   <One-line overview of the changes>
+
+   ### Risk Level
+   - **Low**: Test-only changes, documentation, config files
+   - **Medium**: Implementation changes with <5 impacted files, no public API changes
+   - **High**: >5 impacted files OR public API signature/behavior change
+
+   ### Issues Found
+   - <Bugs, style issues, missing tests>
+
+   ### Blast Radius
+   - <List of impacted files/functions>
+
+   ### Recommendations
+   1. <Actionable suggestion>
+   ```
+
+## Risk Level Escalation Rules
+
+- **High** if any of: >5 impacted files, public API signature change, public API behavior change, breaking change in exported symbols
+- **Low** if all of: only test files changed, only documentation/comments changed, only config/CI files changed
+- **Medium**: everything else
 
 ## Advantages Over Full-Repo Review
 
