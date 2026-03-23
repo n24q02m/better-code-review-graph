@@ -1,0 +1,3 @@
+## 2024-06-18 - Replacing N+1 queries with Batched IN clauses in SQLite
+**Learning:** `get_impact_radius` and `get_subgraph` suffered from N+1 query problems because they were individually executing `SELECT * FROM nodes WHERE qualified_name = ?` for each node using `get_node()`. Due to SQLite overhead, this is slow for a large number of nodes. A batched `IN` query is significantly faster, similar to `get_edges_among`.
+**Action:** Implemented `get_nodes_by_qualified_names` that fetches nodes using `WHERE qualified_name IN (?, ?, ...)` batched at 450 items (to stay under SQLite's variable limit). Apply this pattern when retrieving multiple nodes or edges.

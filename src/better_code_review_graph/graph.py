@@ -409,16 +409,13 @@ class GraphStore:
 
         # Resolve to full node info
         changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
+        if seeds:
+            changed_nodes = self.get_nodes_by_qualified_names(seeds)
 
         impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        impacted_qns = impacted - seeds
+        if impacted_qns:
+            impacted_nodes = self.get_nodes_by_qualified_names(impacted_qns)
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -439,18 +436,9 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
-
-        edges = []
         qn_set = set(qualified_names)
-        for qn in qualified_names:
-            for e in self.get_edges_by_source(qn):
-                if e.target_qualified in qn_set:
-                    edges.append(e)
+        nodes = self.get_nodes_by_qualified_names(qn_set)
+        edges = self.get_edges_among(qn_set)
 
         return {"nodes": nodes, "edges": edges}
 
@@ -569,6 +557,24 @@ class GraphStore:
                 edge = self._row_to_edge(r)
                 if edge.target_qualified in qualified_names:
                     results.append(edge)
+        return results
+
+    def get_nodes_by_qualified_names(self, qualified_names: set[str]) -> list[GraphNode]:
+        """Fetch multiple nodes by their qualified names efficiently using batched IN clauses."""
+        if not qualified_names:
+            return []
+        qns = list(qualified_names)
+        results: list[GraphNode] = []
+        batch_size = 450
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                results.append(self._row_to_node(r))
         return results
 
     # --- Internal helpers ---
