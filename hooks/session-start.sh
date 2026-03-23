@@ -18,5 +18,5 @@ When answering questions about this codebase, prefer using the better-code-revie
 This saves significant tokens by avoiding full codebase scans.
 INSTRUCTIONS
 else
-    echo "[better-code-review-graph] No knowledge graph found. Run /better-code-review-graph:build-graph to parse this codebase and enable graph-powered queries."
+    echo "[better-code-review-graph] No knowledge graph found. Use the graph tool with action='build' to parse this codebase and enable graph-powered queries."
 fi
