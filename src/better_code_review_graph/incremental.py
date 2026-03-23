@@ -214,10 +214,22 @@ def collect_all_files(repo_root: Path) -> list[str]:
     for rel_path in candidates:
         if _should_ignore(rel_path, ignore_patterns):
             continue
+
         full_path = repo_root / rel_path
-        if not full_path.is_file():
-            continue
+
+        # Check if symlink before resolving to prevent bypassing symlink filter
         if full_path.is_symlink():
+            continue
+
+        # Prevent path traversal outside repo root
+        try:
+            full_path = full_path.resolve()
+            if not full_path.is_relative_to(repo_root.resolve()):
+                continue
+        except RuntimeError:
+            continue
+
+        if not full_path.is_file():
             continue
         if parser.detect_language(full_path) is None:
             continue
@@ -342,7 +354,17 @@ def incremental_update(
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
+
         abs_path = repo_root / rel_path
+
+        # Prevent path traversal outside repo root
+        try:
+            abs_path = abs_path.resolve()
+            if not abs_path.is_relative_to(repo_root.resolve()):
+                continue
+        except RuntimeError:
+            continue
+
         if not abs_path.is_file():
             # File was deleted
             store.remove_file_data(str(abs_path))

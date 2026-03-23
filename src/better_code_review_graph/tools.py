@@ -618,6 +618,15 @@ def get_review_context(
             snippets = {}
             for rel_path in changed_files:
                 full_path = root / rel_path
+
+                # Prevent path traversal outside repo root
+                try:
+                    full_path = full_path.resolve()
+                    if not full_path.is_relative_to(root.resolve()):
+                        continue
+                except RuntimeError:
+                    continue
+
                 if full_path.is_file():
                     try:
                         lines = full_path.read_text(errors="replace").splitlines()
