@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
+import operator
 import os
 import sqlite3
 import struct
@@ -380,11 +382,13 @@ def _decode_vector(blob: bytes) -> list[float]:
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
-    if len(a) != len(b):
+    if len(a) != len(b) or len(a) == 0:
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
+    # Use map and operator.mul for dot product to avoid generator overhead in Python loops
+    dot = sum(map(operator.mul, a, b))
+    # math.hypot calculates the Euclidean norm efficiently in C
+    norm_a = math.hypot(*a)
+    norm_b = math.hypot(*b)
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
