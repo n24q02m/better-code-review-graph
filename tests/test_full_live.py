@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pytest
 from mcp import StdioServerParameters
+from mcp.client.session import ClientSession
+from mcp.client.stdio import stdio_client
 
 # Live MCP tests spawn subprocesses and need more time than unit tests
 pytestmark = pytest.mark.timeout(120)
-from mcp.client.session import ClientSession
-from mcp.client.stdio import stdio_client
 
 SAMPLE_PYTHON = '''\
 def add(a: int, b: int) -> int:
@@ -326,7 +326,9 @@ class TestFullQueryAllPatterns:
                 assert data["pattern"] == "callers_of"
                 # 'calculate' calls 'add', so it should appear
                 names = [r.get("name", "") for r in data.get("results", [])]
-                assert "calculate" in names, f"Expected 'calculate' in callers, got {names}"
+                assert (
+                    "calculate" in names
+                ), f"Expected 'calculate' in callers, got {names}"
 
     async def test_callees_of(self, sample_repo: Path):
         """callees_of 'calculate' should find 'add' and 'multiply'."""
@@ -349,7 +351,9 @@ class TestFullQueryAllPatterns:
                 assert data["pattern"] == "callees_of"
                 names = [r.get("name", "") for r in data.get("results", [])]
                 assert "add" in names, f"Expected 'add' in callees, got {names}"
-                assert "multiply" in names, f"Expected 'multiply' in callees, got {names}"
+                assert (
+                    "multiply" in names
+                ), f"Expected 'multiply' in callees, got {names}"
 
     async def test_imports_of(self, sample_repo: Path):
         """imports_of 'test_calculator.py' should find imports from calculator."""
@@ -397,11 +401,12 @@ class TestFullQueryAllPatterns:
                 results = data.get("results", [])
                 if len(results) > 0:
                     importers = [
-                        r.get("importer", "") or r.get("file", "")
-                        for r in results
+                        r.get("importer", "") or r.get("file", "") for r in results
                     ]
                     found = any("test_calculator" in i for i in importers)
-                    assert found, f"Expected test_calculator in importers, got {importers}"
+                    assert (
+                        found
+                    ), f"Expected test_calculator in importers, got {importers}"
 
     async def test_children_of(self, sample_repo: Path):
         """children_of 'Calculator' should find __init__ and run methods."""
@@ -503,9 +508,9 @@ class TestFullQueryAllPatterns:
                 assert len(results) > 0
                 names = [r.get("name", "") for r in results]
                 assert "add" in names, f"Expected 'add' in file summary, got {names}"
-                assert "Calculator" in names, (
-                    f"Expected 'Calculator' in file summary, got {names}"
-                )
+                assert (
+                    "Calculator" in names
+                ), f"Expected 'Calculator' in file summary, got {names}"
 
 
 # ---------------------------------------------------------------------------
@@ -637,9 +642,7 @@ class TestFullCacheCycle:
 class TestFullMultiLang:
     """Test graph build and query on a multi-language repository."""
 
-    async def test_build_mixed_repo_all_languages_parsed(
-        self, mixed_lang_repo: Path
-    ):
+    async def test_build_mixed_repo_all_languages_parsed(self, mixed_lang_repo: Path):
         """graph.build on mixed repo -> query structure -> all 3 languages parsed."""
         async with stdio_client(_server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -658,15 +661,13 @@ class TestFullMultiLang:
                 )
                 stats = _parse_result_text(stats_result)
                 languages = [lang.lower() for lang in stats.get("languages", [])]
-                assert "python" in languages, (
-                    f"Expected 'python' in languages, got {languages}"
-                )
-                assert "go" in languages, (
-                    f"Expected 'go' in languages, got {languages}"
-                )
-                assert "typescript" in languages, (
-                    f"Expected 'typescript' in languages, got {languages}"
-                )
+                assert (
+                    "python" in languages
+                ), f"Expected 'python' in languages, got {languages}"
+                assert "go" in languages, f"Expected 'go' in languages, got {languages}"
+                assert (
+                    "typescript" in languages
+                ), f"Expected 'typescript' in languages, got {languages}"
 
                 # Query file_summary on TypeScript file
                 ts_result = await session.call_tool(
@@ -681,9 +682,9 @@ class TestFullMultiLang:
                 ts_data = _parse_result_text(ts_result)
                 assert ts_data["status"] == "ok"
                 names = [r.get("name", "") for r in ts_data.get("results", [])]
-                assert "Circle" in names or "totalArea" in names, (
-                    f"Expected TypeScript nodes in file summary, got {names}"
-                )
+                assert (
+                    "Circle" in names or "totalArea" in names
+                ), f"Expected TypeScript nodes in file summary, got {names}"
 
 
 # ---------------------------------------------------------------------------
