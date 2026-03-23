@@ -65,7 +65,10 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 timeout = 30
 addopts = "--tb=short -q"
-markers = ["integration: integration tests (deselect with '-m not integration')"]
+markers = [
+    "integration: integration tests (deselect with '-m not integration')",
+    "full: full/real live MCP protocol tests (deselect with '-m not full')",
+]
 
 [tool.coverage.run]
 source = ["src/better_code_review_graph"]
