@@ -559,7 +559,9 @@ class GraphStore:
                     results.append(edge)
         return results
 
-    def get_nodes_by_qualified_names(self, qualified_names: set[str]) -> list[GraphNode]:
+    def get_nodes_by_qualified_names(
+        self, qualified_names: set[str]
+    ) -> list[GraphNode]:
         """Fetch multiple nodes by their qualified names efficiently using batched IN clauses."""
         if not qualified_names:
             return []
