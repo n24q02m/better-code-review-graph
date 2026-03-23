@@ -131,6 +131,9 @@ _GIT_TIMEOUT = 30  # seconds
 
 def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
     """Get list of changed files via git diff."""
+    if base.startswith("-"):
+        raise ValueError(f"Invalid git ref: {base}")
+
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", base],
