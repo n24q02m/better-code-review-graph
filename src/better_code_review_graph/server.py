@@ -52,7 +52,9 @@ mcp = FastMCP(
 
 @mcp.tool(
     description=(
-        "Graph lifecycle. Actions: build|update|stats|embed. "
+        "Build and manage the code knowledge graph. "
+        "Actions: build (full_rebuild, base, repo_root), update (base, repo_root), "
+        "stats (repo_root), embed (repo_root). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -69,12 +71,13 @@ def graph(
     base: str = "HEAD~1",
     repo_root: str | None = None,
 ) -> str:
-    """Graph lifecycle operations.
+    """Build, update, and manage the code knowledge graph.
 
-    - build: Full or incremental graph build (full_rebuild, base, repo_root)
-    - update: Alias for build with full_rebuild=False
-    - stats: Graph statistics — nodes, edges, languages, embeddings
-    - embed: Compute vector embeddings for semantic search
+    Actions (required params -> optional):
+    - build (-> full_rebuild=false, base="HEAD~1", repo_root): Parse source and build graph
+    - update (-> base="HEAD~1", repo_root): Incremental update (alias for build)
+    - stats (-> repo_root): Node/edge counts, languages, embedding status
+    - embed (-> repo_root): Compute vector embeddings for semantic search
     """
     match action:
         case "build":
@@ -94,10 +97,15 @@ def graph(
         case "embed":
             return _json(embed_graph(repo_root=repo_root))
         case _:
+            import difflib
+
+            valid_actions = ["build", "embed", "stats", "update"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": ["build", "update", "stats", "embed"],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                 }
             )
 
@@ -109,8 +117,9 @@ def graph(
 
 @mcp.tool(
     description=(
-        "Query the knowledge graph. Actions: query|search|impact|large_functions. "
-        "Use `help` tool for full docs."
+        "Query the code knowledge graph for relationships, search, and impact analysis. "
+        "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
+        "large_functions (min_lines). Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
         title="Query",
@@ -140,13 +149,14 @@ def query(
     # common
     repo_root: str | None = None,
 ) -> str:
-    """Query the knowledge graph.
+    """Query the code knowledge graph for relationships, search, and impact analysis.
 
-    - query: Predefined graph queries (pattern, target, repo_root)
-      Patterns: callers_of|callees_of|imports_of|importers_of|children_of|tests_for|inheritors_of|file_summary
-    - search: Search nodes by name/keyword/vector (search_query, kind, limit, repo_root)
-    - impact: Blast radius of changed files (changed_files, max_depth, max_results, base, repo_root)
-    - large_functions: Find oversized functions/classes (min_lines, kind, file_path_pattern, limit, repo_root)
+    Actions (required params -> optional):
+    - query (pattern, target -> repo_root): Predefined graph queries
+      pattern: callers_of | callees_of | imports_of | importers_of | children_of | tests_for | inheritors_of | file_summary
+    - search (search_query -> kind, limit=20, repo_root): Search nodes by name/keyword/vector
+    - impact (-> changed_files, max_depth=2, max_results=500, base="HEAD~1", repo_root): Blast radius analysis
+    - large_functions (-> min_lines=50, kind, file_path_pattern, limit=20, repo_root): Find oversized functions
     """
     match action:
         case "query":
@@ -200,15 +210,15 @@ def query(
                 )
             )
         case _:
+            import difflib
+
+            valid_actions = ["impact", "large_functions", "query", "search"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": [
-                        "query",
-                        "search",
-                        "impact",
-                        "large_functions",
-                    ],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                 }
             )
 
@@ -220,8 +230,10 @@ def query(
 
 @mcp.tool(
     description=(
-        "Token-efficient review context for code changes. "
-        "Combines impact analysis with source snippets and review guidance. "
+        "Generate token-efficient review context for code changes. "
+        "Auto-detects changed files from git diff. Returns structural summary, "
+        "impacted nodes, source snippets, and review guidance. "
+        "Params: changed_files (auto), max_depth=2, include_source=true, max_lines_per_file=200, base='HEAD~1', repo_root (auto). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -273,7 +285,8 @@ def review(
 @mcp.tool(
     description=(
         "Server configuration and status. "
-        "Actions: status|set|cache_clear. "
+        "Actions: status (show state), set (key, value -- keys: log_level), "
+        "cache_clear (wipe embeddings). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -313,10 +326,15 @@ def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case _:
+            import difflib
+
+            valid_actions = ["cache_clear", "set", "status"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
                 {
-                    "error": f"Unknown action: {action}",
-                    "valid_actions": ["status", "set", "cache_clear"],
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
                 }
             )
 
@@ -437,9 +455,9 @@ def _config_cache_clear(repo_root: str | None) -> str:
 
 @mcp.tool(
     description=(
-        "Full documentation for all tools. "
-        "Topics: graph|query|review|config. "
-        "Use when compressed tool descriptions are insufficient."
+        "Get full documentation for any tool. "
+        "Topics: graph | query | review | config. "
+        "Use when compressed descriptions are insufficient."
     ),
     annotations=ToolAnnotations(
         title="Help",
@@ -466,8 +484,12 @@ def help(topic: str = "graph") -> str:
     }
     filename = valid_topics.get(topic)
     if not filename:
+        import difflib
+
+        closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
+        suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
         return _json(
-            {"error": f"Invalid topic: {topic}", "valid_topics": sorted(valid_topics)}
+            {"error": f"Unknown topic '{topic}'.{suggestion}", "valid_topics": sorted(valid_topics)}
         )
 
     try:
