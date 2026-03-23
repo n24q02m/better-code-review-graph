@@ -296,6 +296,29 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert len(data) > 0
 
+    async def test_graph_update(self, sample_repo: Path):
+        """graph action=update performs incremental update."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                # First build
+                await session.call_tool(
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                # Then update (incremental)
+                result = await session.call_tool(
+                    "graph",
+                    {"action": "update", "repo_root": str(sample_repo)},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict), f"Unexpected response: {data}"
+                assert data.get("status") == "ok"
+
     async def test_graph_embed(self, sample_repo: Path):
         """graph action=embed computes embeddings for graph nodes."""
         async with stdio_client(self._server_params()) as (read, write):
@@ -400,6 +423,27 @@ class TestLiveMCP:
                     content = data.get("content", "")
                     assert len(content) > 0 or "error" not in data
 
+    async def test_config_cache_clear(self, sample_repo: Path):
+        """config action=cache_clear wipes embeddings."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await session.call_tool(
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                result = await session.call_tool(
+                    "config",
+                    {"action": "cache_clear", "repo_root": str(sample_repo)},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict), f"Unexpected response: {data}"
+                assert "cache cleared" in data.get("status", "")
+
     # ------------------------------------------------------------------
     # 6. Error paths
     # ------------------------------------------------------------------
@@ -487,3 +531,68 @@ class TestLiveMCP:
                 elif isinstance(data, str):
                     text = data.lower()
                     assert "error" in text or "not found" in text or len(text) == 0
+
+    async def test_query_missing_target(self, sample_repo: Path):
+        """query action=query without target returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await session.call_tool(
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                result = await session.call_tool(
+                    "query",
+                    {
+                        "action": "query",
+                        "pattern": "callers_of",
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict)
+                assert "error" in data
+
+    async def test_config_set_invalid_key(self):
+        """config action=set with invalid key returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "config",
+                    {"action": "set", "key": "nonexistent_key", "value": "x"},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict)
+                assert "error" in data
+
+    async def test_config_set_missing_value(self):
+        """config action=set without value returns error."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "config",
+                    {"action": "set", "key": "log_level"},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict)
+                assert "error" in data
+
+    async def test_query_missing_pattern(self, sample_repo: Path):
+        """query action=query without pattern returns error with valid_patterns."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "query",
+                    {"action": "query", "repo_root": str(sample_repo)},
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict)
+                assert "error" in data
+                assert "valid_patterns" in data
