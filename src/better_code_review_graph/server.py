@@ -489,7 +489,10 @@ def help(topic: str = "graph") -> str:
         closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
         suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
         return _json(
-            {"error": f"Unknown topic '{topic}'.{suggestion}", "valid_topics": sorted(valid_topics)}
+            {
+                "error": f"Unknown topic '{topic}'.{suggestion}",
+                "valid_topics": sorted(valid_topics),
+            }
         )
 
     try:
