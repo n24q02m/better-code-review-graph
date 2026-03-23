@@ -14,7 +14,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
-  - `cli.py` -- CLI: default serve + update (for hooks)
+  - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker

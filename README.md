@@ -115,7 +115,7 @@ When installed as a plugin, you get:
 **Hooks:**
 
 - **SessionStart**: Auto-builds the code graph when a conversation starts
-- **PostToolUse**: Auto-updates the graph after file modifications (Write, Edit, MultiEdit, Bash)
+- **PostToolUse**: Auto-updates the graph after file modifications (Write, Edit, Bash)
 
 **Skills:**
 

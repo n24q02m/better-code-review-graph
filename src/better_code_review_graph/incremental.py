@@ -1,7 +1,7 @@
 """Incremental graph update logic.
 
 Detects changed files via git diff, re-parses only changed + impacted files,
-and updates the graph accordingly. Also supports CLI invocation for hooks.
+and updates the graph accordingly.
 """
 
 from __future__ import annotations
@@ -378,6 +378,19 @@ def incremental_update(
         "dependent_files": list(dependent_files),
         "errors": errors,
     }
+
+
+def incremental_update_from_hook() -> None:
+    """Entry point for PostToolUse hook -- replaces CLI 'update' subcommand."""
+    repo_root = find_repo_root()
+    if not repo_root:
+        return
+    db_path = get_db_path(repo_root)
+    store = GraphStore(db_path)
+    try:
+        incremental_update(repo_root, store, base="HEAD~1")
+    finally:
+        store.close()
 
 
 # ---------------------------------------------------------------------------

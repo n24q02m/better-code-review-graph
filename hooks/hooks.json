@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "better-code-review-graph update 2>/dev/null || true"
+            "command": "uvx --from better-code-review-graph python -c \"from better_code_review_graph.incremental import incremental_update_from_hook; incremental_update_from_hook()\" 2>/dev/null || true"
           }
         ]
       }

@@ -16,6 +16,7 @@ from better_code_review_graph.incremental import (
     get_db_path,
     get_staged_and_unstaged,
     incremental_update,
+    incremental_update_from_hook,
 )
 
 
@@ -234,3 +235,41 @@ class TestIncrementalUpdate:
             assert len(nodes) == 0
         finally:
             store.close()
+
+
+class TestIncrementalUpdateFromHook:
+    def test_no_repo_returns_silently(self, tmp_path, monkeypatch):
+        """Hook entry point should return silently when no git repo found."""
+        monkeypatch.chdir(tmp_path)
+        incremental_update_from_hook()  # Should not raise
+
+    def test_with_repo(self, tmp_path, monkeypatch):
+        """Hook entry point runs incremental update in a git repo."""
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.com"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        (tmp_path / "sample.py").write_text("def foo(): pass\n")
+        subprocess.run(
+            ["git", "add", "."], cwd=tmp_path, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            check=True,
+        )
+        monkeypatch.chdir(tmp_path)
+        incremental_update_from_hook()  # Should not raise
+        # Verify graph was created
+        db_path = tmp_path / ".code-review-graph" / "graph.db"
+        assert db_path.exists()
