@@ -527,7 +527,9 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
-    def get_nodes_by_qualified_names(self, qualified_names: set[str] | list[str]) -> list[GraphNode]:
+    def get_nodes_by_qualified_names(
+        self, qualified_names: set[str] | list[str]
+    ) -> list[GraphNode]:
         """Batch fetch nodes by their qualified names.
 
         Uses batching to stay under SQLite's default SQLITE_MAX_VARIABLE_NUMBER limit.

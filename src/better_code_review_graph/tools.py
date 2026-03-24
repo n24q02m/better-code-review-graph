@@ -480,7 +480,12 @@ def query_graph(
                     caller_qns.add(e.source_qualified)
                     edges_out.append(edge_to_dict(e))
             if caller_qns:
-                results.extend([node_to_dict(n) for n in store.get_nodes_by_qualified_names(caller_qns)])
+                results.extend(
+                    [
+                        node_to_dict(n)
+                        for n in store.get_nodes_by_qualified_names(caller_qns)
+                    ]
+                )
 
         elif pattern == "callees_of":
             callee_qns = set()
@@ -489,7 +494,12 @@ def query_graph(
                     callee_qns.add(e.target_qualified)
                     edges_out.append(edge_to_dict(e))
             if callee_qns:
-                results.extend([node_to_dict(n) for n in store.get_nodes_by_qualified_names(callee_qns)])
+                results.extend(
+                    [
+                        node_to_dict(n)
+                        for n in store.get_nodes_by_qualified_names(callee_qns)
+                    ]
+                )
 
         elif pattern == "imports_of":
             for e in store.get_edges_by_source(qn):
@@ -513,7 +523,12 @@ def query_graph(
                 if e.kind == "CONTAINS":
                     child_qns.add(e.target_qualified)
             if child_qns:
-                results.extend([node_to_dict(n) for n in store.get_nodes_by_qualified_names(child_qns)])
+                results.extend(
+                    [
+                        node_to_dict(n)
+                        for n in store.get_nodes_by_qualified_names(child_qns)
+                    ]
+                )
 
         elif pattern == "tests_for":
             test_qns = set()
@@ -521,7 +536,12 @@ def query_graph(
                 if e.kind == "TESTED_BY":
                     test_qns.add(e.source_qualified)
             if test_qns:
-                results.extend([node_to_dict(n) for n in store.get_nodes_by_qualified_names(test_qns)])
+                results.extend(
+                    [
+                        node_to_dict(n)
+                        for n in store.get_nodes_by_qualified_names(test_qns)
+                    ]
+                )
             # Also search by naming convention
             name = node.name if node else target
             test_nodes = store.search_nodes(f"test_{name}", limit=10)
@@ -538,7 +558,12 @@ def query_graph(
                     inheritor_qns.add(e.source_qualified)
                     edges_out.append(edge_to_dict(e))
             if inheritor_qns:
-                results.extend([node_to_dict(n) for n in store.get_nodes_by_qualified_names(inheritor_qns)])
+                results.extend(
+                    [
+                        node_to_dict(n)
+                        for n in store.get_nodes_by_qualified_names(inheritor_qns)
+                    ]
+                )
 
         elif pattern == "file_summary":
             abs_path = str(root / target)
