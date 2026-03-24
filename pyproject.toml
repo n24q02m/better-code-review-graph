@@ -25,7 +25,9 @@ dependencies = [
     "networkx>=3.2,<4",
     "watchdog>=4.0.0,<6",
     "qwen3-embed>=1.5.0",
-    "litellm>=1.0.0",
+    "cohere>=5.20",
+    "google-genai>=1.0",
+    "openai>=1.50",
     "httpx",
     "pydantic-settings",
 ]

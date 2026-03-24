@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from better_code_review_graph.embeddings import (
+    CloudEmbeddingBackend,
     EmbeddingStore,
     LiteLLMBackend,
     Qwen3EmbedBackend,
@@ -144,26 +145,24 @@ class TestResolveBackend:
         with patch.dict(os.environ, {}, clear=True):
             assert resolve_backend() == "local"
 
-    def test_litellm_proxy_url_triggers_litellm(self):
-        with patch.dict(
-            os.environ, {"LITELLM_PROXY_URL": "http://localhost:4000"}, clear=True
-        ):
-            assert resolve_backend() == "litellm"
+    def test_cohere_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"COHERE_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
 
-    def test_api_keys_triggers_litellm(self):
-        with patch.dict(os.environ, {"API_KEYS": "GOOGLE_API_KEY:test123"}, clear=True):
-            assert resolve_backend() == "litellm"
+    def test_co_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"CO_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
 
     def test_explicit_backend_overrides(self):
         with patch.dict(
             os.environ,
-            {"EMBEDDING_BACKEND": "local", "API_KEYS": "GOOGLE_API_KEY:test123"},
+            {"EMBEDDING_BACKEND": "local", "COHERE_API_KEY": "test-key"},
             clear=True,
         ):
             assert resolve_backend() == "local"
 
-        with patch.dict(os.environ, {"EMBEDDING_BACKEND": "litellm"}, clear=True):
-            assert resolve_backend() == "litellm"
+        with patch.dict(os.environ, {"EMBEDDING_BACKEND": "cloud"}, clear=True):
+            assert resolve_backend() == "cloud"
 
 
 # ---------------------------------------------------------------------------
@@ -176,9 +175,14 @@ class TestInitBackend:
         backend = init_backend("local")
         assert isinstance(backend, Qwen3EmbedBackend)
 
-    def test_litellm_backend(self):
+    def test_cloud_backend(self):
+        backend = init_backend("cloud")
+        assert isinstance(backend, CloudEmbeddingBackend)
+
+    def test_litellm_backward_compat(self):
         backend = init_backend("litellm")
-        assert isinstance(backend, LiteLLMBackend)
+        assert isinstance(backend, CloudEmbeddingBackend)
+        assert isinstance(backend, LiteLLMBackend)  # alias
 
     def test_auto_detect_local(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -235,63 +239,71 @@ class TestQwen3EmbedBackend:
 # ---------------------------------------------------------------------------
 
 
-class TestLiteLLMBackend:
-    def _mock_embedding_response(self, texts, dim=768):
-        """Build a mock LiteLLM embedding response."""
+class TestCloudEmbeddingBackend:
+    def _mock_embed_response(self, texts, dim=768):
+        """Build a mock Cohere embed response."""
         mock_resp = MagicMock()
-        mock_resp.data = [
-            {"index": i, "embedding": [0.1] * dim} for i in range(len(texts))
-        ]
+        mock_resp.embeddings.float_ = [[0.1] * dim for _ in range(len(texts))]
         return mock_resp
 
     def test_embed_texts_single_batch(self):
-        backend = LiteLLMBackend()
-        with patch("litellm.embedding") as mock_emb:
-            mock_emb.return_value = self._mock_embedding_response(["test"])
+        backend = CloudEmbeddingBackend(api_key="test-key")
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.return_value = self._mock_embed_response(["test"])
             vectors = backend.embed_texts(["test"], dimensions=768)
             assert len(vectors) == 1
             assert len(vectors[0]) == 768
 
     def test_embed_texts_empty(self):
-        backend = LiteLLMBackend()
+        backend = CloudEmbeddingBackend(api_key="test-key")
         vectors = backend.embed_texts([])
         assert vectors == []
 
     def test_embed_texts_multi_batch(self):
-        backend = LiteLLMBackend()
+        backend = CloudEmbeddingBackend(api_key="test-key")
         texts = [f"text_{i}" for i in range(150)]
-        with patch("litellm.embedding") as mock_emb:
-            # Return appropriate response for each batch call
-            mock_emb.side_effect = lambda **kwargs: self._mock_embedding_response(
-                kwargs["input"]
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.side_effect = lambda **kwargs: self._mock_embed_response(
+                kwargs["texts"]
             )
             vectors = backend.embed_texts(texts, dimensions=768)
             assert len(vectors) == 150
-            # Should have been called twice (100 + 50)
-            assert mock_emb.call_count == 2
+            # Should have been called twice (96 + 54)
+            assert mock_client.embed.call_count == 2
 
     def test_embed_single(self):
-        backend = LiteLLMBackend()
-        with patch("litellm.embedding") as mock_emb:
-            mock_emb.return_value = self._mock_embedding_response(["test"])
+        backend = CloudEmbeddingBackend(api_key="test-key")
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.return_value = self._mock_embed_response(["test"])
             vector = backend.embed_single("test", dimensions=768)
             assert len(vector) == 768
 
     def test_check_available_success(self):
-        backend = LiteLLMBackend()
-        with patch("litellm.embedding") as mock_emb:
-            mock_emb.return_value = self._mock_embedding_response(["test"])
+        backend = CloudEmbeddingBackend(api_key="test-key")
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.return_value = self._mock_embed_response(["test"])
             dims = backend.check_available()
             assert dims == 768
 
     def test_check_available_failure(self):
-        backend = LiteLLMBackend()
-        with patch("litellm.embedding", side_effect=Exception("connection error")):
+        backend = CloudEmbeddingBackend(api_key="test-key")
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.side_effect = Exception("connection error")
             dims = backend.check_available()
             assert dims == 0
 
     def test_retry_on_transient_error(self):
-        backend = LiteLLMBackend()
+        backend = CloudEmbeddingBackend(api_key="test-key")
         call_count = 0
 
         def side_effect(**kwargs):
@@ -299,13 +311,35 @@ class TestLiteLLMBackend:
             call_count += 1
             if call_count == 1:
                 raise Exception("429 rate limit exceeded")
-            return self._mock_embedding_response(kwargs["input"])
+            return self._mock_embed_response(kwargs["texts"])
 
-        with patch("litellm.embedding", side_effect=side_effect):
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.side_effect = side_effect
             with patch("time.sleep"):  # Skip actual delay
                 vectors = backend.embed_texts(["test"], dimensions=768)
                 assert len(vectors) == 1
                 assert call_count == 2
+
+    def test_backward_compat_alias(self):
+        """LiteLLMBackend should be an alias for CloudEmbeddingBackend."""
+        assert LiteLLMBackend is CloudEmbeddingBackend
+        backend = LiteLLMBackend(api_key="test-key")
+        assert isinstance(backend, CloudEmbeddingBackend)
+
+    def test_dimensions_truncation(self):
+        """Test that dimensions parameter truncates embeddings."""
+        backend = CloudEmbeddingBackend(api_key="test-key")
+        with patch("cohere.ClientV2") as mock_cls:
+            mock_client = MagicMock()
+            mock_cls.return_value = mock_client
+            mock_client.embed.return_value = self._mock_embed_response(
+                ["test"], dim=1024
+            )
+            vectors = backend.embed_texts(["test"], dimensions=768)
+            assert len(vectors) == 1
+            assert len(vectors[0]) == 768
 
 
 # ---------------------------------------------------------------------------

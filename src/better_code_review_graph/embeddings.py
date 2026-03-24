@@ -1,14 +1,14 @@
-"""Dual-mode embedding: local ONNX (default) + LiteLLM cloud.
+"""Dual-mode embedding: local ONNX (default) + cloud (Cohere SDK).
 
 Supports two backends:
 - **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
   download on first use. Default backend.
-- **litellm**: Cloud providers via LiteLLM (Gemini, OpenAI, Cohere, etc.).
-  Auto-detected from API_KEYS or LITELLM_PROXY_URL env vars.
+- **cloud**: Cloud embedding via Cohere SDK (embed-multilingual-v3.0).
+  Auto-detected from COHERE_API_KEY or CO_API_KEY env vars.
 
 Backend selection (always returns a valid backend):
 1. Explicit EMBEDDING_BACKEND env var
-2. 'litellm' if API keys or proxy URL are configured
+2. 'cloud' if COHERE_API_KEY or CO_API_KEY are set
 3. 'local' (default, always available)
 
 All embeddings are stored at fixed 768 dimensions (MRL truncation).
@@ -18,7 +18,6 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
-import logging
 import math
 import operator
 import os
@@ -185,50 +184,26 @@ class Qwen3EmbedBackend:
 
 
 # ---------------------------------------------------------------------------
-# LiteLLM Backend (cloud)
+# Cloud Embedding Backend (Cohere SDK)
 # ---------------------------------------------------------------------------
 
 
-class LiteLLMBackend:
-    """Cloud embedding via LiteLLM (Gemini, OpenAI, Cohere, etc.)."""
+class CloudEmbeddingBackend:
+    """Cloud embedding via Cohere SDK (embed-multilingual-v3.0)."""
 
-    MAX_BATCH_SIZE = 100
+    MAX_BATCH_SIZE = 96
 
     def __init__(
         self,
         model: str | None = None,
-        api_base: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model or os.getenv(
-            "EMBEDDING_MODEL", "gemini/gemini-embedding-001"
-        )
-        self.api_base = api_base or os.getenv("LITELLM_PROXY_URL")
-        self.api_key = api_key or os.getenv("LITELLM_PROXY_KEY")
-        self._setup_litellm()
+        self.model = model or os.getenv("EMBEDDING_MODEL", "embed-multilingual-v3.0")
+        self.api_key = api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
 
     @property
     def name(self) -> str:
-        return f"litellm:{self.model}"
-
-    def _setup_litellm(self) -> None:
-        """Silence LiteLLM logging and configure API keys from API_KEYS env."""
-        os.environ.setdefault("LITELLM_LOG", "ERROR")
-        import litellm
-
-        litellm.suppress_debug_info = True  # type: ignore[assignment]
-        litellm.set_verbose = False
-        logging.getLogger("LiteLLM").setLevel(logging.ERROR)
-        logging.getLogger("LiteLLM").handlers = [logging.NullHandler()]
-
-        # Parse API_KEYS env var: "ENV_NAME:value,ENV_NAME:value"
-        api_keys_str = os.getenv("API_KEYS", "")
-        if api_keys_str:
-            for pair in api_keys_str.split(","):
-                pair = pair.strip()
-                if ":" in pair:
-                    env_name, value = pair.split(":", 1)
-                    os.environ.setdefault(env_name.strip(), value.strip())
+        return f"cloud:{self.model}"
 
     def _embed_batch_inner(
         self,
@@ -236,26 +211,24 @@ class LiteLLMBackend:
         dimensions: int | None = None,
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors."""
-        from litellm import embedding as litellm_embedding
+        import cohere
 
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "input": texts,
-            "drop_params": True,
-        }
-        if dimensions:
-            kwargs["dimensions"] = dimensions
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
+        client = cohere.ClientV2(api_key=self.api_key)
 
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                response = litellm_embedding(**kwargs)
-                data = sorted(response.data, key=lambda x: x["index"])
-                return [d["embedding"] for d in data]
+                response = client.embed(
+                    model=self.model,
+                    texts=texts,
+                    input_type="search_document",
+                    embedding_types=["float"],
+                    truncate="END",
+                )
+                embeddings = response.embeddings.float_
+                if dimensions:
+                    embeddings = [e[:dimensions] for e in embeddings]
+                return embeddings
             except Exception as e:
                 last_exc = e
                 if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
@@ -296,25 +269,27 @@ class LiteLLMBackend:
         return results[0]
 
     def check_available(self) -> int:
-        """Check if the LiteLLM model is available via test request."""
+        """Check if the Cohere model is available via test request."""
         try:
-            from litellm import embedding as litellm_embedding
+            import cohere
 
-            kwargs: dict[str, Any] = {
-                "model": self.model,
-                "input": ["test"],
-                "drop_params": True,
-            }
-            if self.api_base:
-                kwargs["api_base"] = self.api_base
-            if self.api_key:
-                kwargs["api_key"] = self.api_key
-            response = litellm_embedding(**kwargs)
-            if response.data:
-                return len(response.data[0]["embedding"])
+            client = cohere.ClientV2(api_key=self.api_key)
+            response = client.embed(
+                model=self.model,
+                texts=["test"],
+                input_type="search_document",
+                embedding_types=["float"],
+                truncate="END",
+            )
+            if response.embeddings.float_:
+                return len(response.embeddings.float_[0])
             return 0  # pragma: no cover
         except Exception:
             return 0
+
+
+# Backward compatibility alias
+LiteLLMBackend = CloudEmbeddingBackend
 
 
 # ---------------------------------------------------------------------------
@@ -327,14 +302,14 @@ def resolve_backend() -> str:
 
     Priority:
     1. Explicit EMBEDDING_BACKEND env var
-    2. 'litellm' if LITELLM_PROXY_URL or API_KEYS are set
+    2. 'cloud' if COHERE_API_KEY or CO_API_KEY are set
     3. 'local' (default, always available)
     """
     explicit = os.getenv("EMBEDDING_BACKEND")
     if explicit:
         return explicit
-    if os.getenv("LITELLM_PROXY_URL") or os.getenv("API_KEYS"):
-        return "litellm"
+    if os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY"):
+        return "cloud"
     return "local"
 
 
@@ -342,14 +317,14 @@ def init_backend(mode: str | None = None) -> EmbeddingBackend:
     """Create an embedding backend instance.
 
     Args:
-        mode: 'local', 'litellm', or None (auto-detect).
+        mode: 'local', 'cloud', 'litellm' (backward compat), or None (auto-detect).
 
     Returns:
         Initialized backend instance.
     """
     mode = mode or resolve_backend()
-    if mode == "litellm":
-        return LiteLLMBackend()
+    if mode in ("cloud", "litellm"):
+        return CloudEmbeddingBackend()
     if mode == "local":
         return Qwen3EmbedBackend()
     raise ValueError(f"Unknown backend type: {mode}")
