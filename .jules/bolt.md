@@ -1,0 +1,3 @@
+## $(date +%Y-%m-%d) - Optimize N+1 queries in graph lookups
+**Learning:** In SQLite-backed graph operations within `query_graph`, performing a `get_node()` call for every single edge found via `get_edges_by_source` or `get_edges_by_target` scales extremely poorly as graph density increases (e.g., hundreds of tests or callers for a single function). SQLite's query latency adds up over thousands of loop iterations in Python.
+**Action:** When resolving large collections of related nodes in `tools.py` (e.g. `callers_of`, `tests_for`), always batch collect the target `qualified_name`s into a set, and resolve them all using a single chunked IN clause query (`get_nodes_by_qualified_names`) to stay under SQLite's maximum variable bindings while drastically reducing latency.
