@@ -1,0 +1,3 @@
+## SQLite N+1 Query Optimization in Graph Resolving
+
+When extracting full nodes (e.g. `get_impact_radius` or `get_subgraph`) from the SQLite-backed code structure graph, iterating through a set of qualified names and individually calling `get_node(qn)` introduces a significant N+1 query bottleneck. By implementing a batched lookup `get_nodes_by_qualified_names` using `WHERE qualified_name IN (?, ?, ...)` with chunking (e.g. batches of 450 to stay well under SQLite's default 999 max variables limit), execution time drops substantially. For example, resolving 5000 nodes improved from ~0.29s down to ~0.15s.
