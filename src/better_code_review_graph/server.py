@@ -341,13 +341,14 @@ def config(
 
 def _config_status(repo_root: str | None) -> str:
     """Return server status as JSON."""
+    from importlib.metadata import PackageNotFoundError
     from importlib.metadata import version as pkg_version
 
     from .tools import _get_store
 
     try:
         version = pkg_version("better-code-review-graph")
-    except Exception:
+    except PackageNotFoundError:
         version = "dev"
 
     try:
