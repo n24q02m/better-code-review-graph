@@ -41,11 +41,19 @@ All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream
 
 ### Claude Code Plugin (Recommended)
 
+Via marketplace (includes skills: /refactor-check, /review-delta, /review-pr + hooks):
+
+```bash
+/plugins add n24q02m/claude-plugins
+```
+
+Or install this plugin only:
+
 ```bash
 claude plugin add n24q02m/better-code-review-graph
 ```
 
-Includes MCP server, hooks (SessionStart auto-build, PostToolUse auto-update), and skills (build-graph, review-delta, review-pr).
+Includes hooks (SessionStart auto-build, PostToolUse auto-update). Configure env vars in `~/.claude/settings.local.json` or shell profile.
 
 ### MCP Server
 
