@@ -467,9 +467,15 @@ def query_graph(
         qn = node.qualified_name if node else target
 
         if pattern == "callers_of":
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "CALLS":
-                    caller = store.get_node(e.source_qualified)
+            edges_to_process = [
+                e for e in store.get_edges_by_target(qn) if e.kind == "CALLS"
+            ]
+            if edges_to_process:
+                qns = [e.source_qualified for e in edges_to_process]
+                nodes = store.get_nodes_by_qualified_names(qns)
+                node_map = {n.qualified_name: n for n in nodes}
+                for e in edges_to_process:
+                    caller = node_map.get(e.source_qualified)
                     if caller:
                         results.append(node_to_dict(caller))
                     edges_out.append(edge_to_dict(e))
@@ -477,16 +483,27 @@ def query_graph(
             # (e.g. "generateTestCode") while qn is fully qualified
             # (e.g. "file.ts::generateTestCode"). Search by plain name too.
             if not results and node:
-                for e in store.search_edges_by_target_name(node.name):
-                    caller = store.get_node(e.source_qualified)
-                    if caller:
-                        results.append(node_to_dict(caller))
-                    edges_out.append(edge_to_dict(e))
+                edges_to_process = store.search_edges_by_target_name(node.name)
+                if edges_to_process:
+                    qns = [e.source_qualified for e in edges_to_process]
+                    nodes = store.get_nodes_by_qualified_names(qns)
+                    node_map = {n.qualified_name: n for n in nodes}
+                    for e in edges_to_process:
+                        caller = node_map.get(e.source_qualified)
+                        if caller:
+                            results.append(node_to_dict(caller))
+                        edges_out.append(edge_to_dict(e))
 
         elif pattern == "callees_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CALLS":
-                    callee = store.get_node(e.target_qualified)
+            edges_to_process = [
+                e for e in store.get_edges_by_source(qn) if e.kind == "CALLS"
+            ]
+            if edges_to_process:
+                qns = [e.target_qualified for e in edges_to_process]
+                nodes = store.get_nodes_by_qualified_names(qns)
+                node_map = {n.qualified_name: n for n in nodes}
+                for e in edges_to_process:
+                    callee = node_map.get(e.target_qualified)
                     if callee:
                         results.append(node_to_dict(callee))
                     edges_out.append(edge_to_dict(e))
@@ -508,18 +525,25 @@ def query_graph(
                     edges_out.append(edge_to_dict(e))
 
         elif pattern == "children_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CONTAINS":
-                    child = store.get_node(e.target_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
+            target_qns = [
+                e.target_qualified
+                for e in store.get_edges_by_source(qn)
+                if e.kind == "CONTAINS"
+            ]
+            if target_qns:
+                children = store.get_nodes_by_qualified_names(target_qns)
+                for child in children:
+                    results.append(node_to_dict(child))
 
         elif pattern == "tests_for":
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "TESTED_BY":
-                    test = store.get_node(e.source_qualified)
-                    if test:
-                        results.append(node_to_dict(test))
+            edges_to_process = [
+                e for e in store.get_edges_by_target(qn) if e.kind == "TESTED_BY"
+            ]
+            if edges_to_process:
+                qns = [e.source_qualified for e in edges_to_process]
+                nodes = store.get_nodes_by_qualified_names(qns)
+                for test in nodes:
+                    results.append(node_to_dict(test))
             # Also search by naming convention
             name = node.name if node else target
             test_nodes = store.search_nodes(f"test_{name}", limit=10)
@@ -530,9 +554,17 @@ def query_graph(
                     results.append(node_to_dict(t))
 
         elif pattern == "inheritors_of":
-            for e in store.get_edges_by_target(qn):
-                if e.kind in ("INHERITS", "IMPLEMENTS"):
-                    child = store.get_node(e.source_qualified)
+            edges_to_process = [
+                e
+                for e in store.get_edges_by_target(qn)
+                if e.kind in ("INHERITS", "IMPLEMENTS")
+            ]
+            if edges_to_process:
+                qns = [e.source_qualified for e in edges_to_process]
+                nodes = store.get_nodes_by_qualified_names(qns)
+                node_map = {n.qualified_name: n for n in nodes}
+                for e in edges_to_process:
+                    child = node_map.get(e.source_qualified)
                     if child:
                         results.append(node_to_dict(child))
                     edges_out.append(edge_to_dict(e))
