@@ -21,40 +21,6 @@ permissions:
   pull-requests: write
 
 jobs:
-  pr-title-check:
-    name: PR Title Check
-    if: >-
-      github.event_name == 'pull_request_target'
-      && github.event.sender.type != 'Bot'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
-        with:
-          egress-policy: audit
-
-      - name: Validate and auto-fix PR title
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          title=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json title -q .title)
-          if [[ "$title" =~ ^(feat|fix)(\(.+\))?:.+ ]] || [[ "$title" =~ ^chore\(release\):.+ ]]; then
-            echo "Title is valid: $title"
-            exit 0
-          fi
-          clean=$(echo "$title" | sed -E 's/^[^a-zA-Z]*//; s/^(Bolt|Sentinel|Guard|Shield): *(\[.*\] *)?//')
-          if echo "$clean" | grep -qiE 'fix|bug|vulnerability|security|patch|resolve|crash|error'; then
-            new_title="fix: $(echo "$clean" | sed 's/^./\L&/')"
-          else
-            new_title="feat: $(echo "$clean" | sed 's/^./\L&/')"
-          fi
-          gh pr edit "$PR_NUMBER" --repo "$REPO" --title "$new_title"
-          echo "Auto-fixed: $title -> $new_title"
-
   lint-and-test:
     name: Lint & Test
     if: github.event_name == 'pull_request' || github.event_name == 'push'
