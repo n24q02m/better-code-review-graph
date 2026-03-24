@@ -223,7 +223,7 @@ class CodeParser:
         if language not in self._parsers:
             try:
                 self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
-            except Exception:
+            except LookupError:
                 return None
         return self._parsers[language]
 

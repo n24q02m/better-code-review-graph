@@ -253,7 +253,7 @@ class TestFullBuildExtra:
             with patch("better_code_review_graph.incremental.CodeParser") as MockParser:
                 parser_inst = MockParser.return_value
                 parser_inst.detect_language.return_value = "python"
-                parser_inst.parse_bytes.side_effect = RuntimeError("parse error")
+                parser_inst.parse_bytes.side_effect = ValueError("parse error")
                 result = full_build(tmp_path, store)
 
         assert len(result["errors"]) == 1
@@ -330,7 +330,7 @@ class TestIncrementalUpdateExtra:
         with patch("better_code_review_graph.incremental.CodeParser") as MockParser:
             parser_inst = MockParser.return_value
             parser_inst.detect_language.return_value = "python"
-            parser_inst.parse_bytes.side_effect = RuntimeError("parse fail")
+            parser_inst.parse_bytes.side_effect = ValueError("parse fail")
             result = incremental_update(tmp_path, store, changed_files=["err.py"])
 
         assert len(result["errors"]) == 1
