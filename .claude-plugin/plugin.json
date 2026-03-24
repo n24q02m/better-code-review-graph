@@ -10,36 +10,7 @@
   "mcpServers": {
     "better-code-review-graph": {
       "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"],
-      "env": {
-        "API_KEYS": "",
-        "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": "",
-        "EMBEDDING_MODEL": "",
-        "EMBEDDING_BACKEND": ""
-      }
-    },
-    "better-code-review-graph-pipx": {
-      "command": "pipx",
-      "args": ["run", "--python", "3.13", "better-code-review-graph"],
-      "env": {
-        "API_KEYS": "",
-        "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": "",
-        "EMBEDDING_MODEL": "",
-        "EMBEDDING_BACKEND": ""
-      }
-    },
-    "better-code-review-graph-docker": {
-      "command": "docker",
-      "args": ["run", "--rm", "-i", "-v", ".:/repo:ro", "n24q02m/better-code-review-graph:latest"],
-      "env": {
-        "API_KEYS": "",
-        "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": "",
-        "EMBEDDING_MODEL": "",
-        "EMBEDDING_BACKEND": ""
-      }
+      "args": ["--python", "3.13", "better-code-review-graph"]
     }
   },
   "skills": "./skills/",
