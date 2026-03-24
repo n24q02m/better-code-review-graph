@@ -504,7 +504,13 @@ def watch(repo_root: Path, store: GraphStore) -> None:
                     len(nodes),
                     len(edges),
                 )
-            except (OSError, sqlite3.Error, UnicodeDecodeError, RuntimeError, ValueError) as e:
+            except (
+                OSError,
+                sqlite3.Error,
+                UnicodeDecodeError,
+                RuntimeError,
+                ValueError,
+            ) as e:
                 logger.error("Error updating %s: %s", abs_path, e)
 
     handler = GraphUpdateHandler()
