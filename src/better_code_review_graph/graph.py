@@ -445,12 +445,8 @@ class GraphStore:
             if node:
                 nodes.append(node)
 
-        edges = []
         qn_set = set(qualified_names)
-        for qn in qualified_names:
-            for e in self.get_edges_by_source(qn):
-                if e.target_qualified in qn_set:
-                    edges.append(e)
+        edges = self.get_edges_among(qn_set)
 
         return {"nodes": nodes, "edges": edges}
 
