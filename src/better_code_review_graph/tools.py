@@ -395,8 +395,9 @@ _QUERY_PATTERNS = {
 }
 
 
-
-def _handle_callers_of(store: GraphStore, qn: str, node: Any, results: list[dict], edges_out: list[dict]) -> None:
+def _handle_callers_of(
+    store: GraphStore, qn: str, node: Any, results: list[dict], edges_out: list[dict]
+) -> None:
     for e in store.get_edges_by_target(qn):
         if e.kind == "CALLS":
             caller = store.get_node(e.source_qualified)
@@ -413,7 +414,10 @@ def _handle_callers_of(store: GraphStore, qn: str, node: Any, results: list[dict
                 results.append(node_to_dict(caller))
             edges_out.append(edge_to_dict(e))
 
-def _handle_callees_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+
+def _handle_callees_of(
+    store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
     for e in store.get_edges_by_source(qn):
         if e.kind == "CALLS":
             callee = store.get_node(e.target_qualified)
@@ -421,18 +425,30 @@ def _handle_callees_of(store: GraphStore, qn: str, results: list[dict], edges_ou
                 results.append(node_to_dict(callee))
             edges_out.append(edge_to_dict(e))
 
-def _handle_imports_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+
+def _handle_imports_of(
+    store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
     for e in store.get_edges_by_source(qn):
         if e.kind == "IMPORTS_FROM":
             results.append({"import_target": e.target_qualified})
             edges_out.append(edge_to_dict(e))
 
-def _handle_importers_of(store: GraphStore, root: Path, target: str, node: Any, results: list[dict], edges_out: list[dict]) -> None:
+
+def _handle_importers_of(
+    store: GraphStore,
+    root: Path,
+    target: str,
+    node: Any,
+    results: list[dict],
+    edges_out: list[dict],
+) -> None:
     abs_target = str(root / target) if node is None else node.file_path
     for e in store.get_edges_by_target(abs_target):
         if e.kind == "IMPORTS_FROM":
             results.append({"importer": e.source_qualified, "file": e.file_path})
             edges_out.append(edge_to_dict(e))
+
 
 def _handle_children_of(store: GraphStore, qn: str, results: list[dict]) -> None:
     for e in store.get_edges_by_source(qn):
@@ -441,7 +457,10 @@ def _handle_children_of(store: GraphStore, qn: str, results: list[dict]) -> None
             if child:
                 results.append(node_to_dict(child))
 
-def _handle_tests_for(store: GraphStore, qn: str, target: str, node: Any, results: list[dict]) -> None:
+
+def _handle_tests_for(
+    store: GraphStore, qn: str, target: str, node: Any, results: list[dict]
+) -> None:
     for e in store.get_edges_by_target(qn):
         if e.kind == "TESTED_BY":
             test = store.get_node(e.source_qualified)
@@ -456,7 +475,10 @@ def _handle_tests_for(store: GraphStore, qn: str, target: str, node: Any, result
         if t.qualified_name not in seen and t.is_test:
             results.append(node_to_dict(t))
 
-def _handle_inheritors_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+
+def _handle_inheritors_of(
+    store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
     for e in store.get_edges_by_target(qn):
         if e.kind in ("INHERITS", "IMPLEMENTS"):
             child = store.get_node(e.source_qualified)
@@ -464,7 +486,10 @@ def _handle_inheritors_of(store: GraphStore, qn: str, results: list[dict], edges
                 results.append(node_to_dict(child))
             edges_out.append(edge_to_dict(e))
 
-def _handle_file_summary(store: GraphStore, root: Path, target: str, results: list[dict]) -> None:
+
+def _handle_file_summary(
+    store: GraphStore, root: Path, target: str, results: list[dict]
+) -> None:
     abs_path = str(root / target)
     file_nodes = store.get_nodes_by_file(abs_path)
     for n in file_nodes:
@@ -543,13 +568,19 @@ def query_graph(
         qn = node.qualified_name if node else target
 
         dispatch = {
-            "callers_of": lambda: _handle_callers_of(store, qn, node, results, edges_out),
+            "callers_of": lambda: _handle_callers_of(
+                store, qn, node, results, edges_out
+            ),
             "callees_of": lambda: _handle_callees_of(store, qn, results, edges_out),
             "imports_of": lambda: _handle_imports_of(store, qn, results, edges_out),
-            "importers_of": lambda: _handle_importers_of(store, root, target, node, results, edges_out),
+            "importers_of": lambda: _handle_importers_of(
+                store, root, target, node, results, edges_out
+            ),
             "children_of": lambda: _handle_children_of(store, qn, results),
             "tests_for": lambda: _handle_tests_for(store, qn, target, node, results),
-            "inheritors_of": lambda: _handle_inheritors_of(store, qn, results, edges_out),
+            "inheritors_of": lambda: _handle_inheritors_of(
+                store, qn, results, edges_out
+            ),
             "file_summary": lambda: _handle_file_summary(store, root, target, results),
         }
 
