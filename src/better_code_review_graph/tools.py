@@ -395,6 +395,82 @@ _QUERY_PATTERNS = {
 }
 
 
+
+def _handle_callers_of(store: GraphStore, qn: str, node: Any, results: list[dict], edges_out: list[dict]) -> None:
+    for e in store.get_edges_by_target(qn):
+        if e.kind == "CALLS":
+            caller = store.get_node(e.source_qualified)
+            if caller:
+                results.append(node_to_dict(caller))
+            edges_out.append(edge_to_dict(e))
+    # Fallback: CALLS edges store unqualified target names
+    # (e.g. "generateTestCode") while qn is fully qualified
+    # (e.g. "file.ts::generateTestCode"). Search by plain name too.
+    if not results and node:
+        for e in store.search_edges_by_target_name(node.name):
+            caller = store.get_node(e.source_qualified)
+            if caller:
+                results.append(node_to_dict(caller))
+            edges_out.append(edge_to_dict(e))
+
+def _handle_callees_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "CALLS":
+            callee = store.get_node(e.target_qualified)
+            if callee:
+                results.append(node_to_dict(callee))
+            edges_out.append(edge_to_dict(e))
+
+def _handle_imports_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "IMPORTS_FROM":
+            results.append({"import_target": e.target_qualified})
+            edges_out.append(edge_to_dict(e))
+
+def _handle_importers_of(store: GraphStore, root: Path, target: str, node: Any, results: list[dict], edges_out: list[dict]) -> None:
+    abs_target = str(root / target) if node is None else node.file_path
+    for e in store.get_edges_by_target(abs_target):
+        if e.kind == "IMPORTS_FROM":
+            results.append({"importer": e.source_qualified, "file": e.file_path})
+            edges_out.append(edge_to_dict(e))
+
+def _handle_children_of(store: GraphStore, qn: str, results: list[dict]) -> None:
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "CONTAINS":
+            child = store.get_node(e.target_qualified)
+            if child:
+                results.append(node_to_dict(child))
+
+def _handle_tests_for(store: GraphStore, qn: str, target: str, node: Any, results: list[dict]) -> None:
+    for e in store.get_edges_by_target(qn):
+        if e.kind == "TESTED_BY":
+            test = store.get_node(e.source_qualified)
+            if test:
+                results.append(node_to_dict(test))
+    # Also search by naming convention
+    name = node.name if node else target
+    test_nodes = store.search_nodes(f"test_{name}", limit=10)
+    test_nodes += store.search_nodes(f"Test{name}", limit=10)
+    seen = {r.get("qualified_name") for r in results}
+    for t in test_nodes:
+        if t.qualified_name not in seen and t.is_test:
+            results.append(node_to_dict(t))
+
+def _handle_inheritors_of(store: GraphStore, qn: str, results: list[dict], edges_out: list[dict]) -> None:
+    for e in store.get_edges_by_target(qn):
+        if e.kind in ("INHERITS", "IMPLEMENTS"):
+            child = store.get_node(e.source_qualified)
+            if child:
+                results.append(node_to_dict(child))
+            edges_out.append(edge_to_dict(e))
+
+def _handle_file_summary(store: GraphStore, root: Path, target: str, results: list[dict]) -> None:
+    abs_path = str(root / target)
+    file_nodes = store.get_nodes_by_file(abs_path)
+    for n in file_nodes:
+        results.append(node_to_dict(n))
+
+
 def query_graph(
     pattern: str,
     target: str,
@@ -466,82 +542,20 @@ def query_graph(
 
         qn = node.qualified_name if node else target
 
-        if pattern == "callers_of":
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "CALLS":
-                    caller = store.get_node(e.source_qualified)
-                    if caller:
-                        results.append(node_to_dict(caller))
-                    edges_out.append(edge_to_dict(e))
-            # Fallback: CALLS edges store unqualified target names
-            # (e.g. "generateTestCode") while qn is fully qualified
-            # (e.g. "file.ts::generateTestCode"). Search by plain name too.
-            if not results and node:
-                for e in store.search_edges_by_target_name(node.name):
-                    caller = store.get_node(e.source_qualified)
-                    if caller:
-                        results.append(node_to_dict(caller))
-                    edges_out.append(edge_to_dict(e))
+        dispatch = {
+            "callers_of": lambda: _handle_callers_of(store, qn, node, results, edges_out),
+            "callees_of": lambda: _handle_callees_of(store, qn, results, edges_out),
+            "imports_of": lambda: _handle_imports_of(store, qn, results, edges_out),
+            "importers_of": lambda: _handle_importers_of(store, root, target, node, results, edges_out),
+            "children_of": lambda: _handle_children_of(store, qn, results),
+            "tests_for": lambda: _handle_tests_for(store, qn, target, node, results),
+            "inheritors_of": lambda: _handle_inheritors_of(store, qn, results, edges_out),
+            "file_summary": lambda: _handle_file_summary(store, root, target, results),
+        }
 
-        elif pattern == "callees_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CALLS":
-                    callee = store.get_node(e.target_qualified)
-                    if callee:
-                        results.append(node_to_dict(callee))
-                    edges_out.append(edge_to_dict(e))
-
-        elif pattern == "imports_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "IMPORTS_FROM":
-                    results.append({"import_target": e.target_qualified})
-                    edges_out.append(edge_to_dict(e))
-
-        elif pattern == "importers_of":
-            # Find edges where target matches this file
-            abs_target = str(root / target) if node is None else node.file_path
-            for e in store.get_edges_by_target(abs_target):
-                if e.kind == "IMPORTS_FROM":
-                    results.append(
-                        {"importer": e.source_qualified, "file": e.file_path}
-                    )
-                    edges_out.append(edge_to_dict(e))
-
-        elif pattern == "children_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CONTAINS":
-                    child = store.get_node(e.target_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
-
-        elif pattern == "tests_for":
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "TESTED_BY":
-                    test = store.get_node(e.source_qualified)
-                    if test:
-                        results.append(node_to_dict(test))
-            # Also search by naming convention
-            name = node.name if node else target
-            test_nodes = store.search_nodes(f"test_{name}", limit=10)
-            test_nodes += store.search_nodes(f"Test{name}", limit=10)
-            seen = {r.get("qualified_name") for r in results}
-            for t in test_nodes:
-                if t.qualified_name not in seen and t.is_test:
-                    results.append(node_to_dict(t))
-
-        elif pattern == "inheritors_of":
-            for e in store.get_edges_by_target(qn):
-                if e.kind in ("INHERITS", "IMPLEMENTS"):
-                    child = store.get_node(e.source_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
-                    edges_out.append(edge_to_dict(e))
-
-        elif pattern == "file_summary":
-            abs_path = str(root / target)
-            file_nodes = store.get_nodes_by_file(abs_path)
-            for n in file_nodes:
-                results.append(node_to_dict(n))
+        handler = dispatch.get(pattern)
+        if handler:
+            handler()
 
         return {
             "status": "ok",
