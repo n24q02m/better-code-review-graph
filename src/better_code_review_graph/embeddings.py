@@ -180,7 +180,7 @@ class Qwen3EmbedBackend:
             if result:
                 return len(result[0])
             return 0  # pragma: no cover
-        except Exception:
+        except (ImportError, OSError, RuntimeError, ValueError):
             return 0
 
 
@@ -299,6 +299,7 @@ class LiteLLMBackend:
         """Check if the LiteLLM model is available via test request."""
         try:
             from litellm import embedding as litellm_embedding
+            from litellm.exceptions import OpenAIError
 
             kwargs: dict[str, Any] = {
                 "model": self.model,
@@ -313,7 +314,7 @@ class LiteLLMBackend:
             if response.data:
                 return len(response.data[0]["embedding"])
             return 0  # pragma: no cover
-        except Exception:
+        except (ImportError, OpenAIError):
             return 0
 
 

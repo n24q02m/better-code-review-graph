@@ -286,7 +286,12 @@ class TestLiteLLMBackend:
 
     def test_check_available_failure(self):
         backend = LiteLLMBackend()
-        with patch("litellm.embedding", side_effect=Exception("connection error")):
+        from litellm.exceptions import OpenAIError
+
+        with patch(
+            "litellm.embedding",
+            side_effect=OpenAIError(original_exception=Exception("connection error")),
+        ):
             dims = backend.check_available()
             assert dims == 0
 
