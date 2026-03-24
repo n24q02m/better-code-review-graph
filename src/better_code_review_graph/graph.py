@@ -350,6 +350,29 @@ class GraphStore:
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: list[str]
+    ) -> list[GraphNode]:
+        """Fetch multiple nodes by their qualified names in batches."""
+        if not qualified_names:
+            return []
+
+        # Deduplicate to avoid fetching the same node multiple times
+        qns = list(set(qualified_names))
+        results = []
+        batch_size = 450  # Stay under SQLite's default variable limit
+
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                results.append(self._row_to_node(r))
+        return results
+
     # --- Impact / Graph traversal ---
 
     def get_impact_radius(

@@ -515,11 +515,14 @@ def query_graph(
                         results.append(node_to_dict(child))
 
         elif pattern == "tests_for":
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "TESTED_BY":
-                    test = store.get_node(e.source_qualified)
-                    if test:
-                        results.append(node_to_dict(test))
+            test_qns = [
+                e.source_qualified
+                for e in store.get_edges_by_target(qn)
+                if e.kind == "TESTED_BY"
+            ]
+            if test_qns:
+                for test in store.get_nodes_by_qualified_names(test_qns):
+                    results.append(node_to_dict(test))
             # Also search by naming convention
             name = node.name if node else target
             test_nodes = store.search_nodes(f"test_{name}", limit=10)
