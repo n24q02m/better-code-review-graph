@@ -91,12 +91,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3
         with:
           languages: python
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@ebcb5b36ded6beda4ceefea6a8bc4cc885255bb3 # v3
 
   dependency-review:
     name: Dependency Review
@@ -149,7 +149,7 @@ jobs:
           fi
 
       - name: PR Agent action step
-        uses: qodo-ai/pr-agent@main
+        uses: qodo-ai/pr-agent@42d55d4182a4839820b11b6c4d06fce855970301 # main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -195,15 +195,47 @@ jobs:
           REPO_FULL: ${{ github.repository }}
         run: |
           if [ "$EVENT_NAME" = "issues" ]; then
-            echo "event_type=Issue" >> "$GITHUB_OUTPUT"
-            echo "title=$ISSUE_TITLE" >> "$GITHUB_OUTPUT"
-            echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+            {
+              echo "event_type<<ENDOFEVENTTYPE"
+              echo "Issue"
+              echo "ENDOFEVENTTYPE"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "title<<ENDOFTITLE"
+              echo "$ISSUE_TITLE"
+              echo "ENDOFTITLE"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "number<<ENDOFNUMBER"
+              echo "$ISSUE_NUMBER"
+              echo "ENDOFNUMBER"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "url<<ENDOFURL"
+              echo "$ISSUE_URL"
+              echo "ENDOFURL"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "event_type=PR" >> "$GITHUB_OUTPUT"
-            echo "title=$PR_TITLE" >> "$GITHUB_OUTPUT"
-            echo "number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-            echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+            {
+              echo "event_type<<ENDOFEVENTTYPE"
+              echo "PR"
+              echo "ENDOFEVENTTYPE"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "title<<ENDOFTITLE"
+              echo "$PR_TITLE"
+              echo "ENDOFTITLE"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "number<<ENDOFNUMBER"
+              echo "$PR_NUMBER"
+              echo "ENDOFNUMBER"
+            } >> "$GITHUB_OUTPUT"
+            {
+              echo "url<<ENDOFURL"
+              echo "$PR_URL"
+              echo "ENDOFURL"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Send email notification

@@ -9,11 +9,7 @@
         "--python",
         "3.13",
         "better-code-review-graph"
-      ],
-      "env": {
-        "API_KEYS": "",
-        "LITELLM_PROXY_URL": ""
-      }
+      ]
     }
   },
   "contextFileName": "GEMINI.md"
