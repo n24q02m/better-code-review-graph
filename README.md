@@ -119,7 +119,7 @@ When installed as a plugin, you get:
 
 **Skills:**
 
-- **build-graph**: Build or rebuild the knowledge graph for the current project
+- **refactor-check**: Safety analysis before refactoring -- dependency graph, blast radius
 - **review-delta**: Review uncommitted changes using graph context
 - **review-pr**: Review a pull request with structural analysis
 
