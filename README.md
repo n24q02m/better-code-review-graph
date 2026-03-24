@@ -1,4 +1,4 @@
-# better-code-review-graph
+# Better Code Review Graph
 
 mcp-name: io.github.n24q02m/better-code-review-graph
 
@@ -35,8 +35,6 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 | Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
-All fixes are submitted upstream as standalone PRs (see [Upstream PRs](#upstream-prs)). If all are merged, this repo will be archived.
-
 ## Quick Start
 
 ### Claude Code Plugin (Recommended)
@@ -59,8 +57,15 @@ Includes hooks (SessionStart auto-build, PostToolUse auto-update). Configure env
 
 #### Option 1: uvx
 
-```bash
-claude mcp add better-code-review-graph -- uvx --python 3.13 better-code-review-graph
+```jsonc
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph"]
+    }
+  }
+}
 ```
 
 <details>
@@ -105,15 +110,15 @@ args = ["--python", "3.13", "better-code-review-graph"]
 
 #### Option 2: Docker
 
-```bash
-docker run -i --rm n24q02m/better-code-review-graph
-```
-
-#### Option 3: pip
-
-```bash
-pip install better-code-review-graph
-better-code-review-graph
+```jsonc
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", ".:/repo:ro", "n24q02m/better-code-review-graph:latest"]
+    }
+  }
+}
 ```
 
 ### Claude Code Plugin Details
@@ -211,6 +216,12 @@ vendor/**
 node_modules/**
 ```
 
+### Security
+
+- **Graceful fallbacks** -- Cloud embedding failure falls back to local ONNX
+- **Error handling** -- Tools return error strings with fix suggestions, never crash
+- **Read-only mount** -- Docker mode mounts repo as `:ro` (read-only)
+
 ## Build from Source
 
 ```bash
@@ -225,11 +236,14 @@ uv run better-code-review-graph
 
 ## Compatible With
 
-[![Claude Code](https://img.shields.io/badge/Claude_Code-black?logo=anthropic)](https://docs.anthropic.com/en/docs/claude-code)
-[![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-black?logo=anthropic)](https://claude.ai/download)
-[![Cursor](https://img.shields.io/badge/Cursor-black?logo=cursor)](https://cursor.com/)
-[![Windsurf](https://img.shields.io/badge/Windsurf-black?logo=codeium)](https://codeium.com/windsurf)
-[![VS Code](https://img.shields.io/badge/VS_Code-black?logo=visual-studio-code)](https://code.visualstudio.com/)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-000000?logo=anthropic&logoColor=white)](#quick-start)
+[![Claude Desktop](https://img.shields.io/badge/Claude_Desktop-F9DC7C?logo=anthropic&logoColor=black)](#quick-start)
+[![Cursor](https://img.shields.io/badge/Cursor-000000?logo=cursor&logoColor=white)](#quick-start)
+[![VS Code Copilot](https://img.shields.io/badge/VS_Code_Copilot-007ACC?logo=visualstudiocode&logoColor=white)](#quick-start)
+[![Antigravity](https://img.shields.io/badge/Antigravity-4285F4?logo=google&logoColor=white)](#quick-start)
+[![Gemini CLI](https://img.shields.io/badge/Gemini_CLI-8E75B2?logo=googlegemini&logoColor=white)](#quick-start)
+[![OpenAI Codex](https://img.shields.io/badge/Codex-412991?logo=openai&logoColor=white)](#quick-start)
+[![OpenCode](https://img.shields.io/badge/OpenCode-F7DF1E?logoColor=black)](#quick-start)
 
 ## Also by n24q02m
 
@@ -245,16 +259,6 @@ uv run better-code-review-graph
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Upstream PRs
-
-All fixes are submitted to [code-review-graph](https://github.com/tirth8205/code-review-graph):
-
-- [#37](https://github.com/tirth8205/code-review-graph/pull/37) -- Multi-word search AND logic
-- [#38](https://github.com/tirth8205/code-review-graph/pull/38) -- Parser call target resolution (fixes [#20](https://github.com/tirth8205/code-review-graph/issues/20))
-- [#39](https://github.com/tirth8205/code-review-graph/pull/39) -- Impact radius output pagination
-
-**If all upstream PRs are merged, this repository will be archived.**
 
 ## License
 
