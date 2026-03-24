@@ -14,7 +14,9 @@
       "env": {
         "API_KEYS": "",
         "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": ""
+        "LITELLM_PROXY_KEY": "",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": ""
       }
     },
     "better-code-review-graph-pipx": {
@@ -23,7 +25,9 @@
       "env": {
         "API_KEYS": "",
         "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": ""
+        "LITELLM_PROXY_KEY": "",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": ""
       }
     },
     "better-code-review-graph-docker": {
@@ -32,7 +36,9 @@
       "env": {
         "API_KEYS": "",
         "LITELLM_PROXY_URL": "",
-        "LITELLM_PROXY_KEY": ""
+        "LITELLM_PROXY_KEY": "",
+        "EMBEDDING_MODEL": "",
+        "EMBEDDING_BACKEND": ""
       }
     }
   },
