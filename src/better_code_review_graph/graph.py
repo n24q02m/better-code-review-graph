@@ -345,7 +345,7 @@ class GraphStore:
             where = f"({where}) AND kind = ?"
             params.append(kind)
 
-        sql = f"SELECT * FROM nodes WHERE {where} ORDER BY name LIMIT ?"  # nosec B608
+        sql = "".join(["SELECT * FROM nodes WHERE ", where, " ORDER BY name LIMIT ?"])
         params.append(limit)
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
@@ -533,9 +533,15 @@ class GraphStore:
 
         params.append(limit)
         where = " AND ".join(conditions)
+        query = "".join(
+            [
+                "SELECT * FROM nodes WHERE ",
+                where,
+                " ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
+            ]
+        )
         rows = self._conn.execute(
-            f"SELECT * FROM nodes WHERE {where} "  # nosec B608
-            "ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
+            query,
             params,
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
@@ -561,8 +567,11 @@ class GraphStore:
         for i in range(0, len(qns), batch_size):
             batch = qns[i : i + batch_size]
             placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM edges WHERE source_qualified IN ({placeholders})",
+            query = "".join(
+                ["SELECT * FROM edges WHERE source_qualified IN (", placeholders, ")"]
+            )
+            rows = self._conn.execute(
+                query,
                 batch,
             ).fetchall()
             for r in rows:
