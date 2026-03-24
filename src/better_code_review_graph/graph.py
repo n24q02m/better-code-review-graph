@@ -275,6 +275,30 @@ class GraphStore:
         ).fetchone()
         return self._row_to_node(row) if row else None
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: set[str] | list[str]
+    ) -> list[GraphNode]:
+        """Return nodes whose qualified names are in the given set/list.
+
+        Batches the IN clause to stay under SQLite's default
+        SQLITE_MAX_VARIABLE_NUMBER limit.
+        """
+        if not qualified_names:
+            return []
+        qns = list(set(qualified_names))
+        results: list[GraphNode] = []
+        batch_size = 450  # Stay well under SQLite's default 999 limit
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                results.append(self._row_to_node(r))
+        return results
+
     def get_nodes_by_file(self, file_path: str) -> list[GraphNode]:
         rows = self._conn.execute(
             "SELECT * FROM nodes WHERE file_path = ?", (file_path,)
@@ -439,18 +463,9 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
-
-        edges = []
         qn_set = set(qualified_names)
-        for qn in qualified_names:
-            for e in self.get_edges_by_source(qn):
-                if e.target_qualified in qn_set:
-                    edges.append(e)
+        nodes = self.get_nodes_by_qualified_names(qn_set)
+        edges = self.get_edges_among(qn_set)
 
         return {"nodes": nodes, "edges": edges}
 
