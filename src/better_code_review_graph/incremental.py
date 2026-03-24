@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import logging
+import sqlite3
 import subprocess
 import time
 from pathlib import Path
@@ -279,7 +280,7 @@ def full_build(repo_root: Path, store: GraphStore) -> dict:
             total_edges += len(edges)
         except (OSError, PermissionError) as e:
             errors.append({"file": rel_path, "error": str(e)})
-        except Exception as e:
+        except (sqlite3.Error, ValueError, UnicodeDecodeError, RuntimeError) as e:
             logger.warning("Error parsing %s: %s", rel_path, e)
             errors.append({"file": rel_path, "error": str(e)})
         if i % 50 == 0 or i == file_count:
@@ -365,7 +366,7 @@ def incremental_update(
             total_edges += len(edges)
         except (OSError, PermissionError) as e:
             errors.append({"file": rel_path, "error": str(e)})
-        except Exception as e:
+        except (sqlite3.Error, ValueError, UnicodeDecodeError, RuntimeError) as e:
             logger.warning("Error parsing %s: %s", rel_path, e)
             errors.append({"file": rel_path, "error": str(e)})
 
@@ -503,7 +504,7 @@ def watch(repo_root: Path, store: GraphStore) -> None:
                     len(nodes),
                     len(edges),
                 )
-            except Exception as e:
+            except (sqlite3.Error, ValueError, UnicodeDecodeError, RuntimeError) as e:
                 logger.error("Error updating %s: %s", abs_path, e)
 
     handler = GraphUpdateHandler()
