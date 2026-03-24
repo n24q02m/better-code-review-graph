@@ -352,6 +352,53 @@ class GraphStore:
 
     # --- Impact / Graph traversal ---
 
+    def _get_impact_radius_seeds(self, changed_files: list[str]) -> set[str]:
+        seeds = set()
+        for f in changed_files:
+            nodes = self.get_nodes_by_file(f)
+            for n in nodes:
+                seeds.add(n.qualified_name)
+        return seeds
+
+    def _traverse_impact_graph(
+        self, nxg, seeds: set[str], max_depth: int, max_nodes: int
+    ) -> tuple[set[str], bool, int]:
+        visited: set[str] = set()
+        frontier = seeds.copy()
+        depth = 0
+        impacted: set[str] = set()
+        truncated = False
+
+        while frontier and depth < max_depth:
+            next_frontier: set[str] = set()
+            for qn in frontier:
+                visited.add(qn)
+                if qn in nxg:
+                    for neighbor in nxg.neighbors(qn):
+                        if neighbor not in visited:
+                            next_frontier.add(neighbor)
+                            impacted.add(neighbor)
+                    for pred in nxg.predecessors(qn):
+                        if pred not in visited:
+                            next_frontier.add(pred)
+                            impacted.add(pred)
+            if len(visited) + len(next_frontier) > max_nodes:
+                truncated = True
+                break
+            frontier = next_frontier
+            depth += 1
+
+        total_impacted = len(impacted - seeds)
+        return impacted, truncated, total_impacted
+
+    def _resolve_impact_nodes(self, qns: set[str]) -> list[GraphNode]:
+        nodes = []
+        for qn in qns:
+            node = self.get_node(qn)
+            if node:
+                nodes.append(node)
+        return nodes
+
     def get_impact_radius(
         self, changed_files: list[str], max_depth: int = 2, max_nodes: int = 500
     ) -> dict[str, Any]:
@@ -367,66 +414,18 @@ class GraphStore:
         """
         nxg = self._build_networkx_graph()
 
-        # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        seeds = self._get_impact_radius_seeds(changed_files)
+        impacted, truncated, total_impacted = self._traverse_impact_graph(
+            nxg, seeds, max_depth, max_nodes
+        )
 
-        # BFS outward through all edge types
-        visited: set[str] = set()
-        frontier = seeds.copy()
-        depth = 0
-        impacted: set[str] = set()
-        truncated = False
-
-        while frontier and depth < max_depth:
-            next_frontier: set[str] = set()
-            for qn in frontier:
-                visited.add(qn)
-                # Forward edges (things this node affects)
-                if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor not in visited:
-                            next_frontier.add(neighbor)
-                            impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred not in visited:
-                            next_frontier.add(pred)
-                            impacted.add(pred)
-            # Cap total nodes to prevent resource exhaustion on dense graphs
-            if len(visited) + len(next_frontier) > max_nodes:
-                truncated = True
-                break
-            frontier = next_frontier
-            depth += 1
-
-        # Record total count before any truncation for the response
-        total_impacted = len(impacted - seeds)
-
-        # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
-
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        changed_nodes = self._resolve_impact_nodes(seeds)
+        impacted_nodes = self._resolve_impact_nodes(impacted - seeds)
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
-        # Collect relevant edges in a single batch query
-        relevant_edges = []
         all_qns = seeds | impacted
-        if all_qns:
-            relevant_edges = self.get_edges_among(all_qns)
+        relevant_edges = self.get_edges_among(all_qns) if all_qns else []
 
         return {
             "changed_nodes": changed_nodes,
