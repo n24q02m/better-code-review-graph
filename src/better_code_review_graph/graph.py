@@ -281,7 +281,9 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
-    def get_nodes_by_qualified_names(self, qualified_names: list[str]) -> list[GraphNode]:
+    def get_nodes_by_qualified_names(
+        self, qualified_names: list[str]
+    ) -> list[GraphNode]:
         """Return nodes matching the given list of qualified names.
 
         Batches the IN clause to stay under SQLite's default

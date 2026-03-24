@@ -473,7 +473,11 @@ def query_graph(
             # (e.g. "generateTestCode") while qn is fully qualified
             # (e.g. "file.ts::generateTestCode"). Search by plain name too.
             if not edges and node:
-                edges = [e for e in store.search_edges_by_target_name(node.name) if e.kind == "CALLS"]
+                edges = [
+                    e
+                    for e in store.search_edges_by_target_name(node.name)
+                    if e.kind == "CALLS"
+                ]
 
             caller_qns = list({e.source_qualified for e in edges})
             callers_by_qn = {
