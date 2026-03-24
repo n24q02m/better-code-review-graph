@@ -408,17 +408,8 @@ class GraphStore:
         total_impacted = len(impacted - seeds)
 
         # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
-
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        changed_nodes = self.get_nodes_by_qualified_names(seeds)
+        impacted_nodes = self.get_nodes_by_qualified_names(impacted - seeds)
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -439,11 +430,7 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
+        nodes = self.get_nodes_by_qualified_names(set(qualified_names))
 
         edges = []
         qn_set = set(qualified_names)
@@ -539,6 +526,27 @@ class GraphStore:
             params,
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
+
+    def get_nodes_by_qualified_names(self, qualified_names: set[str] | list[str]) -> list[GraphNode]:
+        """Batch fetch nodes by their qualified names.
+
+        Uses batching to stay under SQLite's default SQLITE_MAX_VARIABLE_NUMBER limit.
+        """
+        if not qualified_names:
+            return []
+        qns = list(qualified_names)
+        results: list[GraphNode] = []
+        batch_size = 450
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                results.append(self._row_to_node(r))
+        return results
 
     # --- Public edge access (for visualization etc.) ---
 
