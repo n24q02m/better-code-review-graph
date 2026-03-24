@@ -292,7 +292,6 @@ class CodeParser:
 
         return nodes, edges
 
-
     def _handle_class_node(
         self,
         child,
@@ -523,9 +522,7 @@ class CodeParser:
                                 EdgeInfo(
                                     kind="CALLS",
                                     source=caller,
-                                    target=ident.text.decode(
-                                        "utf-8", errors="replace"
-                                    ),
+                                    target=ident.text.decode("utf-8", errors="replace"),
                                     file_path=file_path,
                                     line=child.start_point[0] + 1,
                                 )
@@ -680,38 +677,64 @@ class CodeParser:
             # --- Classes ---
             if node_type in class_types:
                 if self._handle_class_node(
-                    child, source, language, file_path, nodes, edges,
-                    enclosing_class, import_map, defined_names
+                    child,
+                    source,
+                    language,
+                    file_path,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    import_map,
+                    defined_names,
                 ):
                     continue
 
             # --- Functions ---
             if node_type in func_types:
                 if self._handle_function_node(
-                    child, source, language, file_path, nodes, edges,
-                    enclosing_class, import_map, defined_names
+                    child,
+                    source,
+                    language,
+                    file_path,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    import_map,
+                    defined_names,
                 ):
                     continue
 
             # --- Imports ---
             if node_type in import_types:
-                self._handle_import_node(
-                    child, source, language, file_path, edges
-                )
+                self._handle_import_node(child, source, language, file_path, edges)
                 continue
 
             # --- Calls ---
             if node_type in call_types:
                 self._handle_call_node(
-                    child, source, language, file_path, edges,
-                    enclosing_class, enclosing_func, import_map, defined_names
+                    child,
+                    source,
+                    language,
+                    file_path,
+                    edges,
+                    enclosing_class,
+                    enclosing_func,
+                    import_map,
+                    defined_names,
                 )
 
             # --- Solidity-specific constructs ---
             if language == "solidity":
                 if self._handle_solidity_constructs(
-                    child, source, language, file_path, nodes, edges,
-                    enclosing_class, enclosing_func, node_type
+                    child,
+                    source,
+                    language,
+                    file_path,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    enclosing_func,
+                    node_type,
                 ):
                     continue
 
@@ -728,6 +751,7 @@ class CodeParser:
                 import_map=import_map,
                 defined_names=defined_names,
             )
+
     def _collect_file_scope(
         self,
         root,
