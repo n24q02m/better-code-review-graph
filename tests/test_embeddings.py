@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+import litellm
 import pytest
 
 from better_code_review_graph.embeddings import (
@@ -298,7 +299,9 @@ class TestLiteLLMBackend:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise Exception("429 rate limit exceeded")
+                raise litellm.exceptions.RateLimitError(
+                    "429 rate limit exceeded", llm_provider="", model=""
+                )
             return self._mock_embedding_response(kwargs["input"])
 
         with patch("litellm.embedding", side_effect=side_effect):

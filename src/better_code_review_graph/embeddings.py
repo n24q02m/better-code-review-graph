@@ -237,6 +237,13 @@ class LiteLLMBackend:
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors."""
         from litellm import embedding as litellm_embedding
+        from litellm.exceptions import (
+            APIConnectionError,
+            APIError,
+            OpenAIError,
+            RateLimitError,
+            Timeout,
+        )
 
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -256,7 +263,13 @@ class LiteLLMBackend:
                 response = litellm_embedding(**kwargs)
                 data = sorted(response.data, key=lambda x: x["index"])
                 return [d["embedding"] for d in data]
-            except Exception as e:
+            except (
+                APIError,
+                Timeout,
+                OpenAIError,
+                APIConnectionError,
+                RateLimitError,
+            ) as e:
                 last_exc = e
                 if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
                     delay = _RETRY_BASE_DELAY * (2**attempt)
