@@ -275,6 +275,28 @@ class GraphStore:
         ).fetchone()
         return self._row_to_node(row) if row else None
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: list[str]
+    ) -> list[GraphNode]:
+        """Get multiple nodes by their qualified names.
+
+        Batches the IN clause to stay under SQLite's default variable limit.
+        """
+        if not qualified_names:
+            return []
+
+        results = []
+        batch_size = 450
+        for i in range(0, len(qualified_names), batch_size):
+            batch = qualified_names[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            results.extend([self._row_to_node(r) for r in rows])
+        return results
+
     def get_nodes_by_file(self, file_path: str) -> list[GraphNode]:
         rows = self._conn.execute(
             "SELECT * FROM nodes WHERE file_path = ?", (file_path,)

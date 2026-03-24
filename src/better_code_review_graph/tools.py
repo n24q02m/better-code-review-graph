@@ -530,12 +530,23 @@ def query_graph(
                     results.append(node_to_dict(t))
 
         elif pattern == "inheritors_of":
-            for e in store.get_edges_by_target(qn):
-                if e.kind in ("INHERITS", "IMPLEMENTS"):
-                    child = store.get_node(e.source_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
-                    edges_out.append(edge_to_dict(e))
+            inheritor_edges = [
+                e
+                for e in store.get_edges_by_target(qn)
+                if e.kind in ("INHERITS", "IMPLEMENTS")
+            ]
+            inheritor_qns = [e.source_qualified for e in inheritor_edges]
+
+            if inheritor_qns:
+                children = store.get_nodes_by_qualified_names(inheritor_qns)
+                children_by_qn = {child.qualified_name: child for child in children}
+
+                for qn_src in inheritor_qns:
+                    if qn_src in children_by_qn:
+                        results.append(node_to_dict(children_by_qn[qn_src]))
+
+            for e in inheritor_edges:
+                edges_out.append(edge_to_dict(e))
 
         elif pattern == "file_summary":
             abs_path = str(root / target)
