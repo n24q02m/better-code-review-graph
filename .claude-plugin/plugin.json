@@ -1,22 +1,12 @@
 {
   "name": "better-code-review-graph",
-  "description": "Persistent incremental knowledge graph for token-efficient, context-aware code reviews with Claude Code",
+  "description": "Persistent incremental knowledge graph for token-efficient code reviews",
   "version": "3.0.0",
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
   },
   "homepage": "https://github.com/n24q02m/better-code-review-graph",
-  "repository": "https://github.com/n24q02m/better-code-review-graph",
-  "license": "MIT",
-  "keywords": [
-    "code-review",
-    "knowledge-graph",
-    "incremental",
-    "tree-sitter",
-    "mcp",
-    "claude-code"
-  ],
   "mcpServers": {
     "better-code-review-graph": {
       "command": "uvx",
@@ -25,7 +15,19 @@
         "3.13",
         "better-code-review-graph"
       ]
+    },
+    "better-code-review-graph-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        ".:/repo:ro",
+        "n24q02m/better-code-review-graph:latest"
+      ]
     }
   },
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "hooks": "./hooks/"
 }
