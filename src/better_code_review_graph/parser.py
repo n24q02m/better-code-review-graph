@@ -990,71 +990,105 @@ class CodeParser:
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
         """Extract import targets as module/path strings."""
-        imports = []
         text = node.text.decode("utf-8", errors="replace").strip()
 
         if language == "python":
-            # import x.y.z  or  from x.y import z
-            if node.type == "import_from_statement":
-                for child in node.children:
-                    if child.type == "dotted_name":
-                        imports.append(child.text.decode("utf-8", errors="replace"))
-                        break
-            else:
-                for child in node.children:
-                    if child.type == "dotted_name":
-                        imports.append(child.text.decode("utf-8", errors="replace"))
+            return self._extract_import_python(node)
         elif language in ("javascript", "typescript", "tsx"):
-            # import ... from 'module'
-            for child in node.children:
-                if child.type == "string":
-                    val = child.text.decode("utf-8", errors="replace").strip("'\"")
-                    imports.append(val)
+            return self._extract_import_javascript(node)
         elif language == "go":
-            for child in node.children:
-                if child.type == "import_spec_list":
-                    for spec in child.children:
-                        if spec.type == "import_spec":
-                            for s in spec.children:
-                                if s.type == "interpreted_string_literal":
-                                    val = s.text.decode("utf-8", errors="replace")
-                                    imports.append(val.strip('"'))
-                elif child.type == "import_spec":
-                    for s in child.children:
-                        if s.type == "interpreted_string_literal":
-                            val = s.text.decode("utf-8", errors="replace")
-                            imports.append(val.strip('"'))
+            return self._extract_import_go(node)
         elif language == "rust":
-            # use crate::module::item
-            imports.append(text.replace("use ", "").rstrip(";").strip())
+            return self._extract_import_rust(text)
         elif language in ("c", "cpp"):
-            # #include <header> or #include "header"
-            for child in node.children:
-                if child.type in ("system_lib_string", "string_literal"):
-                    val = child.text.decode("utf-8", errors="replace").strip('<>"')
-                    imports.append(val)
+            return self._extract_import_c(node)
         elif language in ("java", "csharp"):
-            # import/using package.Class
-            parts = text.split()
-            if len(parts) >= 2:
-                imports.append(parts[-1].rstrip(";"))
+            return self._extract_import_java(text)
         elif language == "solidity":
-            # import "path/to/file.sol" or import {Symbol} from "path"
-            for child in node.children:
-                if child.type == "string":
-                    val = child.text.decode("utf-8", errors="replace").strip('"')
-                    if val:
-                        imports.append(val)
+            return self._extract_import_solidity(node)
         elif language == "ruby":
-            # require 'module' or require_relative 'path'
-            if "require" in text:
-                match = re.search(r"""['"](.*?)['"]""", text)
-                if match:
-                    imports.append(match.group(1))
+            return self._extract_import_ruby(text)
         else:
-            # Fallback: just record the text
-            imports.append(text)
+            return [text]
 
+    def _extract_import_python(self, node) -> list[str]:
+        imports = []
+        # import x.y.z  or  from x.y import z
+        if node.type == "import_from_statement":
+            for child in node.children:
+                if child.type == "dotted_name":
+                    imports.append(child.text.decode("utf-8", errors="replace"))
+                    break
+        else:
+            for child in node.children:
+                if child.type == "dotted_name":
+                    imports.append(child.text.decode("utf-8", errors="replace"))
+        return imports
+
+    def _extract_import_javascript(self, node) -> list[str]:
+        imports = []
+        # import ... from 'module'
+        for child in node.children:
+            if child.type == "string":
+                val = child.text.decode("utf-8", errors="replace").strip("'\"")
+                imports.append(val)
+        return imports
+
+    def _extract_import_go(self, node) -> list[str]:
+        imports = []
+        for child in node.children:
+            if child.type == "import_spec_list":
+                for spec in child.children:
+                    if spec.type == "import_spec":
+                        for s in spec.children:
+                            if s.type == "interpreted_string_literal":
+                                val = s.text.decode("utf-8", errors="replace")
+                                imports.append(val.strip('"'))
+            elif child.type == "import_spec":
+                for s in child.children:
+                    if s.type == "interpreted_string_literal":
+                        val = s.text.decode("utf-8", errors="replace")
+                        imports.append(val.strip('"'))
+        return imports
+
+    def _extract_import_rust(self, text: str) -> list[str]:
+        # use crate::module::item
+        return [text.replace("use ", "").rstrip(";").strip()]
+
+    def _extract_import_c(self, node) -> list[str]:
+        imports = []
+        # #include <header> or #include "header"
+        for child in node.children:
+            if child.type in ("system_lib_string", "string_literal"):
+                val = child.text.decode("utf-8", errors="replace").strip('<>"')
+                imports.append(val)
+        return imports
+
+    def _extract_import_java(self, text: str) -> list[str]:
+        imports = []
+        # import/using package.Class
+        parts = text.split()
+        if len(parts) >= 2:
+            imports.append(parts[-1].rstrip(";"))
+        return imports
+
+    def _extract_import_solidity(self, node) -> list[str]:
+        imports = []
+        # import "path/to/file.sol" or import {Symbol} from "path"
+        for child in node.children:
+            if child.type == "string":
+                val = child.text.decode("utf-8", errors="replace").strip('"')
+                if val:
+                    imports.append(val)
+        return imports
+
+    def _extract_import_ruby(self, text: str) -> list[str]:
+        imports = []
+        # require 'module' or require_relative 'path'
+        if "require" in text:
+            match = re.search(r"""['"](.*?)['"]""", text)
+            if match:
+                imports.append(match.group(1))
         return imports
 
     def _get_call_name(self, node, language: str, source: bytes) -> str | None:
