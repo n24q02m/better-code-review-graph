@@ -728,7 +728,8 @@ class TestListGraphStats:
 
 
 class TestEmbedGraph:
-    def test_embed_graph(self, repo_with_graph):
+    def test_embed_graph(self, repo_with_graph, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
         result = embed_graph(repo_root=str(repo_with_graph))
         assert result["status"] == "ok"
         assert "newly_embedded" in result
@@ -862,8 +863,9 @@ class TestBuiltinCallNames:
 
 
 class TestSemanticSearchWithEmbeddings:
-    def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
+    def test_semantic_mode_when_embeddings_exist(self, repo_with_graph, monkeypatch):
         """Embed first, then search should use semantic mode."""
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
         embed_result = embed_graph(repo_root=str(repo_with_graph))
         assert embed_result["status"] == "ok"
         assert embed_result["total_embeddings"] > 0
@@ -874,7 +876,8 @@ class TestSemanticSearchWithEmbeddings:
         assert result["status"] == "ok"
         assert result["search_mode"] in ("semantic", "keyword")
 
-    def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
+    def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
         embed_graph(repo_root=str(repo_with_graph))
         result = semantic_search_nodes(
             query="login", kind="Function", repo_root=str(repo_with_graph)
