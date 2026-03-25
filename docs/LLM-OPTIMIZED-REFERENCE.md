@@ -39,8 +39,8 @@ Or use PostToolUse (Write|Edit|Bash) hooks for automatic background updates.
 <section name="embeddings">
 Dual-mode embedding (included by default, no extras needed):
 - Local (default): qwen3-embed ONNX -- zero-config, 768-dim, ~570MB on first use
-- Cloud: Set API_KEYS or LITELLM_PROXY_URL env var to use LiteLLM
-- Explicit: EMBEDDING_BACKEND=local|litellm
+- Cloud: Set any supported API key (JINA_AI_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, COHERE_API_KEY)
+- Explicit: EMBEDDING_BACKEND=local|cloud
 Call embed_graph_tool to compute vectors.
 semantic_search_nodes_tool auto-uses vectors when available, falls back to keyword.
 Fixed 768-dim storage -- switching backend does NOT invalidate vectors.

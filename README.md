@@ -186,21 +186,22 @@ Returns complete documentation for each tool. Use when the compressed descriptio
 
 | Variable | Default | Description |
 |:---------|:--------|:------------|
-| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `cloud`. `litellm` is alias for `cloud` |
-| `EMBEDDING_MODEL` | `embed-v4.0` | Cloud model (when backend=cloud) |
-| `API_KEYS` | - | API keys (format: `ENV_VAR:key,...`). Enables cloud embedding. |
-| `COHERE_API_KEY` | - | Cohere API key (embedding). |
-| `JINA_AI_API_KEY` | - | Jina AI API key (embedding). |
+| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `cloud`. Auto-detects from available API keys. |
+| `EMBEDDING_MODEL` | (provider default) | Override cloud model name. Provider auto-detected from model prefix. |
+| `JINA_AI_API_KEY` | - | Jina AI API key (embedding, highest priority). |
+| `GEMINI_API_KEY` | - | Google Gemini API key (embedding). Also accepts `GOOGLE_API_KEY`. |
+| `OPENAI_API_KEY` | - | OpenAI API key (embedding). |
+| `COHERE_API_KEY` | - | Cohere API key (embedding). Also accepts `CO_API_KEY`. |
 
 ### Embedding Backends
 
 | Backend | Config | Size | Description |
 |:--------|:-------|:-----|:------------|
 | **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. |
-| **cloud** | `API_KEYS` or `COHERE_API_KEY` | 0 MB | Cloud providers (Cohere, Jina AI). |
+| **cloud** | Any supported API key | 0 MB | Multi-provider: Jina AI, Gemini, OpenAI, Cohere (priority order). |
 
-- **Auto-detection**: `API_KEYS` or `COHERE_API_KEY` set -> cloud. Otherwise -> local ONNX.
-- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=cloud`. `litellm` is accepted as alias for `cloud`.
+- **Auto-detection**: Any supported API key set -> cloud (priority: Jina > Gemini > OpenAI > Cohere). Otherwise -> local ONNX.
+- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=cloud`.
 - **Fixed 768-dim storage**: Switching backends does NOT invalidate existing vectors.
 
 ### Supported Languages

@@ -9,12 +9,12 @@ Knowledge graph MCP server for token-efficient code reviews. Python, single-pack
 - Test: pytest + pytest-asyncio
 - Package manager: uv
 - SDK: fastmcp
-- Core deps: tree-sitter, networkx, SQLite, qwen3-embed (ONNX), litellm
+- Core deps: tree-sitter, networkx, SQLite, qwen3-embed (ONNX), cohere, google-genai, openai, httpx
 
 ## Code Patterns
 - Tree-sitter parsing for 12 languages
 - SQLite graph storage with NetworkX BFS for impact analysis
-- Dual-mode embedding: local ONNX (qwen3-embed) + LiteLLM cloud
+- Dual-mode embedding: local ONNX (qwen3-embed) + cloud multi-provider (Jina/Gemini/OpenAI/Cohere)
 - Incremental updates via git diff and file watching
 - Call target resolution: bare names resolved to qualified names
 

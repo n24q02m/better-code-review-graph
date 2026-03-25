@@ -1,7 +1,7 @@
 # better-code-review-graph
 
 Fork of code-review-graph with fixed multi-word search, qualified call resolution,
-dual-mode embedding (ONNX local + Cohere cloud), and output pagination.
+dual-mode embedding (ONNX local + cloud multi-provider), and output pagination.
 See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 ## Cau truc
@@ -9,12 +9,12 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - `src/better_code_review_graph/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server, 5 tools: graph + query + review (3 main) + config + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
-  - `parser.py` -- Tree-sitter parsing (12 langs) + call target resolution
+  - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
-  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + Cohere cloud
+  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud (Jina/Gemini/OpenAI/Cohere)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
-  - `cli.py` -- CLI: serve + update (for hooks)
+  - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker
@@ -33,7 +33,7 @@ uv run ruff check .                # Lint
 uv run ruff format .               # Format
 uv run ruff check --fix . && uv run ruff format .  # Fix
 uv run ty check                    # Type check (ty lenient config)
-uv run better-code-review-graph serve  # Chay MCP server (stdio)
+uv run better-code-review-graph        # Chay MCP server (stdio, default)
 ```
 
 ## Cau hinh quan trong
@@ -57,15 +57,20 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or Cohere cloud (auto-detected from COHERE_API_KEY). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud multi-provider (Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 5 tools — graph (build/update/stats/embed), query (query/search/impact/large_functions), review, config, help. Returns JSON strings.
 
 ## Embedding backends
 
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- **Cloud**: Cohere -- set `COHERE_API_KEY` env var to activate
+- **Cloud (multi-provider)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere
+  - `JINA_AI_API_KEY` -- Jina AI (httpx REST)
+  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (google-genai SDK)
+  - `OPENAI_API_KEY` -- OpenAI (openai SDK)
+  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (cohere ClientV2)
 - **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection
+- `EMBEDDING_MODEL` -- override model name (provider auto-detected from model prefix)
 - Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
 
 ## Pytest
@@ -94,4 +99,4 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
-- Supported languages: Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
+- Supported languages: Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++, Solidity

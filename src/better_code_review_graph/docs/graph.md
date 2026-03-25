@@ -56,8 +56,8 @@ Compute vector embeddings for all graph nodes to enable semantic search.
 
 Dual-mode embedding:
 - **Local (default)**: qwen3-embed ONNX (~570MB download on first use, zero-config)
-- **Cloud**: LiteLLM (set `API_KEYS` or `LITELLM_PROXY_URL` to activate)
-- **Explicit**: Set `EMBEDDING_BACKEND=local|litellm` to override
+- **Cloud**: Multi-provider (set `JINA_AI_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY` to activate)
+- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override
 
 Fixed 768-dim storage. Switching backends does NOT invalidate existing vectors.
 
