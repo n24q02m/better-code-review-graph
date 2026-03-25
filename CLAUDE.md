@@ -13,6 +13,8 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud (Jina/Gemini/OpenAI/Cohere)
+  - `relay_setup.py` -- Zero-config relay: create session, poll for config
+  - `relay_schema.py` -- Relay form schema (embedding provider fields)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
   - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
