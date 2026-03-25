@@ -30,7 +30,7 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 |:--------|:------------------|:-------------------------|
 | Multi-word search | Broken (literal substring) | AND-logic word splitting |
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
-| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + Cohere cloud (200 MB), dual-mode |
+| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
 | Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
@@ -149,7 +149,7 @@ Actions: `build` | `update` | `stats` | `embed`
 | `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files. |
 | `update` | Alias for `build` with `full_rebuild=false` (incremental). |
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
-| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or Cohere cloud. |
+| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud. |
 
 ### `query` -- Graph queries
 
