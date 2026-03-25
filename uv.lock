@@ -100,7 +100,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.0" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.0.0,<2" },
-    { name = "mcp-relay-core", git = "https://github.com/n24q02m/mcp-relay-core.git?subdirectory=packages%2Fcore-py&rev=main" },
+    { name = "mcp-relay-core", specifier = ">=0.1.0" },
     { name = "networkx", specifier = ">=3.2,<4" },
     { name = "openai", specifier = ">=1.50" },
     { name = "pydantic-settings" },
@@ -862,11 +862,15 @@ wheels = [
 [[package]]
 name = "mcp-relay-core"
 version = "0.1.0"
-source = { git = "https://github.com/n24q02m/mcp-relay-core.git?subdirectory=packages%2Fcore-py&rev=main#10db0fa5555c6357e3a2711d83ef10320362ebe6" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
     { name = "platformdirs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/05/a2/7154b17450221c934f614c66e5c5428736d11635d18631a9f9d13ee23273/mcp_relay_core-0.1.0.tar.gz", hash = "sha256:15ab133b8b66518fc06a3dc2a44280807bdaad423b7038f384a09ea2c1450705", size = 59492, upload-time = "2026-03-25T12:04:26.789Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/d3/a911b0bb783dda295a6ece7739ae2a36c371a816fbfe25547e2d05edd777/mcp_relay_core-0.1.0-py3-none-any.whl", hash = "sha256:660a2cae49147a25ba1eef1d415806fea62c087257d1a2f2ac6423ce81997e5c", size = 39842, upload-time = "2026-03-25T12:04:28.733Z" },
 ]
 
 [[package]]

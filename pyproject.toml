@@ -30,7 +30,7 @@ dependencies = [
     "openai>=1.50",
     "httpx",
     "pydantic-settings",
-    "mcp-relay-core @ git+https://github.com/n24q02m/mcp-relay-core.git@main#subdirectory=packages/core-py",
+    "mcp-relay-core>=0.1.0",
 ]
 
 [project.scripts]
@@ -46,9 +46,6 @@ dev = [
     "syrupy",
     "ty>=0.0.1a10",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/better_code_review_graph"]
