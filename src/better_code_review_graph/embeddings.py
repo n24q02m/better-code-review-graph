@@ -1,14 +1,15 @@
-"""Dual-mode embedding: local ONNX (default) + cloud (Cohere SDK).
+"""Dual-mode embedding: local ONNX (default) + cloud (multi-provider).
 
 Supports two backends:
 - **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
   download on first use. Default backend.
-- **cloud**: Cloud embedding via Cohere SDK (embed-multilingual-v3.0).
-  Auto-detected from COHERE_API_KEY or CO_API_KEY env vars.
+- **cloud**: Cloud embedding via native SDKs. Supports Jina, Gemini, OpenAI,
+  and Cohere. Auto-detected from API key env vars with priority:
+  jina > gemini > openai > cohere.
 
 Backend selection (always returns a valid backend):
 1. Explicit EMBEDDING_BACKEND env var
-2. 'cloud' if COHERE_API_KEY or CO_API_KEY are set
+2. 'cloud' if any provider API key is set
 3. 'local' (default, always available)
 
 All embeddings are stored at fixed 768 dimensions (MRL truncation).
@@ -63,6 +64,39 @@ def _is_retryable(exc: Exception) -> bool:
     """Check if an exception is transient and worth retrying."""
     msg = str(exc).lower()
     return any(p in msg for p in _RETRYABLE_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Provider detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_embedding_provider(model: str) -> str:
+    """Detect provider from model name. Returns 'jina', 'gemini', 'openai', or 'cohere'."""
+    lower = model.lower()
+    if lower.startswith("jina_ai/") or lower.startswith("jina"):
+        return "jina"
+    if lower.startswith("gemini/") or "gemini" in lower:
+        return "gemini"
+    if lower.startswith("embed-") or lower.startswith("cohere/"):
+        return "cohere"
+    if lower.startswith("text-embedding") or lower.startswith("openai/"):
+        return "openai"
+    # Fallback: check env vars in priority order
+    if os.getenv("JINA_AI_API_KEY"):
+        return "jina"
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        return "gemini"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    return "cohere"
+
+
+def _strip_provider(model: str) -> str:
+    """Strip provider prefix (e.g. 'gemini/model' -> 'model')."""
+    if "/" in model:
+        return model.split("/", 1)[1]
+    return model
 
 
 # ---------------------------------------------------------------------------
@@ -184,12 +218,16 @@ class Qwen3EmbedBackend:
 
 
 # ---------------------------------------------------------------------------
-# Cloud Embedding Backend (Cohere SDK)
+# Cloud Embedding Backend (multi-provider: Jina, Gemini, OpenAI, Cohere)
 # ---------------------------------------------------------------------------
 
 
 class CloudEmbeddingBackend:
-    """Cloud embedding via Cohere SDK (embed-multilingual-v3.0)."""
+    """Cloud embedding via native SDKs (Jina, Gemini, OpenAI, Cohere).
+
+    Provider is auto-detected from the model name or env vars.
+    Priority: jina > gemini > openai > cohere.
+    """
 
     MAX_BATCH_SIZE = 96
 
@@ -199,11 +237,131 @@ class CloudEmbeddingBackend:
         api_key: str | None = None,
     ):
         self.model = model or os.getenv("EMBEDDING_MODEL", "embed-multilingual-v3.0")
-        self.api_key = api_key or os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY")
+        self.api_key = api_key
+        self._provider = _detect_embedding_provider(self.model)
+        self._bare_model = _strip_provider(self.model)
 
     @property
     def name(self) -> str:
-        return f"cloud:{self.model}"
+        return f"cloud:{self._provider}:{self.model}"
+
+    def _resolve_api_key(self) -> str:
+        """Resolve API key for the current provider."""
+        if self.api_key:
+            return self.api_key
+        if self._provider == "jina":
+            return os.getenv("JINA_AI_API_KEY") or ""
+        if self._provider == "gemini":
+            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+        if self._provider == "openai":
+            return os.getenv("OPENAI_API_KEY") or ""
+        # cohere
+        return os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
+
+    def _call_provider(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Route to the correct provider SDK."""
+        if self._provider == "jina":
+            return self._embed_jina(texts, dimensions)
+        elif self._provider == "gemini":
+            return self._embed_gemini(texts, dimensions)
+        elif self._provider == "openai":
+            return self._embed_openai(texts, dimensions)
+        else:
+            return self._embed_cohere(texts, dimensions)
+
+    def _embed_jina(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Embed via Jina AI (httpx, REST API)."""
+        import httpx
+
+        key = self._resolve_api_key()
+        payload: dict[str, Any] = {
+            "model": self._bare_model,
+            "input": texts,
+        }
+        if dimensions:
+            payload["dimensions"] = dimensions
+
+        response = httpx.post(
+            "https://api.jina.ai/v1/embeddings",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()["data"]
+        data_sorted = sorted(data, key=lambda x: x["index"])
+        return [d["embedding"] for d in data_sorted]
+
+    def _embed_gemini(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Embed via Google Gemini (google-genai SDK)."""
+        from google import genai
+        from google.genai import types
+
+        key = self._resolve_api_key()
+        client = genai.Client(api_key=key)
+
+        config_kwargs: dict[str, Any] = {}
+        if dimensions:
+            config_kwargs["output_dimensionality"] = dimensions
+
+        result = client.models.embed_content(
+            model=self._bare_model,
+            contents=texts,
+            config=types.EmbedContentConfig(**config_kwargs) if config_kwargs else None,
+        )
+
+        embeddings = result.embeddings or []
+        return [list(e.values or []) for e in embeddings]
+
+    def _embed_openai(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Embed via OpenAI SDK."""
+        from openai import OpenAI
+
+        key = self._resolve_api_key()
+        client = OpenAI(api_key=key)
+
+        kwargs: dict[str, Any] = {
+            "model": self._bare_model,
+            "input": texts,
+        }
+        if dimensions:
+            kwargs["dimensions"] = dimensions
+
+        response = client.embeddings.create(**kwargs)
+        data = sorted(response.data, key=lambda x: x.index)
+        return [d.embedding for d in data]
+
+    def _embed_cohere(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Embed via Cohere SDK (ClientV2)."""
+        import cohere
+
+        key = self._resolve_api_key()
+        client = cohere.ClientV2(api_key=key)
+
+        response = client.embed(
+            model=self._bare_model,
+            texts=texts,
+            input_type="search_document",
+            embedding_types=["float"],
+            truncate="END",
+        )
+        embeddings: list[list[float]] = list(response.embeddings.float_ or [])
+        if dimensions and embeddings and len(embeddings[0]) > dimensions:
+            embeddings = [e[:dimensions] for e in embeddings]
+        return embeddings
 
     def _embed_batch_inner(
         self,
@@ -211,24 +369,10 @@ class CloudEmbeddingBackend:
         dimensions: int | None = None,
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors."""
-        import cohere
-
-        client = cohere.ClientV2(api_key=self.api_key)
-
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                response = client.embed(
-                    model=self.model,
-                    texts=texts,
-                    input_type="search_document",
-                    embedding_types=["float"],
-                    truncate="END",
-                )
-                embeddings = response.embeddings.float_
-                if dimensions:
-                    embeddings = [e[:dimensions] for e in embeddings]
-                return embeddings
+                return self._call_provider(texts, dimensions)
             except Exception as e:
                 last_exc = e
                 if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
@@ -269,27 +413,14 @@ class CloudEmbeddingBackend:
         return results[0]
 
     def check_available(self) -> int:
-        """Check if the Cohere model is available via test request."""
+        """Check if the cloud model is available via test request."""
         try:
-            import cohere
-
-            client = cohere.ClientV2(api_key=self.api_key)
-            response = client.embed(
-                model=self.model,
-                texts=["test"],
-                input_type="search_document",
-                embedding_types=["float"],
-                truncate="END",
-            )
-            if response.embeddings.float_:
-                return len(response.embeddings.float_[0])
+            embeddings = self._call_provider(["test"])
+            if embeddings:
+                return len(embeddings[0])
             return 0  # pragma: no cover
         except Exception:
             return 0
-
-
-# Backward compatibility alias
-LiteLLMBackend = CloudEmbeddingBackend
 
 
 # ---------------------------------------------------------------------------
@@ -302,13 +433,25 @@ def resolve_backend() -> str:
 
     Priority:
     1. Explicit EMBEDDING_BACKEND env var
-    2. 'cloud' if COHERE_API_KEY or CO_API_KEY are set
+    2. 'cloud' if any provider API key is set
     3. 'local' (default, always available)
     """
     explicit = os.getenv("EMBEDDING_BACKEND")
     if explicit:
+        if explicit == "litellm":
+            return "cloud"
         return explicit
-    if os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY"):
+    if any(
+        os.getenv(k)
+        for k in (
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        )
+    ):
         return "cloud"
     return "local"
 

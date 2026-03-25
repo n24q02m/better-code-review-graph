@@ -10,12 +10,13 @@ import pytest
 from better_code_review_graph.embeddings import (
     CloudEmbeddingBackend,
     EmbeddingStore,
-    LiteLLMBackend,
     Qwen3EmbedBackend,
     _cosine_similarity,
     _decode_vector,
+    _detect_embedding_provider,
     _encode_vector,
     _node_to_text,
+    _strip_provider,
     embed_all_nodes,
     init_backend,
     resolve_backend,
@@ -153,6 +154,22 @@ class TestResolveBackend:
         with patch.dict(os.environ, {"CO_API_KEY": "test-key"}, clear=True):
             assert resolve_backend() == "cloud"
 
+    def test_jina_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"JINA_AI_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
+
+    def test_gemini_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
+
+    def test_google_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
+
+    def test_openai_api_key_triggers_cloud(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
+            assert resolve_backend() == "cloud"
+
     def test_explicit_backend_overrides(self):
         with patch.dict(
             os.environ,
@@ -162,6 +179,10 @@ class TestResolveBackend:
             assert resolve_backend() == "local"
 
         with patch.dict(os.environ, {"EMBEDDING_BACKEND": "cloud"}, clear=True):
+            assert resolve_backend() == "cloud"
+
+    def test_litellm_alias_resolves_to_cloud(self):
+        with patch.dict(os.environ, {"EMBEDDING_BACKEND": "litellm"}, clear=True):
             assert resolve_backend() == "cloud"
 
 
@@ -182,7 +203,6 @@ class TestInitBackend:
     def test_litellm_backward_compat(self):
         backend = init_backend("litellm")
         assert isinstance(backend, CloudEmbeddingBackend)
-        assert isinstance(backend, LiteLLMBackend)  # alias
 
     def test_auto_detect_local(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -235,23 +255,123 @@ class TestQwen3EmbedBackend:
 
 
 # ---------------------------------------------------------------------------
-# LiteLLMBackend (mocked)
+# Provider detection
+# ---------------------------------------------------------------------------
+
+
+class TestProviderDetection:
+    def test_jina_prefix(self):
+        assert _detect_embedding_provider("jina_ai/jina-embeddings-v3") == "jina"
+        assert _detect_embedding_provider("jina-embeddings-v3") == "jina"
+
+    def test_gemini_prefix(self):
+        assert _detect_embedding_provider("gemini/gemini-embedding-2") == "gemini"
+        assert _detect_embedding_provider("gemini-embedding-2-preview") == "gemini"
+
+    def test_cohere_prefix(self):
+        assert _detect_embedding_provider("embed-multilingual-v3.0") == "cohere"
+        assert _detect_embedding_provider("cohere/embed-english-v3.0") == "cohere"
+
+    def test_openai_prefix(self):
+        assert _detect_embedding_provider("text-embedding-3-large") == "openai"
+        assert _detect_embedding_provider("openai/text-embedding-3-small") == "openai"
+
+    def test_fallback_jina_env(self):
+        with patch.dict(os.environ, {"JINA_AI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown-model") == "jina"
+
+    def test_fallback_gemini_env(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown-model") == "gemini"
+
+    def test_fallback_google_env(self):
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown-model") == "gemini"
+
+    def test_fallback_openai_env(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "key"}, clear=True):
+            assert _detect_embedding_provider("unknown-model") == "openai"
+
+    def test_fallback_default_cohere(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert _detect_embedding_provider("unknown-model") == "cohere"
+
+    def test_strip_provider(self):
+        assert _strip_provider("gemini/model-name") == "model-name"
+        assert _strip_provider("model-name") == "model-name"
+        assert _strip_provider("jina_ai/jina-embeddings-v3") == "jina-embeddings-v3"
+
+
+# ---------------------------------------------------------------------------
+# CloudEmbeddingBackend (mocked, multi-provider)
 # ---------------------------------------------------------------------------
 
 
 class TestCloudEmbeddingBackend:
-    def _mock_embed_response(self, texts, dim=768):
+    def _mock_cohere_response(self, texts, dim=768):
         """Build a mock Cohere embed response."""
         mock_resp = MagicMock()
         mock_resp.embeddings.float_ = [[0.1] * dim for _ in range(len(texts))]
         return mock_resp
 
-    def test_embed_texts_single_batch(self):
+    def test_provider_auto_detection(self):
+        backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="k")
+        assert backend._provider == "jina"
+
+        backend = CloudEmbeddingBackend(model="gemini-embedding-2", api_key="k")
+        assert backend._provider == "gemini"
+
+        backend = CloudEmbeddingBackend(model="text-embedding-3-large", api_key="k")
+        assert backend._provider == "openai"
+
+        backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0", api_key="k")
+        assert backend._provider == "cohere"
+
+    def test_name_includes_provider(self):
+        backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="k")
+        assert "jina" in backend.name
+        assert "cloud:" in backend.name
+
+    def test_embed_cohere(self):
         backend = CloudEmbeddingBackend(api_key="test-key")
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_embed_response(["test"])
+            mock_client.embed.return_value = self._mock_cohere_response(["test"])
+            vectors = backend.embed_texts(["test"], dimensions=768)
+            assert len(vectors) == 1
+            assert len(vectors[0]) == 768
+
+    def test_embed_gemini(self):
+        backend = CloudEmbeddingBackend(
+            model="gemini-embedding-2-preview", api_key="test-key"
+        )
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._embed_gemini"
+        ) as mock_embed:
+            mock_embed.return_value = [[0.1] * 768]
+            vectors = backend.embed_texts(["test"], dimensions=768)
+            assert len(vectors) == 1
+            assert len(vectors[0]) == 768
+
+    def test_embed_openai(self):
+        backend = CloudEmbeddingBackend(
+            model="text-embedding-3-large", api_key="test-key"
+        )
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._embed_openai"
+        ) as mock_embed:
+            mock_embed.return_value = [[0.1] * 768]
+            vectors = backend.embed_texts(["test"], dimensions=768)
+            assert len(vectors) == 1
+            assert len(vectors[0]) == 768
+
+    def test_embed_jina(self):
+        backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="test-key")
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._embed_jina"
+        ) as mock_embed:
+            mock_embed.return_value = [[0.1] * 768]
             vectors = backend.embed_texts(["test"], dimensions=768)
             assert len(vectors) == 1
             assert len(vectors[0]) == 768
@@ -267,7 +387,7 @@ class TestCloudEmbeddingBackend:
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = lambda **kwargs: self._mock_embed_response(
+            mock_client.embed.side_effect = lambda **kwargs: self._mock_cohere_response(
                 kwargs["texts"]
             )
             vectors = backend.embed_texts(texts, dimensions=768)
@@ -280,7 +400,7 @@ class TestCloudEmbeddingBackend:
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_embed_response(["test"])
+            mock_client.embed.return_value = self._mock_cohere_response(["test"])
             vector = backend.embed_single("test", dimensions=768)
             assert len(vector) == 768
 
@@ -289,7 +409,7 @@ class TestCloudEmbeddingBackend:
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_embed_response(["test"])
+            mock_client.embed.return_value = self._mock_cohere_response(["test"])
             dims = backend.check_available()
             assert dims == 768
 
@@ -311,7 +431,7 @@ class TestCloudEmbeddingBackend:
             call_count += 1
             if call_count == 1:
                 raise Exception("429 rate limit exceeded")
-            return self._mock_embed_response(kwargs["texts"])
+            return self._mock_cohere_response(kwargs["texts"])
 
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
@@ -322,24 +442,42 @@ class TestCloudEmbeddingBackend:
                 assert len(vectors) == 1
                 assert call_count == 2
 
-    def test_backward_compat_alias(self):
-        """LiteLLMBackend should be an alias for CloudEmbeddingBackend."""
-        assert LiteLLMBackend is CloudEmbeddingBackend
-        backend = LiteLLMBackend(api_key="test-key")
-        assert isinstance(backend, CloudEmbeddingBackend)
-
     def test_dimensions_truncation(self):
         """Test that dimensions parameter truncates embeddings."""
         backend = CloudEmbeddingBackend(api_key="test-key")
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_embed_response(
+            mock_client.embed.return_value = self._mock_cohere_response(
                 ["test"], dim=1024
             )
             vectors = backend.embed_texts(["test"], dimensions=768)
             assert len(vectors) == 1
             assert len(vectors[0]) == 768
+
+    def test_api_key_resolution_from_env(self):
+        """Test that API key is resolved per provider from env."""
+        with patch.dict(os.environ, {"JINA_AI_API_KEY": "jina-key"}, clear=True):
+            backend = CloudEmbeddingBackend(model="jina-embeddings-v3")
+            assert backend._resolve_api_key() == "jina-key"
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "gem-key"}, clear=True):
+            backend = CloudEmbeddingBackend(model="gemini-embedding-2")
+            assert backend._resolve_api_key() == "gem-key"
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "oai-key"}, clear=True):
+            backend = CloudEmbeddingBackend(model="text-embedding-3-large")
+            assert backend._resolve_api_key() == "oai-key"
+
+        with patch.dict(os.environ, {"COHERE_API_KEY": "co-key"}, clear=True):
+            backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0")
+            assert backend._resolve_api_key() == "co-key"
+
+    def test_explicit_api_key_overrides_env(self):
+        """Explicit api_key param takes priority over env."""
+        with patch.dict(os.environ, {"COHERE_API_KEY": "env-key"}, clear=True):
+            backend = CloudEmbeddingBackend(api_key="explicit-key")
+            assert backend._resolve_api_key() == "explicit-key"
 
 
 # ---------------------------------------------------------------------------
