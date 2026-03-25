@@ -1,7 +1,7 @@
 # better-code-review-graph
 
 Fork of code-review-graph with fixed multi-word search, qualified call resolution,
-dual-mode embedding (ONNX local + LiteLLM cloud), and output pagination.
+dual-mode embedding (ONNX local + Cohere cloud), and output pagination.
 See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 ## Cau truc
@@ -12,7 +12,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
-  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + LiteLLM cloud
+  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + Cohere cloud
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
   - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
@@ -57,15 +57,15 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or LiteLLM cloud (auto-detected from API_KEYS/LITELLM_PROXY_URL). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or Cohere cloud (auto-detected from API_KEYS/COHERE_API_KEY). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 5 tools — graph (build/update/stats/embed), query (query/search/impact/large_functions), review, config, help. Returns JSON strings.
 
 ## Embedding backends
 
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- **Cloud**: LiteLLM -- set `API_KEYS` or `LITELLM_PROXY_URL` env var to activate
-- **Explicit**: Set `EMBEDDING_BACKEND=local|litellm` to override auto-detection
+- **Cloud**: Cohere -- set `API_KEYS` or `COHERE_API_KEY` env var to activate
+- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection. `litellm` is alias for `cloud`
 - Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
 
 ## Pytest

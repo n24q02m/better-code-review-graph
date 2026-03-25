@@ -30,7 +30,7 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 |:--------|:------------------|:-------------------------|
 | Multi-word search | Broken (literal substring) | AND-logic word splitting |
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
-| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + LiteLLM (200 MB), dual-mode |
+| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + Cohere cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
 | Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
@@ -149,7 +149,7 @@ Actions: `build` | `update` | `stats` | `embed`
 | `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files. |
 | `update` | Alias for `build` with `full_rebuild=false` (incremental). |
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
-| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud LiteLLM. |
+| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or Cohere cloud. |
 
 ### `query` -- Graph queries
 
@@ -186,21 +186,21 @@ Returns complete documentation for each tool. Use when the compressed descriptio
 
 | Variable | Default | Description |
 |:---------|:--------|:------------|
-| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `litellm` |
-| `EMBEDDING_MODEL` | `gemini/gemini-embedding-001` | LiteLLM model (when backend=litellm) |
-| `API_KEYS` | - | LLM API keys (format: `ENV_VAR:key,...`). Enables LiteLLM. |
-| `LITELLM_PROXY_URL` | - | LiteLLM Proxy URL. Enables LiteLLM via proxy. |
-| `LITELLM_PROXY_KEY` | - | LiteLLM Proxy virtual key. |
+| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `cloud`. `litellm` is alias for `cloud` |
+| `EMBEDDING_MODEL` | `embed-v4.0` | Cloud model (when backend=cloud) |
+| `API_KEYS` | - | API keys (format: `ENV_VAR:key,...`). Enables cloud embedding. |
+| `COHERE_API_KEY` | - | Cohere API key (embedding). |
+| `JINA_AI_API_KEY` | - | Jina AI API key (embedding). |
 
 ### Embedding Backends
 
 | Backend | Config | Size | Description |
 |:--------|:-------|:-----|:------------|
 | **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. |
-| **litellm** | `API_KEYS` or `LITELLM_PROXY_URL` | 0 MB | Cloud providers via LiteLLM. |
+| **cloud** | `API_KEYS` or `COHERE_API_KEY` | 0 MB | Cloud providers (Cohere, Jina AI). |
 
-- **Auto-detection**: `API_KEYS` or `LITELLM_PROXY_URL` set -> LiteLLM. Otherwise -> local ONNX.
-- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=litellm`.
+- **Auto-detection**: `API_KEYS` or `COHERE_API_KEY` set -> cloud. Otherwise -> local ONNX.
+- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=cloud`. `litellm` is accepted as alias for `cloud`.
 - **Fixed 768-dim storage**: Switching backends does NOT invalidate existing vectors.
 
 ### Supported Languages
