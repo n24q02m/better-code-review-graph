@@ -182,6 +182,19 @@ Topics: `graph` | `query` | `review` | `config`
 
 Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
 
+## Zero-Config Setup
+
+No environment variables needed. On first start, the server opens a setup page in your browser:
+
+1. Start the server (via plugin, `uvx`, or Docker)
+2. A setup URL appears -- open it in any browser
+3. Fill in your credentials on the guided form
+4. Credentials are encrypted and stored locally
+
+Your credentials never leave your machine. The relay server only sees encrypted data.
+
+For CI/automation, you can still use environment variables (see below).
+
 ## Configuration
 
 | Variable | Default | Description |
