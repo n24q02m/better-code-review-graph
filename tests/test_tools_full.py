@@ -876,7 +876,9 @@ class TestSemanticSearchWithEmbeddings:
         assert result["status"] == "ok"
         assert result["search_mode"] in ("semantic", "keyword")
 
-    def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph, monkeypatch):
+    def test_semantic_search_with_kind_filter_after_embed(
+        self, repo_with_graph, monkeypatch
+    ):
         monkeypatch.setenv("EMBEDDING_BACKEND", "local")
         embed_graph(repo_root=str(repo_with_graph))
         result = semantic_search_nodes(
