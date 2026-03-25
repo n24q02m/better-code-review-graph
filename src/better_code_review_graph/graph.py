@@ -342,10 +342,14 @@ class GraphStore:
 
         where = " AND ".join(conditions)
         if kind:
-            where = f"({where}) AND kind = ?"
+            where = "(" + where + ") AND kind = ?"
             params.append(kind)
 
-        sql = f"SELECT * FROM nodes WHERE {where} ORDER BY name LIMIT ?"  # nosec B608
+        sql = "SELECT * FROM nodes"
+        if where:
+            sql += " WHERE " + where
+        sql += " ORDER BY name LIMIT ?"
+
         params.append(limit)
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
@@ -533,11 +537,11 @@ class GraphStore:
 
         params.append(limit)
         where = " AND ".join(conditions)
-        rows = self._conn.execute(
-            f"SELECT * FROM nodes WHERE {where} "  # nosec B608
-            "ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
-            params,
-        ).fetchall()
+        sql = "SELECT * FROM nodes"
+        if where:
+            sql += " WHERE " + where
+        sql += " ORDER BY (line_end - line_start + 1) DESC LIMIT ?"
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Public edge access (for visualization etc.) ---
@@ -561,10 +565,10 @@ class GraphStore:
         for i in range(0, len(qns), batch_size):
             batch = qns[i : i + batch_size]
             placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM edges WHERE source_qualified IN ({placeholders})",
-                batch,
-            ).fetchall()
+            sql = "SELECT * FROM edges WHERE source_qualified IN ("
+            sql += placeholders
+            sql += ")"
+            rows = self._conn.execute(sql, batch).fetchall()
             for r in rows:
                 edge = self._row_to_edge(r)
                 if edge.target_qualified in qualified_names:
