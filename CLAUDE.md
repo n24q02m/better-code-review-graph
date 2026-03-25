@@ -90,7 +90,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 
 ## Luu y quan trong
 
-- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, litellm) -- tranh startup cost
+- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, cohere) -- tranh startup cost
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
