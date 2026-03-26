@@ -728,12 +728,6 @@ class TestListGraphStats:
 
 
 class TestEmbedGraph:
-    @pytest.fixture(autouse=True)
-    def force_local_backend(self, monkeypatch):
-        # Force the local embedding backend to avoid hitting external APIs
-        # which might fail due to missing/invalid API keys during CI.
-        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
-
     def test_embed_graph(self, repo_with_graph):
         result = embed_graph(repo_root=str(repo_with_graph))
         assert result["status"] == "ok"
@@ -868,12 +862,6 @@ class TestBuiltinCallNames:
 
 
 class TestSemanticSearchWithEmbeddings:
-    @pytest.fixture(autouse=True)
-    def force_local_backend(self, monkeypatch):
-        # Force the local embedding backend to avoid hitting external APIs
-        # which might fail due to missing/invalid API keys during CI.
-        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
-
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
         embed_result = embed_graph(repo_root=str(repo_with_graph))

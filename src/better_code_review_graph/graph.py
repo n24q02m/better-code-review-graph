@@ -275,36 +275,6 @@ class GraphStore:
         ).fetchone()
         return self._row_to_node(row) if row else None
 
-    def get_nodes_by_qualified_names(
-        self, qualified_names: list[str]
-    ) -> list[GraphNode | None]:
-        """Batch fetch nodes by their qualified names.
-
-        Returns a list of GraphNode or None, exactly matching the length and order
-        of the input qualified_names list to allow direct parallel iteration.
-        """
-        if not qualified_names:
-            return []
-
-        # Deduplicate to minimize DB lookups
-        unique_qns = list(set(qualified_names))
-        node_map: dict[str, GraphNode] = {}
-        batch_size = 450
-
-        for i in range(0, len(unique_qns), batch_size):
-            batch = unique_qns[i : i + batch_size]
-            placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
-                batch,
-            ).fetchall()
-            for r in rows:
-                node = self._row_to_node(r)
-                node_map[node.qualified_name] = node
-
-        # Map back to original list to preserve ordering and duplicates
-        return [node_map.get(qn) for qn in qualified_names]
-
     def get_nodes_by_file(self, file_path: str) -> list[GraphNode]:
         rows = self._conn.execute(
             "SELECT * FROM nodes WHERE file_path = ?", (file_path,)
@@ -439,16 +409,14 @@ class GraphStore:
 
         # Resolve to full node info
         changed_nodes = []
-        seeds_list = list(seeds)
-        seeds_nodes = self.get_nodes_by_qualified_names(seeds_list)
-        for node in seeds_nodes:
+        for qn in seeds:
+            node = self.get_node(qn)
             if node:
                 changed_nodes.append(node)
 
         impacted_nodes = []
-        impacted_list = list(impacted - seeds)
-        impacted_res = self.get_nodes_by_qualified_names(impacted_list)
-        for node in impacted_res:
+        for qn in impacted - seeds:
+            node = self.get_node(qn)
             if node:
                 impacted_nodes.append(node)
 
@@ -472,8 +440,8 @@ class GraphStore:
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
         nodes = []
-        fetched_nodes = self.get_nodes_by_qualified_names(qualified_names)
-        for node in fetched_nodes:
+        for qn in qualified_names:
+            node = self.get_node(qn)
             if node:
                 nodes.append(node)
 
