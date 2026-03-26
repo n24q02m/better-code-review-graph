@@ -728,19 +728,18 @@ class TestListGraphStats:
 # ---------------------------------------------------------------------------
 
 
-_HAS_EMBED_KEY = bool(
-    os.getenv("API_KEYS")
-    or os.getenv("JINA_AI_API_KEY")
-    or os.getenv("GOOGLE_API_KEY")
-    or os.getenv("OPENAI_API_KEY")
-    or os.getenv("COHERE_API_KEY")
-)
+def _mock_embed(texts, _dims=None):
+    """Return fake embeddings for testing without API keys."""
+    return [[0.1] * 128 for _ in texts]
 
 
-@pytest.mark.skipif(not _HAS_EMBED_KEY, reason="No embedding API key available")
 class TestEmbedGraph:
     def test_embed_graph(self, repo_with_graph):
-        result = embed_graph(repo_root=str(repo_with_graph))
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
+            side_effect=_mock_embed,
+        ):
+            result = embed_graph(repo_root=str(repo_with_graph))
         assert result["status"] == "ok"
         assert "newly_embedded" in result
         assert "total_embeddings" in result
@@ -872,11 +871,14 @@ class TestBuiltinCallNames:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not _HAS_EMBED_KEY, reason="No embedding API key available")
 class TestSemanticSearchWithEmbeddings:
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
-        embed_result = embed_graph(repo_root=str(repo_with_graph))
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
+            side_effect=_mock_embed,
+        ):
+            embed_result = embed_graph(repo_root=str(repo_with_graph))
         assert embed_result["status"] == "ok"
         assert embed_result["total_embeddings"] > 0
 
@@ -887,7 +889,11 @@ class TestSemanticSearchWithEmbeddings:
         assert result["search_mode"] in ("semantic", "keyword")
 
     def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
-        embed_graph(repo_root=str(repo_with_graph))
+        with patch(
+            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
+            side_effect=_mock_embed,
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
         result = semantic_search_nodes(
             query="login", kind="Function", repo_root=str(repo_with_graph)
         )
