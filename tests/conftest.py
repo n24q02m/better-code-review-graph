@@ -8,6 +8,16 @@ from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
+@pytest.fixture(autouse=True)
+def force_local_embeddings(monkeypatch):
+    """Force tests to use the local ONNX embedding backend.
+
+    Prevents tests from attempting to hit Cohere/LiteLLM APIs if API keys
+    happen to be present in the CI environment.
+    """
+    monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+
+
 @pytest.fixture
 def tmp_graph_store(tmp_path):
     """Create a temporary GraphStore for testing."""
