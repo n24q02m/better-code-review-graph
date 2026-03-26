@@ -64,7 +64,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.1.0b1"
+version = "3.2.0b1"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
