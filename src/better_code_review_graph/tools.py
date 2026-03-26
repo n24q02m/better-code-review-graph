@@ -617,7 +617,12 @@ def get_review_context(
         if include_source:
             snippets = {}
             for rel_path in changed_files:
-                full_path = root / rel_path
+                full_path_raw = root / rel_path
+                full_path = full_path_raw.resolve()
+                if not full_path.is_relative_to(root.resolve()):
+                    continue
+                if full_path_raw.is_symlink() or full_path.is_symlink():
+                    continue
                 if full_path.is_file():
                     try:
                         lines = full_path.read_text(errors="replace").splitlines()
