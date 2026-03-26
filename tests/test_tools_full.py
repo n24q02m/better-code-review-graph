@@ -878,14 +878,14 @@ class TestSemanticSearchWithEmbeddings:
             side_effect=_mock_embed,
         ):
             embed_result = embed_graph(repo_root=str(repo_with_graph))
-        assert embed_result["status"] == "ok"
-        assert embed_result["total_embeddings"] > 0
+            assert embed_result["status"] == "ok"
+            assert embed_result["total_embeddings"] > 0
 
-        result = semantic_search_nodes(
-            query="authentication login", repo_root=str(repo_with_graph)
-        )
-        assert result["status"] == "ok"
-        assert result["search_mode"] in ("semantic", "keyword")
+            result = semantic_search_nodes(
+                query="authentication login", repo_root=str(repo_with_graph)
+            )
+            assert result["status"] == "ok"
+            assert result["search_mode"] in ("semantic", "keyword")
 
     def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
         with patch(
@@ -893,10 +893,10 @@ class TestSemanticSearchWithEmbeddings:
             side_effect=_mock_embed,
         ):
             embed_graph(repo_root=str(repo_with_graph))
-        result = semantic_search_nodes(
-            query="login", kind="Function", repo_root=str(repo_with_graph)
-        )
-        assert result["status"] == "ok"
+            result = semantic_search_nodes(
+                query="login", kind="Function", repo_root=str(repo_with_graph)
+            )
+            assert result["status"] == "ok"
 
 
 # ---------------------------------------------------------------------------
