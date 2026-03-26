@@ -8,7 +8,6 @@ from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
-
 @pytest.fixture(autouse=True)
 def force_local_embeddings(monkeypatch):
     """Force tests to use the local ONNX embedding backend.
