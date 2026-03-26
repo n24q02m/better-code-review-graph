@@ -12,5 +12,12 @@
       ]
     }
   },
-  "contextFileName": "GEMINI.md"
+  "settings": [
+    {
+      "name": "API Keys",
+      "description": "Cloud embedding keys (format: GOOGLE_API_KEY:xxx,COHERE_API_KEY:yyy)",
+      "envVar": "API_KEYS",
+      "sensitive": true
+    }
+  ]
 }

@@ -43,15 +43,10 @@ Via marketplace (includes skills: /refactor-check, /review-delta, /review-pr + h
 
 ```bash
 /plugin marketplace add n24q02m/claude-plugins
-/plugin install better-code-review-graph@claude-plugins
+/plugin install better-code-review-graph@n24q02m-plugins
 ```
 
-Or install this plugin only:
 
-```bash
-/plugin marketplace add n24q02m/better-code-review-graph
-/plugin install better-code-review-graph
-```
 
 Includes hooks (SessionStart auto-build, PostToolUse auto-update). Configure env vars in `~/.claude/settings.local.json` or shell profile.
 
