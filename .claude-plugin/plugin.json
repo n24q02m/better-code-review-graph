@@ -10,9 +10,11 @@
   "mcpServers": {
     "better-code-review-graph": {
       "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
+      "args": [
+        "--python",
+        "3.13",
+        "better-code-review-graph"
+      ]
     }
-  },
-  "skills": "./skills/",
-  "hooks": "./hooks/"
+  }
 }
