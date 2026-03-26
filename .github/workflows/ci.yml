@@ -149,7 +149,7 @@ jobs:
           fi
 
       - name: PR Agent action step
-        uses: qodo-ai/pr-agent@42d55d4182a4839820b11b6c4d06fce855970301 # main
+        uses: qodo-ai/pr-agent@0b0c175f6a0ae73f75bfb12a0eecb440a216a891 # main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
