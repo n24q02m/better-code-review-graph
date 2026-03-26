@@ -58,6 +58,7 @@ class TestConversions:
             )
         )
         node = db.get_node("/f.py::MyClass.method")
+        assert node is not None
         d = node_to_dict(node)
         assert d["parent_name"] == "MyClass"
         assert d["kind"] == "Function"
@@ -76,6 +77,7 @@ class TestConversions:
             )
         )
         node = db.get_node("/f.py::func")
+        assert node is not None
         d = node_to_dict(node)
         assert d["parent_name"] is None
         db.close()
