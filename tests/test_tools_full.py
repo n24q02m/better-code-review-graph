@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -727,6 +728,16 @@ class TestListGraphStats:
 # ---------------------------------------------------------------------------
 
 
+_HAS_EMBED_KEY = bool(
+    os.getenv("API_KEYS")
+    or os.getenv("JINA_AI_API_KEY")
+    or os.getenv("GOOGLE_API_KEY")
+    or os.getenv("OPENAI_API_KEY")
+    or os.getenv("COHERE_API_KEY")
+)
+
+
+@pytest.mark.skipif(not _HAS_EMBED_KEY, reason="No embedding API key available")
 class TestEmbedGraph:
     def test_embed_graph(self, repo_with_graph):
         result = embed_graph(repo_root=str(repo_with_graph))
@@ -861,6 +872,7 @@ class TestBuiltinCallNames:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _HAS_EMBED_KEY, reason="No embedding API key available")
 class TestSemanticSearchWithEmbeddings:
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
