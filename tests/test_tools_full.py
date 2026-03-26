@@ -733,6 +733,10 @@ def _mock_embed(texts, _dims=None):
 
 
 class TestEmbedGraph:
+    @pytest.fixture(autouse=True)
+    def force_local_backend(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+
     def test_embed_graph(self, repo_with_graph):
         with patch(
             "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
@@ -871,6 +875,10 @@ class TestBuiltinCallNames:
 
 
 class TestSemanticSearchWithEmbeddings:
+    @pytest.fixture(autouse=True)
+    def force_local_backend(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
         with patch(
