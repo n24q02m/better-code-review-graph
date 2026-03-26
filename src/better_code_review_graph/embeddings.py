@@ -247,8 +247,8 @@ class LiteLLMBackend:
             kwargs["dimensions"] = dimensions
         if self.api_base:
             kwargs["api_base"] = self.api_base
-        if self.api_key:
-            kwargs["api_key"] = self.api_key
+        if self.api_key and self.api_key.strip():
+            kwargs["api_key"] = self.api_key.strip()
 
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
