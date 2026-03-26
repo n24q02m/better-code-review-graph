@@ -287,6 +287,37 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: list[str]
+    ) -> list[GraphNode]:
+        """Batch-fetch nodes by a list of qualified names.
+
+        To avoid N+1 query bottlenecks and stay under SQLite's variable limits,
+        it uses batching (batch size 450) for 'IN' clauses.
+        Returns the nodes in the exact order of the input qualified names.
+        Duplicates in input will yield corresponding duplicates in output.
+        """
+        if not qualified_names:
+            return []
+
+        unique_qns = list(dict.fromkeys(qualified_names))
+        nodes_map: dict[str, GraphNode] = {}
+
+        batch_size = 450
+        for i in range(0, len(unique_qns), batch_size):
+            batch = unique_qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                node = self._row_to_node(r)
+                nodes_map[node.qualified_name] = node
+
+        # preserve original order and duplicates
+        return [nodes_map[qn] for qn in qualified_names if qn in nodes_map]
+
     def get_edges_by_target(self, qualified_name: str) -> list[GraphEdge]:
         rows = self._conn.execute(
             "SELECT * FROM edges WHERE target_qualified = ?", (qualified_name,)
@@ -407,18 +438,9 @@ class GraphStore:
         # Record total count before any truncation for the response
         total_impacted = len(impacted - seeds)
 
-        # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
-
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        # Resolve to full node info using batching
+        changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
+        impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -439,11 +461,7 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
+        nodes = self.get_nodes_by_qualified_names(qualified_names)
 
         edges = []
         qn_set = set(qualified_names)

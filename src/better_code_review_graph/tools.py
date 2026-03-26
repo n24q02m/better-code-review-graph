@@ -467,29 +467,36 @@ def query_graph(
         qn = node.qualified_name if node else target
 
         if pattern == "callers_of":
+            target_qns = []
             for e in store.get_edges_by_target(qn):
                 if e.kind == "CALLS":
-                    caller = store.get_node(e.source_qualified)
-                    if caller:
-                        results.append(node_to_dict(caller))
+                    target_qns.append(e.source_qualified)
                     edges_out.append(edge_to_dict(e))
+
+            # Batch fetch callers
+            callers = store.get_nodes_by_qualified_names(target_qns)
+            results.extend(node_to_dict(caller) for caller in callers)
+
             # Fallback: CALLS edges store unqualified target names
             # (e.g. "generateTestCode") while qn is fully qualified
             # (e.g. "file.ts::generateTestCode"). Search by plain name too.
             if not results and node:
+                fallback_qns = []
                 for e in store.search_edges_by_target_name(node.name):
-                    caller = store.get_node(e.source_qualified)
-                    if caller:
-                        results.append(node_to_dict(caller))
+                    fallback_qns.append(e.source_qualified)
                     edges_out.append(edge_to_dict(e))
+                fallback_callers = store.get_nodes_by_qualified_names(fallback_qns)
+                results.extend(node_to_dict(caller) for caller in fallback_callers)
 
         elif pattern == "callees_of":
+            target_qns = []
             for e in store.get_edges_by_source(qn):
                 if e.kind == "CALLS":
-                    callee = store.get_node(e.target_qualified)
-                    if callee:
-                        results.append(node_to_dict(callee))
+                    target_qns.append(e.target_qualified)
                     edges_out.append(edge_to_dict(e))
+
+            callees = store.get_nodes_by_qualified_names(target_qns)
+            results.extend(node_to_dict(callee) for callee in callees)
 
         elif pattern == "imports_of":
             for e in store.get_edges_by_source(qn):
@@ -508,18 +515,23 @@ def query_graph(
                     edges_out.append(edge_to_dict(e))
 
         elif pattern == "children_of":
+            target_qns = []
             for e in store.get_edges_by_source(qn):
                 if e.kind == "CONTAINS":
-                    child = store.get_node(e.target_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
+                    target_qns.append(e.target_qualified)
+
+            children = store.get_nodes_by_qualified_names(target_qns)
+            results.extend(node_to_dict(child) for child in children)
 
         elif pattern == "tests_for":
+            target_qns = []
             for e in store.get_edges_by_target(qn):
                 if e.kind == "TESTED_BY":
-                    test = store.get_node(e.source_qualified)
-                    if test:
-                        results.append(node_to_dict(test))
+                    target_qns.append(e.source_qualified)
+
+            tests = store.get_nodes_by_qualified_names(target_qns)
+            results.extend(node_to_dict(test) for test in tests)
+
             # Also search by naming convention
             name = node.name if node else target
             test_nodes = store.search_nodes(f"test_{name}", limit=10)
@@ -530,12 +542,14 @@ def query_graph(
                     results.append(node_to_dict(t))
 
         elif pattern == "inheritors_of":
+            target_qns = []
             for e in store.get_edges_by_target(qn):
                 if e.kind in ("INHERITS", "IMPLEMENTS"):
-                    child = store.get_node(e.source_qualified)
-                    if child:
-                        results.append(node_to_dict(child))
+                    target_qns.append(e.source_qualified)
                     edges_out.append(edge_to_dict(e))
+
+            inheritors = store.get_nodes_by_qualified_names(target_qns)
+            results.extend(node_to_dict(child) for child in inheritors)
 
         elif pattern == "file_summary":
             abs_path = str(root / target)
