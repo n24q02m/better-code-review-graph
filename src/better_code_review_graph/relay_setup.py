@@ -95,6 +95,21 @@ async def ensure_config() -> dict[str, str] | None:
         write_config(SERVER_NAME, config)
         logger.info("Config saved successfully")
 
+        # Notify relay page that setup is complete
+        try:
+            import httpx
+
+            async with httpx.AsyncClient() as http:
+                await http.post(
+                    f"{relay_url}/api/sessions/{session.session_id}/messages",
+                    json={
+                        "type": "complete",
+                        "text": "CRG config saved. Setup complete!",
+                    },
+                )
+        except Exception:
+            pass
+
         # Inject into environment
         for key, value in config.items():
             os.environ.setdefault(key, value)
