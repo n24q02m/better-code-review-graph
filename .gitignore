@@ -32,6 +32,10 @@ env/
 .DS_Store
 Thumbs.db
 
+# Secrets / env
+.env
+.env.*
+
 # Claude Code
 .claude/
 
