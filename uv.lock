@@ -96,13 +96,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cohere", specifier = ">=5.21.1" },
-    { name = "fastmcp", specifier = ">=2.14.5,<3" },
+    { name = "fastmcp", specifier = ">=2.14.6,<3" },
     { name = "google-genai", specifier = ">=1.68.0" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.26.0,<2" },
     { name = "mcp-relay-core", specifier = ">=0.1.0" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
-    { name = "openai", specifier = ">=1.109.1" },
+    { name = "openai", specifier = ">=2.30.0" },
     { name = "pydantic-settings" },
     { name = "qwen3-embed", specifier = ">=1.5.1" },
     { name = "tree-sitter", specifier = ">=0.25.2,<1" },
@@ -443,7 +443,7 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "2.14.5"
+version = "2.14.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -465,9 +465,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3b/32/982678d44f13849530a74ab101ed80e060c2ee6cf87471f062dcf61705fd/fastmcp-2.14.5.tar.gz", hash = "sha256:38944dc582c541d55357082bda2241cedb42cd3a78faea8a9d6a2662c62a42d7", size = 8296329, upload-time = "2026-02-03T15:35:21.005Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d5/e0/3a562d34c007e9180746864170b9829a7d03426a855ca0c3aa6d6424e2e2/fastmcp-2.14.6.tar.gz", hash = "sha256:224c942b1e8d16523db3d7501ae73f5020535a9566ff33fa10f206c5fe2fe525", size = 8296773, upload-time = "2026-03-27T18:22:40.565Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/c1/1a35ec68ff76ea8443aa115b18bcdee748a4ada2124537ee90522899ff9f/fastmcp-2.14.5-py3-none-any.whl", hash = "sha256:d81e8ec813f5089d3624bec93944beaefa86c0c3a4ef1111cbef676a761ebccf", size = 417784, upload-time = "2026-02-03T15:35:18.489Z" },
+    { url = "https://files.pythonhosted.org/packages/78/49/cac8ff5db39273cde693f44041d5167a344172bc6edecd556421ee0e4b1b/fastmcp-2.14.6-py3-none-any.whl", hash = "sha256:38870c7f375f947613d29e63e9290aa49aef0c6be5a665bdfddd3c16ea592c8d", size = 418144, upload-time = "2026-03-27T18:22:38.395Z" },
 ]
 
 [[package]]
