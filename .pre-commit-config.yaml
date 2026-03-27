@@ -15,7 +15,7 @@ repos:
   # Security: Secret Detection (MUST be first — blocks commit if secrets found)
   # ============================================================================
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
     hooks:
       - id: gitleaks
         name: gitleaks (detect secrets)
@@ -26,7 +26,7 @@ repos:
 
   # Ruff: Fast Python linter and formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.7
+    rev: e05c5c0818279e5ac248ac9e954431ba58865e61 # v0.15.7
     hooks:
       - id: ruff
         name: ruff lint
@@ -59,7 +59,7 @@ repos:
   # ============================================================================
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
     hooks:
       - id: trailing-whitespace
         name: trim trailing whitespace
