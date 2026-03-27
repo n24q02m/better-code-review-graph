@@ -18,16 +18,16 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "mcp>=1.0.0,<2",
-    "fastmcp>=2.14.2,<3",
-    "tree-sitter>=0.23.0,<1",
-    "tree-sitter-language-pack>=0.3.0,<1",
-    "networkx>=3.2,<4",
-    "watchdog>=4.0.0,<6",
-    "qwen3-embed>=1.5.0",
-    "cohere>=5.20",
-    "google-genai>=1.0",
-    "openai>=1.50",
+    "mcp>=1.26.0,<2",
+    "fastmcp>=2.14.5,<3",
+    "tree-sitter>=0.25.2,<1",
+    "tree-sitter-language-pack>=0.13.0,<1",
+    "networkx>=3.6.1,<4",
+    "watchdog>=4.0.2,<6",
+    "qwen3-embed>=1.5.1",
+    "cohere>=5.21.1",
+    "google-genai>=1.68.0",
+    "openai>=1.109.1",
     "httpx",
     "pydantic-settings",
     "mcp-relay-core>=0.1.0",
@@ -38,13 +38,13 @@ better-code-review-graph = "better_code_review_graph.cli:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0,<9",
-    "pytest-asyncio>=0.23,<1",
+    "pytest>=8.4.2,<9",
+    "pytest-asyncio>=0.26.0,<1",
     "pytest-cov",
     "pytest-timeout",
-    "ruff>=0.8.6",
+    "ruff>=0.15.8",
     "syrupy",
-    "ty>=0.0.1a10",
+    "ty>=0.0.26",
 ]
 
 [tool.hatch.build.targets.wheel]
