@@ -84,7 +84,6 @@ jobs:
       - run: uv build
       - name: Publish to PyPI
         run: uv publish
-        env:
 
   # =================== Build Docker ===================
   build-docker:
