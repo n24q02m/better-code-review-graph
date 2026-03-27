@@ -253,7 +253,7 @@ jobs:
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: "[${{ github.event.repository.name }}] ${{ steps.data.outputs.event_type }} #${{ steps.data.outputs.number }}: ${{ steps.data.outputs.title }}"
-          to: ${{ secrets.NOTIFY_EMAIL }}
+          to: ${{ secrets.SMTP_USERNAME }}
           from: GitHub Notify <${{ secrets.SMTP_USERNAME }}>
           body: |
             New ${{ steps.data.outputs.event_type }} in ${{ github.repository }}
