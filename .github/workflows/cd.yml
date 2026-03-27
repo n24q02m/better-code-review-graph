@@ -85,7 +85,6 @@ jobs:
       - name: Publish to PyPI
         run: uv publish
         env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
   # =================== Build Docker ===================
   build-docker:
