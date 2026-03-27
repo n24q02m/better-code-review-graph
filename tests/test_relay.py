@@ -59,11 +59,11 @@ class TestRelaySetupConstants:
 
 
 class TestEnsureConfigEnvVar:
-    async def test_returns_config_from_env(self, monkeypatch):
+    async def test_returns_none_when_env_set(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "AIzaFakeKey123")
         result = await ensure_config()
-        assert result is not None
-        assert result["GEMINI_API_KEY"] == "AIzaFakeKey123"
+        # env vars take priority -- ensure_config returns None (no relay needed)
+        assert result is None
 
     async def test_env_var_takes_priority(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "from-env")
@@ -71,7 +71,7 @@ class TestEnsureConfigEnvVar:
             result = await ensure_config()
             # resolve_config should NOT be called when env var is present
             mock_resolve.assert_not_called()
-            assert result["GEMINI_API_KEY"] == "from-env"
+            assert result is None
 
     async def test_empty_env_var_not_accepted(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "")
@@ -151,7 +151,9 @@ class TestEnsureConfigRelay:
                 mock_create.assert_called_once_with(
                     DEFAULT_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
                 )
-                mock_poll.assert_called_once_with(DEFAULT_RELAY_URL, mock_session)
+                mock_poll.assert_called_once_with(
+                    DEFAULT_RELAY_URL, mock_session, timeout_s=30.0
+                )
                 mock_write.assert_called_once_with(
                     SERVER_NAME, {"GEMINI_API_KEY": "from-relay"}
                 )
