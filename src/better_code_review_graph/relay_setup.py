@@ -1,14 +1,10 @@
-"""Relay-first setup flow for better-code-review-graph.
+"""Credential resolution for better-code-review-graph.
 
-Always shows the relay URL at startup so users can configure cloud embedding
-providers via browser. If the user skips or relay is unreachable, falls back
-to local ONNX mode (qwen3-embed, works without any credentials).
-
-Resolution order:
-1. Environment variables (GEMINI_API_KEY etc.)
-2. Encrypted config file (~/.config/mcp/config.enc)
-3. Relay setup (browser-based form, 30s timeout for optional-cred server)
-4. Local mode fallback (qwen3-embed ONNX)
+Resolution order (relay only when ALL local sources are empty):
+1. ENV VARS          -- User explicitly set (highest priority, skip everything)
+2. RELAY CONFIG      -- Saved from previous relay setup (~/.config/mcp/config.enc)
+3. RELAY SETUP       -- Interactive, ONLY when steps 1-2 are ALL empty (30s timeout)
+4. LOCAL MODE        -- Fallback (qwen3-embed ONNX)
 """
 
 from __future__ import annotations
@@ -42,18 +38,18 @@ RELAY_TIMEOUT_S = 30.0
 async def ensure_config() -> dict[str, str] | None:
     """Resolve config: env vars -> config file -> relay setup -> local fallback.
 
-    Always shows relay URL at startup for relay-first design.
+    Relay is ONLY triggered when steps 1-2 are ALL empty.
     Uses 30s timeout since CRG works locally without credentials.
 
     Returns:
         Config dict with credential keys, or None if skipped/failed (local mode).
     """
-    # 1. Check env vars directly (fast path)
+    # 1. Check env vars directly (highest priority, fast path)
     if any(os.environ.get(k) for k in CLOUD_KEYS):
-        logger.info("Cloud API keys found in environment")
+        logger.info("Cloud API keys found in environment, skipping relay")
         return None  # env vars take priority, no relay needed
 
-    # 2. Check config file via resolver
+    # 2. Check saved relay config file
     try:
         from mcp_relay_core.storage.resolver import resolve_config
 
@@ -67,7 +63,7 @@ async def ensure_config() -> dict[str, str] | None:
     except Exception:
         pass
 
-    # 3. Always trigger relay setup (relay-first design)
+    # 3. No local credentials found -- trigger relay setup
     logger.info("No credentials found. Starting relay setup...")
 
     relay_url = DEFAULT_RELAY_URL
