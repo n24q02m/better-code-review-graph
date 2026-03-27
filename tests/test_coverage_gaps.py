@@ -114,9 +114,7 @@ class TestCloudProviderImplementations:
 
     def test_embed_gemini_actual(self):
         """Cover _embed_gemini lines 306-323 with mocked google-genai."""
-        backend = CloudEmbeddingBackend(
-            model="gemini-embedding-2", api_key="test-key"
-        )
+        backend = CloudEmbeddingBackend(model="gemini-embedding-2", api_key="test-key")
 
         mock_embedding = MagicMock()
         mock_embedding.values = [0.1] * 768
@@ -133,9 +131,7 @@ class TestCloudProviderImplementations:
 
     def test_embed_gemini_no_dimensions(self):
         """Cover _embed_gemini without dimensions (no config)."""
-        backend = CloudEmbeddingBackend(
-            model="gemini-embedding-2", api_key="test-key"
-        )
+        backend = CloudEmbeddingBackend(model="gemini-embedding-2", api_key="test-key")
 
         mock_embedding = MagicMock()
         mock_embedding.values = [0.1] * 1024
@@ -238,7 +234,9 @@ class TestSearchFallbackToEmbedSingle:
         """Cover line 636: fallback to embed_single when embed_single_query missing."""
         db = tmp_path / "graph.db"
         # Create a mock backend WITHOUT embed_single_query
-        mock_backend = MagicMock(spec=["embed_texts", "embed_single", "check_available"])
+        mock_backend = MagicMock(
+            spec=["embed_texts", "embed_single", "check_available"]
+        )
         mock_backend.embed_texts.return_value = [[0.5] * 768]
         mock_backend.embed_single.return_value = [0.5] * 768
 
@@ -334,12 +332,8 @@ class TestConfigStatusVersionFallback:
         """Cover lines 350-351: version = 'dev' when package not installed."""
         from better_code_review_graph.server import config
 
-        with patch(
-            "better_code_review_graph.server._config_status"
-        ) as mock_status:
-            mock_status.return_value = json.dumps(
-                {"status": "ok", "version": "dev"}
-            )
+        with patch("better_code_review_graph.server._config_status") as mock_status:
+            mock_status.return_value = json.dumps({"status": "ok", "version": "dev"})
             result = json.loads(config.fn(action="status"))
             assert result["version"] == "dev"
 
@@ -366,9 +360,7 @@ class TestHelpFallbackContent:
 
         with patch("better_code_review_graph.server.files") as mock_files:
             mock_files.side_effect = FileNotFoundError("no docs")
-            with patch(
-                "better_code_review_graph.server.get_docs_section"
-            ) as mock_docs:
+            with patch("better_code_review_graph.server.get_docs_section") as mock_docs:
                 mock_docs.return_value = {
                     "status": "ok",
                     "content": "Full documentation content here.",
@@ -463,9 +455,7 @@ class TestParserUnknownLanguage:
         parser = CodeParser()
         # Directly test parse_bytes with a known language but broken parser
         with patch.object(parser, "_get_parser", return_value=None):
-            nodes, edges = parser.parse_bytes(
-                Path("test.py"), b"def foo(): pass"
-            )
+            nodes, edges = parser.parse_bytes(Path("test.py"), b"def foo(): pass")
             assert nodes == []
             assert edges == []
 
@@ -538,7 +528,9 @@ def calculate(x: int, y: int) -> float:
     return x / y
 """
         nodes, edges = parser.parse_bytes(Path("calc.py"), code)
-        func_nodes = [n for n in nodes if n.kind == "Function" and n.name == "calculate"]
+        func_nodes = [
+            n for n in nodes if n.kind == "Function" and n.name == "calculate"
+        ]
         assert len(func_nodes) == 1
         assert func_nodes[0].return_type is not None
         assert "float" in func_nodes[0].return_type
@@ -581,11 +573,15 @@ class TestIncrementalDeletedFile:
         subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "t@t.com"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
 
         # Create and commit a file
@@ -593,7 +589,9 @@ class TestIncrementalDeletedFile:
         subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "commit", "-m", "init"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
 
         db = repo / ".code-review-graph" / "graph.db"
@@ -601,15 +599,14 @@ class TestIncrementalDeletedFile:
         try:
             # Build full graph first
             from better_code_review_graph.incremental import full_build
+
             full_build(repo, store)
 
             # Delete the file
             (repo / "example.py").unlink()
 
             # Run incremental update with the deleted file
-            result = incremental_update(
-                repo, store, changed_files=["example.py"]
-            )
+            result = incremental_update(repo, store, changed_files=["example.py"])
             # The deleted file should be handled gracefully
             assert result["files_updated"] >= 1
         finally:
@@ -631,26 +628,30 @@ class TestIncrementalNonParseableFile:
         subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "config", "user.email", "t@t.com"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
         subprocess.run(
             ["git", "config", "user.name", "T"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
         # Create a non-parseable file
         (repo / "readme.txt").write_text("Just a text file\n")
         subprocess.run(["git", "add", "."], cwd=repo, capture_output=True, check=True)
         subprocess.run(
             ["git", "commit", "-m", "init"],
-            cwd=repo, capture_output=True, check=True,
+            cwd=repo,
+            capture_output=True,
+            check=True,
         )
 
         db = repo / ".code-review-graph" / "graph.db"
         store = GraphStore(str(db))
         try:
-            result = incremental_update(
-                repo, store, changed_files=["readme.txt"]
-            )
+            result = incremental_update(repo, store, changed_files=["readme.txt"])
             # Should handle non-parseable file gracefully
             assert result["files_updated"] >= 1
             assert result["total_nodes"] == 0  # .txt can't be parsed
