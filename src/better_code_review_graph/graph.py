@@ -571,6 +571,30 @@ class GraphStore:
                     results.append(edge)
         return results
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: set[str]
+    ) -> list[GraphNode]:
+        """Batch fetch nodes by their qualified names.
+
+        Uses batched IN clauses to stay well under SQLite's default
+        SQLITE_MAX_VARIABLE_NUMBER limit.
+        """
+        if not qualified_names:
+            return []
+        qns = list(qualified_names)
+        results: list[GraphNode] = []
+        batch_size = 450  # Stay well under SQLite's default 999 limit
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            for r in rows:
+                results.append(self._row_to_node(r))
+        return results
+
     # --- Internal helpers ---
 
     def _build_networkx_graph(self) -> nx.DiGraph:
