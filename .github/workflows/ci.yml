@@ -245,16 +245,23 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Parse SMTP credential
+        run: |
+          echo "SMTP_USER=${SMTP_CREDENTIAL%%:*}" >> $GITHUB_ENV
+          echo "SMTP_PASS=${SMTP_CREDENTIAL#*:}" >> $GITHUB_ENV
+        env:
+          SMTP_CREDENTIAL: ${{ secrets.SMTP_CREDENTIAL }}
+
       - name: Send email notification
         uses: dawidd6/action-send-mail@d38f3f7cd391cdebfe0d38efc3998b935e951c4f # v16
         with:
           server_address: smtp.gmail.com
           server_port: 587
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "[${{ github.event.repository.name }}] ${{ steps.data.outputs.event_type }} #${{ steps.data.outputs.number }}: ${{ steps.data.outputs.title }}"
-          to: ${{ secrets.SMTP_USERNAME }}
-          from: GitHub Notify <${{ secrets.SMTP_USERNAME }}>
+          to: ${{ env.SMTP_USER }}
+          from: GitHub Notify <${{ env.SMTP_USER }}>
           body: |
             New ${{ steps.data.outputs.event_type }} in ${{ github.repository }}
 
