@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "better-code-review-graph"
 DEFAULT_RELAY_URL = "https://better-code-review-graph.n24q02m.com"
-REQUIRED_FIELDS = ["GEMINI_API_KEY"]
+REQUIRED_FIELDS = ["GEMINI_API_KEY"]  # Used for config file lookup (any key triggers match)
 
 # Cloud API keys that indicate user has env vars configured
 CLOUD_KEYS = [
@@ -49,17 +49,16 @@ async def ensure_config() -> dict[str, str] | None:
         logger.info("Cloud API keys found in environment, skipping relay")
         return None  # env vars take priority, no relay needed
 
-    # 2. Check saved relay config file
+    # 2. Check saved relay config file (any cloud key is sufficient)
     try:
-        from mcp_relay_core.storage.resolver import resolve_config
+        from mcp_relay_core.storage.config_file import read_config
 
-        result = resolve_config(SERVER_NAME, REQUIRED_FIELDS)
-        if result.config is not None:
-            logger.info("Config loaded from %s", result.source)
-            # Inject into environment for downstream consumers
-            for key, value in result.config.items():
+        saved = read_config(SERVER_NAME)
+        if saved and any(saved.get(k) for k in CLOUD_KEYS):
+            logger.info("Config loaded from file")
+            for key, value in saved.items():
                 os.environ.setdefault(key, value)
-            return result.config
+            return saved
     except Exception:
         pass
 
