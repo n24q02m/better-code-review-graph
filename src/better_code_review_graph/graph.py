@@ -287,6 +287,29 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
+    def get_nodes_by_qualified_names(
+        self, qualified_names: set[str]
+    ) -> list[GraphNode]:
+        """Return nodes whose qualified names are in the given set.
+
+        Batches the IN clause to stay under SQLite's default
+        SQLITE_MAX_VARIABLE_NUMBER limit.
+        """
+        if not qualified_names:
+            return []
+        qns = list(qualified_names)
+        results: list[GraphNode] = []
+        batch_size = 450
+        for i in range(0, len(qns), batch_size):
+            batch = qns[i : i + batch_size]
+            placeholders = ",".join("?" for _ in batch)
+            rows = self._conn.execute(  # nosec B608
+                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
+                batch,
+            ).fetchall()
+            results.extend(self._row_to_node(r) for r in rows)
+        return results
+
     def get_edges_by_target(self, qualified_name: str) -> list[GraphEdge]:
         rows = self._conn.execute(
             "SELECT * FROM edges WHERE target_qualified = ?", (qualified_name,)
