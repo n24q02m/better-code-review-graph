@@ -112,13 +112,10 @@ export { Circle, Rectangle, totalArea };
 """
 
 
-def _parse_result_text(result) -> dict | str:
-    """Extract text from MCP call_tool result and try to parse as JSON."""
+def _parse_result_text(result) -> dict:
+    """Extract text from MCP call_tool result and parse as JSON."""
     text = result.content[0].text
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return text
+    return json.loads(text)
 
 
 def _server_params() -> StdioServerParameters:
