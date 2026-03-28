@@ -18,7 +18,7 @@ from .relay_schema import RELAY_SCHEMA
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "better-code-review-graph"
-DEFAULT_RELAY_URL = "https://relay.n24q02m.com"
+DEFAULT_RELAY_URL = "https://better-code-review-graph.n24q02m.com"
 REQUIRED_FIELDS = ["GEMINI_API_KEY"]
 
 # Cloud API keys that indicate user has env vars configured
