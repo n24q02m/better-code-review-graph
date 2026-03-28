@@ -30,7 +30,7 @@ dependencies = [
     "openai>=1.109.1",
     "httpx",
     "pydantic-settings",
-    "mcp-relay-core>=0.1.0",
+    "mcp-relay-core>=1.0.5",
 ]
 
 [project.scripts]
