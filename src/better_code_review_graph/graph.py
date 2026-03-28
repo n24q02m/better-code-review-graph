@@ -330,6 +330,9 @@ class GraphStore:
         Multi-word queries require ALL words to match (AND logic).  Each word
         must appear in either the node name or the qualified name.
         """
+        if len(query) > 1000:
+            query = query[:1000]
+
         words = query.lower().split()
         if not words:
             return []
