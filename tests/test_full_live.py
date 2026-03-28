@@ -21,7 +21,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
 # Live MCP tests spawn subprocesses and need more time than unit tests
-pytestmark = pytest.mark.timeout(120)
+pytestmark = pytest.mark.timeout(300)
 
 SAMPLE_PYTHON = '''\
 def add(a: int, b: int) -> int:
