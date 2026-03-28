@@ -32,7 +32,7 @@ CLOUD_KEYS = [
 ]
 
 # Shorter timeout for optional-credential servers (user can skip)
-RELAY_TIMEOUT_S = 30.0
+RELAY_TIMEOUT_S = 120.0
 
 
 async def ensure_config() -> dict[str, str] | None:
