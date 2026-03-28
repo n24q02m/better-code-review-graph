@@ -185,7 +185,9 @@ def query(
             if not search_query:
                 return _json({"error": "search_query is required for search action"})
             if len(search_query) > 1000:
-                return _json({"error": "search_query is too long (max 1000 characters)"})
+                return _json(
+                    {"error": "search_query is too long (max 1000 characters)"}
+                )
             return _json(
                 semantic_search_nodes(
                     query=search_query, kind=kind, limit=limit, repo_root=repo_root
