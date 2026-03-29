@@ -223,6 +223,7 @@ class CodeParser:
         if language not in self._parsers:
             try:
                 import typing
+
                 lang_cast = typing.cast(typing.Any, language)
                 self._parsers[language] = tslp.get_parser(lang_cast)
             except Exception:

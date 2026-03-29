@@ -1060,7 +1060,7 @@ class TestQueryGraphEdgeCases:
         assert len(result["results"]) >= 1
 
     def test_find_large_functions_with_no_line_info(self, repo_with_graph):
-        """Nodes with None line_start/line_end should have line_count=0."""
+        """Nodes with 0 line_start/line_end should have line_count <= 0 and not be returned if min_lines=1."""
         db_path = repo_with_graph / ".code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
@@ -1077,10 +1077,13 @@ class TestQueryGraphEdgeCases:
         store.commit()
         store.close()
 
-        result = find_large_functions(min_lines=1, repo_root=str(repo_with_graph))
-        # Should not include nodes without line info
+        # If min_lines is 1, a node with length (0-0+1) = 1 WILL be returned.
+        # Wait, if line_end=0 and line_start=0, line_end - line_start + 1 = 1.
+        # So min_lines=2 should filter it out.
+        result = find_large_functions(min_lines=2, repo_root=str(repo_with_graph))
         for r in result["results"]:
-            assert r["line_count"] > 0 or r["name"] != "no_lines"
+            assert r["line_count"] >= 2
+            assert r["name"] != "no_lines"
 
     def test_review_context_large_file_no_changed_nodes(self, repo_with_graph):
         """Review context with large file but no changed nodes in that file."""

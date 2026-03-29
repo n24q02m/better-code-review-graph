@@ -633,8 +633,11 @@ class EmbeddingStore:
 
         # Embed query -- use query-specific method if available
         if hasattr(self.backend, "embed_single_query"):
-            embed_single_query = getattr(self.backend, "embed_single_query")
-            query_vec = embed_single_query(query, dimensions=_DEFAULT_DIMS)
+            from typing import Any, cast
+
+            query_vec = cast(Any, self.backend).embed_single_query(
+                query, dimensions=_DEFAULT_DIMS
+            )
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 
