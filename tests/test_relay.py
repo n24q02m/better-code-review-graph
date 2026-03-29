@@ -27,10 +27,11 @@ class TestRelaySchema:
 
     def test_has_fields(self):
         fields = RELAY_SCHEMA["fields"]
-        assert len(fields) == 4
+        assert len(fields) == 1
 
     def test_gemini_api_key_field(self):
-        field = next(f for f in RELAY_SCHEMA["fields"] if f["key"] == "GEMINI_API_KEY")
+        field = RELAY_SCHEMA["fields"][0]
+        assert field["key"] == "GEMINI_API_KEY"
         assert field["type"] == "password"
         assert "AIza" in field["placeholder"]
         assert "aistudio.google.com" in field["helpUrl"]
@@ -66,15 +67,19 @@ class TestEnsureConfigEnvVar:
 
     async def test_env_var_takes_priority(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "from-env")
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
             result = await ensure_config()
-            mock_read.assert_not_called()
+            # resolve_config should NOT be called when env var is present
+            mock_resolve.assert_not_called()
             assert result is None
 
     async def test_empty_env_var_not_accepted(self, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "")
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = None
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = None
+            mock_result.source = None
+            mock_resolve.return_value = mock_result
 
             with patch(
                 "mcp_relay_core.relay.client.create_session",
@@ -88,19 +93,25 @@ class TestEnsureConfigFile:
     async def test_returns_config_from_file(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = {"GEMINI_API_KEY": "from-file"}
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = {"GEMINI_API_KEY": "from-file"}
+            mock_result.source = "file"
+            mock_resolve.return_value = mock_result
 
             result = await ensure_config()
             assert result is not None
             assert result["GEMINI_API_KEY"] == "from-file"
-            mock_read.assert_called_once_with(SERVER_NAME)
+            mock_resolve.assert_called_once_with(SERVER_NAME, REQUIRED_FIELDS)
 
     async def test_injects_config_into_env(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = {"GEMINI_API_KEY": "injected-key"}
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = {"GEMINI_API_KEY": "injected-key"}
+            mock_result.source = "file"
+            mock_resolve.return_value = mock_result
 
             await ensure_config()
             assert os.environ.get("GEMINI_API_KEY") == "injected-key"
@@ -112,8 +123,11 @@ class TestEnsureConfigRelay:
     async def test_relay_success(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = None
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = None
+            mock_result.source = None
+            mock_resolve.return_value = mock_result
 
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
@@ -138,7 +152,7 @@ class TestEnsureConfigRelay:
                     DEFAULT_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
                 )
                 mock_poll.assert_called_once_with(
-                    DEFAULT_RELAY_URL, mock_session, timeout_s=120.0
+                    DEFAULT_RELAY_URL, mock_session, timeout_s=30.0
                 )
                 mock_write.assert_called_once_with(
                     SERVER_NAME, {"GEMINI_API_KEY": "from-relay"}
@@ -147,8 +161,11 @@ class TestEnsureConfigRelay:
     async def test_relay_server_unreachable(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = None
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = None
+            mock_result.source = None
+            mock_resolve.return_value = mock_result
 
             with patch(
                 "mcp_relay_core.relay.client.create_session",
@@ -161,8 +178,11 @@ class TestEnsureConfigRelay:
     async def test_relay_timeout(self, monkeypatch):
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config") as mock_read:
-            mock_read.return_value = None
+        with patch("mcp_relay_core.storage.resolver.resolve_config") as mock_resolve:
+            mock_result = MagicMock()
+            mock_result.config = None
+            mock_result.source = None
+            mock_resolve.return_value = mock_result
 
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
