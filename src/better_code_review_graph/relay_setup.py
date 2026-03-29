@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 
 SERVER_NAME = "better-code-review-graph"
 DEFAULT_RELAY_URL = "https://better-code-review-graph.n24q02m.com"
-REQUIRED_FIELDS = ["GEMINI_API_KEY"]  # Used for config file lookup (any key triggers match)
+REQUIRED_FIELDS = [
+    "GEMINI_API_KEY"
+]  # Used for config file lookup (any key triggers match)
 
 # Cloud API keys that indicate user has env vars configured
 CLOUD_KEYS = [

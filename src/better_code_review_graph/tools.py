@@ -341,7 +341,23 @@ def get_impact_radius(
             }
 
         # Convert to absolute paths for graph lookup
-        abs_files = [str(root / f) for f in changed_files]
+        abs_files = []
+        for f in changed_files:
+            full_path = (root / f).resolve()
+            if full_path.is_relative_to(root.resolve()):
+                abs_files.append(str(full_path))
+
+        if not abs_files:
+            return {
+                "status": "ok",
+                "summary": "No valid file paths within repository bounds.",
+                "changed_nodes": [],
+                "impacted_nodes": [],
+                "impacted_files": [],
+                "truncated": False,
+                "total_impacted": 0,
+            }
+
         result = store.get_impact_radius(
             abs_files, max_depth=max_depth, max_nodes=max_results
         )
@@ -443,8 +459,9 @@ def query_graph(
         # Resolve target - try as-is, then as absolute path, then search
         node = store.get_node(target)
         if not node:
-            abs_target = str(root / target)
-            node = store.get_node(abs_target)
+            abs_target_path = (root / target).resolve()
+            if abs_target_path.is_relative_to(root.resolve()):
+                node = store.get_node(str(abs_target_path))
         if not node:
             # Search by name
             candidates = store.search_nodes(target, limit=5)
@@ -499,13 +516,21 @@ def query_graph(
 
         elif pattern == "importers_of":
             # Find edges where target matches this file
-            abs_target = str(root / target) if node is None else node.file_path
-            for e in store.get_edges_by_target(abs_target):
-                if e.kind == "IMPORTS_FROM":
-                    results.append(
-                        {"importer": e.source_qualified, "file": e.file_path}
-                    )
-                    edges_out.append(edge_to_dict(e))
+            abs_target = None
+            if node is not None:
+                abs_target = node.file_path
+            else:
+                abs_target_path = (root / target).resolve()
+                if abs_target_path.is_relative_to(root.resolve()):
+                    abs_target = str(abs_target_path)
+
+            if abs_target:
+                for e in store.get_edges_by_target(abs_target):
+                    if e.kind == "IMPORTS_FROM":
+                        results.append(
+                            {"importer": e.source_qualified, "file": e.file_path}
+                        )
+                        edges_out.append(edge_to_dict(e))
 
         elif pattern == "children_of":
             for e in store.get_edges_by_source(qn):
@@ -538,10 +563,11 @@ def query_graph(
                     edges_out.append(edge_to_dict(e))
 
         elif pattern == "file_summary":
-            abs_path = str(root / target)
-            file_nodes = store.get_nodes_by_file(abs_path)
-            for n in file_nodes:
-                results.append(node_to_dict(n))
+            abs_path = (root / target).resolve()
+            if abs_path.is_relative_to(root.resolve()):
+                file_nodes = store.get_nodes_by_file(str(abs_path))
+                for n in file_nodes:
+                    results.append(node_to_dict(n))
 
         return {
             "status": "ok",
