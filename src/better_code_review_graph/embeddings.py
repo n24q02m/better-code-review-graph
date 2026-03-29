@@ -498,14 +498,15 @@ def _decode_vector(blob: bytes) -> list[float]:
     return list(struct.unpack(f"{n}f", blob))
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float], norm_a: float | None = None) -> float:
     """Compute cosine similarity between two vectors."""
     if len(a) != len(b) or len(a) == 0:
         return 0.0
     # Use map and operator.mul for dot product to avoid generator overhead in Python loops
     dot = sum(map(operator.mul, a, b))
     # math.hypot calculates the Euclidean norm efficiently in C
-    norm_a = math.hypot(*a)
+    if norm_a is None:
+        norm_a = math.hypot(*a)
     norm_b = math.hypot(*b)
     if norm_a == 0 or norm_b == 0:
         return 0.0
@@ -639,13 +640,17 @@ class EmbeddingStore:
         scored: list[tuple[str, float]] = []
         cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
         chunk_size = 500
+
+        # Precalculate the query vector norm to avoid recalculating it for every row
+        query_norm = math.hypot(*query_vec)
+
         while True:
             rows = cursor.fetchmany(chunk_size)
             if not rows:
                 break
             for row in rows:
                 vec = _decode_vector(row["vector"])
-                sim = _cosine_similarity(query_vec, vec)
+                sim = _cosine_similarity(query_vec, vec, query_norm)
                 scored.append((row["qualified_name"], sim))
 
         scored.sort(key=lambda x: x[1], reverse=True)
