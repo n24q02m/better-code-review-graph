@@ -381,7 +381,9 @@ class CloudEmbeddingBackend:
                 else:
                     break
 
-        raise last_exc  # type: ignore[misc]
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Failed to embed batch")
 
     def embed_texts(
         self,
@@ -631,7 +633,8 @@ class EmbeddingStore:
 
         # Embed query -- use query-specific method if available
         if hasattr(self.backend, "embed_single_query"):
-            query_vec = self.backend.embed_single_query(query, dimensions=_DEFAULT_DIMS)
+            embed_single_query = getattr(self.backend, "embed_single_query")
+            query_vec = embed_single_query(query, dimensions=_DEFAULT_DIMS)
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 

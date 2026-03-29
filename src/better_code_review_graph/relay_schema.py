@@ -5,7 +5,6 @@ from mcp_relay_core.schema.types import ConfigField, RelayConfigSchema
 RELAY_SCHEMA: RelayConfigSchema = {
     "server": "better-code-review-graph",
     "displayName": "Code Review Graph",
-    "description": "At least one API key required for cloud embeddings. Priority: Jina > Gemini > OpenAI > Cohere. Skip for local ONNX mode.",
     "fields": [
         ConfigField(
             key="JINA_AI_API_KEY",
