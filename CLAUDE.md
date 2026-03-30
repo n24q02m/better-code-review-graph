@@ -95,6 +95,10 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 3. pytest (`--tb=short -q --timeout=30`)
 4. Commit message: enforce Conventional Commits
 
+## Infisical
+
+- Project: `e40d27b4-b8c5-4b53-ad56-97c15b3057d7`
+
 ## Luu y quan trong
 
 - Lazy imports cho heavy deps (tree-sitter, qwen3-embed, cohere) -- tranh startup cost
