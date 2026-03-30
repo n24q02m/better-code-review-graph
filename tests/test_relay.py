@@ -31,7 +31,12 @@ class TestRelaySchema:
 
     def test_field_keys(self):
         keys = [f["key"] for f in RELAY_SCHEMA["fields"]]
-        assert keys == ["JINA_AI_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "COHERE_API_KEY"]
+        assert keys == [
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+        ]
 
     def test_all_fields_optional(self):
         for field in RELAY_SCHEMA["fields"]:
