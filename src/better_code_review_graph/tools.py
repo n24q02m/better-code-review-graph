@@ -341,7 +341,17 @@ def get_impact_radius(
             }
 
         # Convert to absolute paths for graph lookup
-        abs_files = [str(root / f) for f in changed_files]
+        abs_files = []
+        root_resolved = root.resolve()
+        for f in changed_files:
+            full_path_raw = root / f
+            full_path = full_path_raw.resolve()
+            if not full_path.is_relative_to(root_resolved):
+                continue
+            if full_path_raw.is_symlink() or full_path.is_symlink():
+                continue
+            abs_files.append(str(full_path))
+
         result = store.get_impact_radius(
             abs_files, max_depth=max_depth, max_nodes=max_results
         )
@@ -443,8 +453,15 @@ def query_graph(
         # Resolve target - try as-is, then as absolute path, then search
         node = store.get_node(target)
         if not node:
-            abs_target = str(root / target)
-            node = store.get_node(abs_target)
+            full_target_raw = root / target
+            full_target = full_target_raw.resolve()
+            if (
+                full_target.is_relative_to(root.resolve())
+                and not full_target_raw.is_symlink()
+                and not full_target.is_symlink()
+            ):
+                abs_target = str(full_target)
+                node = store.get_node(abs_target)
         if not node:
             # Search by name
             candidates = store.search_nodes(target, limit=5)
@@ -499,7 +516,21 @@ def query_graph(
 
         elif pattern == "importers_of":
             # Find edges where target matches this file
-            abs_target = str(root / target) if node is None else node.file_path
+            if node is not None:
+                abs_target = node.file_path
+            else:
+                full_target_raw = root / target
+                full_target = full_target_raw.resolve()
+                if (
+                    not full_target.is_relative_to(root.resolve())
+                    or full_target_raw.is_symlink()
+                    or full_target.is_symlink()
+                ):
+                    return {
+                        "status": "error",
+                        "summary": "Invalid target path",
+                    }
+                abs_target = str(full_target)
             for e in store.get_edges_by_target(abs_target):
                 if e.kind == "IMPORTS_FROM":
                     results.append(
@@ -538,7 +569,18 @@ def query_graph(
                     edges_out.append(edge_to_dict(e))
 
         elif pattern == "file_summary":
-            abs_path = str(root / target)
+            full_target_raw = root / target
+            full_target = full_target_raw.resolve()
+            if (
+                not full_target.is_relative_to(root.resolve())
+                or full_target_raw.is_symlink()
+                or full_target.is_symlink()
+            ):
+                return {
+                    "status": "error",
+                    "summary": "Invalid target path",
+                }
+            abs_path = str(full_target)
             file_nodes = store.get_nodes_by_file(abs_path)
             for n in file_nodes:
                 results.append(node_to_dict(n))
@@ -599,7 +641,17 @@ def get_review_context(
                 "context": {},
             }
 
-        abs_files = [str(root / f) for f in changed_files]
+        abs_files = []
+        root_resolved = root.resolve()
+        for f in changed_files:
+            full_path_raw = root / f
+            full_path = full_path_raw.resolve()
+            if not full_path.is_relative_to(root_resolved):
+                continue
+            if full_path_raw.is_symlink() or full_path.is_symlink():
+                continue
+            abs_files.append(str(full_path))
+
         impact = store.get_impact_radius(abs_files, max_depth=max_depth)
 
         # Build review context

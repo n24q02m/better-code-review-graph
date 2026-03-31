@@ -327,9 +327,16 @@ def incremental_update(
 
     # Find dependent files (files that import from changed files)
     dependent_files: set[str] = set()
+    repo_resolved = repo_root.resolve()
     for rel_path in changed_files:
-        full_path = str(repo_root / rel_path)
-        deps = find_dependents(store, full_path)
+        full_path_raw = repo_root / rel_path
+        full_path = full_path_raw.resolve()
+        if not full_path.is_relative_to(repo_resolved):
+            continue
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            continue
+
+        deps = find_dependents(store, str(full_path))
         for d in deps:
             # Convert back to relative path if needed
             try:
