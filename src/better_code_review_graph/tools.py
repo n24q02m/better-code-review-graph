@@ -421,6 +421,9 @@ def query_graph(
     Returns:
         Matching nodes and edges for the query.
     """
+    # Enforce input length limit to mitigate DoS via resource exhaustion
+    target = target[:1000]
+
     store, root = _get_store(repo_root)
     try:
         if pattern not in _QUERY_PATTERNS:
@@ -849,6 +852,9 @@ def semantic_search_nodes(
     Returns:
         Ranked list of matching nodes.
     """
+    # Enforce input length limit to mitigate DoS via resource exhaustion
+    query = query[:1000]
+
     store, root = _get_store(repo_root)
     try:
         db_path = get_db_path(root)
