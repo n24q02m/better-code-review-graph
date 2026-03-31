@@ -1,0 +1,3 @@
+[config]
+model = "vertex_ai/gemini-3-flash-preview"
+fallback_models = ["vertex_ai/gemini-2.5-flash"]
