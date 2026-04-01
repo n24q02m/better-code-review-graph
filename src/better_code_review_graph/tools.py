@@ -421,6 +421,12 @@ def query_graph(
     Returns:
         Matching nodes and edges for the query.
     """
+    if len(target) > 1000:
+        return {
+            "status": "error",
+            "error": "Target too long (exceeds 1000 characters).",
+        }
+
     store, root = _get_store(repo_root)
     try:
         if pattern not in _QUERY_PATTERNS:
@@ -849,6 +855,12 @@ def semantic_search_nodes(
     Returns:
         Ranked list of matching nodes.
     """
+    if len(query) > 1000:
+        return {
+            "status": "error",
+            "error": "Query too long (exceeds 1000 characters).",
+        }
+
     store, root = _get_store(repo_root)
     try:
         db_path = get_db_path(root)
