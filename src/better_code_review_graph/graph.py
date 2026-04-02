@@ -298,10 +298,9 @@ class GraphStore:
 
         for i in range(0, len(unique_qns), batch_size):
             batch = unique_qns[i : i + batch_size]
-            placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
-                batch,
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
             ).fetchall()
             results.extend(self._row_to_node(r) for r in rows)
 
@@ -360,19 +359,19 @@ class GraphStore:
         if not words:
             return []
 
-        conditions: list[str] = []
-        params: list[Any] = []
-        for word in words:
-            conditions.append("(LOWER(name) LIKE ? OR LOWER(qualified_name) LIKE ?)")
-            params.extend([f"%{word}%", f"%{word}%"])
-
-        where = " AND ".join(conditions)
-        if kind:
-            where = f"({where}) AND kind = ?"
-            params.append(kind)
-
-        sql = f"SELECT * FROM nodes WHERE {where} ORDER BY name LIMIT ?"  # nosec B608
-        params.append(limit)
+        # Use json_each to avoid dynamic SQL construction.
+        # We want to match ALL words in the query.
+        sql = """
+            SELECT * FROM nodes
+            WHERE (
+                SELECT COUNT(*) FROM json_each(?)
+                WHERE (LOWER(nodes.name) LIKE '%' || value || '%'
+                   OR LOWER(nodes.qualified_name) LIKE '%' || value || '%')
+            ) = (SELECT COUNT(*) FROM json_each(?))
+            AND (? IS NULL OR kind = ?)
+            ORDER BY name LIMIT ?
+        """
+        params = [json.dumps(words), json.dumps(words), kind, kind, limit]
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
@@ -540,30 +539,24 @@ class GraphStore:
         Returns:
             List of GraphNode objects, ordered by line count descending.
         """
-        conditions = [
-            "line_start IS NOT NULL",
-            "line_end IS NOT NULL",
-            "(line_end - line_start + 1) >= ?",
+        sql = """
+            SELECT * FROM nodes
+            WHERE line_start IS NOT NULL
+              AND line_end IS NOT NULL
+              AND (line_end - line_start + 1) >= ?
+              AND (? IS NULL OR (line_end - line_start + 1) <= ?)
+              AND (? IS NULL OR kind = ?)
+              AND (? IS NULL OR file_path LIKE '%' || ? || '%')
+            ORDER BY (line_end - line_start + 1) DESC LIMIT ?
+        """
+        params = [
+            min_lines,
+            max_lines, max_lines,
+            kind, kind,
+            file_path_pattern, file_path_pattern,
+            limit
         ]
-        params: list = [min_lines]
-
-        if max_lines is not None:
-            conditions.append("(line_end - line_start + 1) <= ?")
-            params.append(max_lines)
-        if kind:
-            conditions.append("kind = ?")
-            params.append(kind)
-        if file_path_pattern:
-            conditions.append("file_path LIKE ?")
-            params.append(f"%{file_path_pattern}%")
-
-        params.append(limit)
-        where = " AND ".join(conditions)
-        rows = self._conn.execute(
-            f"SELECT * FROM nodes WHERE {where} "  # nosec B608
-            "ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
-            params,
-        ).fetchall()
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Public edge access (for visualization etc.) ---
