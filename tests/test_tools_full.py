@@ -793,6 +793,29 @@ class TestGetDocsSection:
             result = get_docs_section("usage")
         assert result["status"] == "not_found"
 
+    def test_get_docs_section_store_init_exception_fallback(self, tmp_path):
+        """get_docs_section should fallback to repo_root if _get_store fails."""
+        # Setup: Create a docs file in a temporary directory
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        docs_file = docs_dir / "LLM-OPTIMIZED-REFERENCE.md"
+        docs_file.write_text(
+            '<section name="usage">Fallback content works!</section>', encoding="utf-8"
+        )
+
+        # Mock _get_store to raise ValueError
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=ValueError("Store init failed"),
+        ):
+            # Call get_docs_section with repo_root pointing to tmp_path
+            result = get_docs_section("usage", repo_root=str(tmp_path))
+
+        # Verification
+        assert result["status"] == "ok"
+        assert result["section"] == "usage"
+        assert result["content"] == "Fallback content works!"
+
 
 # ---------------------------------------------------------------------------
 # Tool 9: find_large_functions
