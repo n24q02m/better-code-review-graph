@@ -434,17 +434,9 @@ class GraphStore:
         total_impacted = len(impacted - seeds)
 
         # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
+        changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
 
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
