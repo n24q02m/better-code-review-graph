@@ -2,20 +2,26 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from better_code_review_graph.tools import find_large_functions
 
 
 class TestTools:
     def setup_method(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        self.store = GraphStore(self.tmp.name)
+        self.db_path = self.tmp.name
+        self.store = GraphStore(self.db_path)
         self._seed_data()
 
     def teardown_method(self):
-        self.store.close()
-        Path(self.tmp.name).unlink(missing_ok=True)
+        try:
+            self.store.close()
+        except Exception:
+            pass
+        Path(self.db_path).unlink(missing_ok=True)
 
     def _seed_data(self):
         """Seed the store with test data."""
@@ -209,3 +215,46 @@ class TestTools:
         callers = [e for e in edges if e.kind == "CALLS"]
         assert len(callers) == 1
         assert callers[0].source_qualified == "/repo/main.py::process"
+
+    def test_find_large_functions(self):
+        # Seed an oversized function
+        self.store.upsert_node(
+            NodeInfo(
+                kind="function_definition",
+                name="large_func",
+                file_path="/repo/utils.py",
+                line_start=1,
+                line_end=101,
+                language="python",
+            )
+        )
+        self.store.commit()
+        self.store.close()
+
+        # Mock _get_store to return a NEW store instance each time
+        # to simulate how find_large_functions behaves (it closes the store in finally)
+        with patch("better_code_review_graph.tools._get_store") as mock_get:
+            def side_effect(*args, **kwargs):
+                return (GraphStore(self.db_path), Path("/repo"))
+            mock_get.side_effect = side_effect
+
+            # Test default call (min_lines=100)
+            result = find_large_functions(min_lines=100)
+            assert result["status"] == "ok"
+            assert result["total_found"] == 1
+
+            node = result["results"][0]
+            assert node["name"] == "large_func"
+            assert node["line_count"] == 101
+            assert node["relative_path"] == "utils.py"
+
+            # Test filter by kind
+            result = find_large_functions(min_lines=100, kind="function_definition")
+            assert result["total_found"] == 1
+
+            result = find_large_functions(min_lines=100, kind="Class")
+            assert result["total_found"] == 0
+
+            # Test filter by pattern
+            result = find_large_functions(min_lines=100, file_path_pattern="utils")
+            assert result["total_found"] == 1
