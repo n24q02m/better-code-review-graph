@@ -7,6 +7,7 @@ Extracts structural nodes (classes, functions, imports, types) and edges
 from __future__ import annotations
 
 import hashlib
+from typing import Any, cast
 import logging
 import re
 from dataclasses import dataclass, field
@@ -222,7 +223,7 @@ class CodeParser:
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(cast(Any, language))  # type: ignore[arg-type]
             except Exception:
                 return None
         return self._parsers[language]
@@ -294,7 +295,7 @@ class CodeParser:
 
     def _extract_from_tree(
         self,
-        root,
+        root: Any,
         source: bytes,
         language: str,
         file_path: str,
@@ -641,9 +642,24 @@ class CodeParser:
                 defined_names=defined_names,
             )
 
+    def _unwrap_definition(
+        self,
+        node,
+        func_types: set[str],
+        class_types: set[str],
+    ) -> Any:
+        """Unwrap decorator wrappers to reach the inner definition."""
+        if node.type not in {"decorated_definition", "decorator"}:
+            return node
+
+        for child in node.children:
+            if child.type in func_types or child.type in class_types:
+                return child
+        return node
+
     def _collect_file_scope(
         self,
-        root,
+        root: Any,
         language: str,
         source: bytes,
     ) -> tuple[dict[str, str], set[str]]:
@@ -661,85 +677,90 @@ class CodeParser:
         func_types = set(_FUNCTION_TYPES.get(language, []))
         import_types = set(_IMPORT_TYPES.get(language, []))
 
-        # Node types that wrap a class/function with decorators/annotations
-        decorator_wrappers = {"decorated_definition", "decorator"}
-
         for child in root.children:
-            node_type = child.type
-
             # Unwrap decorator wrappers to reach the inner definition
-            target = child
-            if node_type in decorator_wrappers:
-                for inner in child.children:
-                    if inner.type in func_types or inner.type in class_types:
-                        target = inner
-                        break
-
+            target = self._unwrap_definition(child, func_types, class_types)
             target_type = target.type
 
             # Collect defined function/class names
             if target_type in func_types or target_type in class_types:
-                name = self._get_name(
-                    target,
-                    language,
-                    "class" if target_type in class_types else "function",
-                )
-                if name:
+                kind = "class" if target_type in class_types else "function"
+                if name := self._get_name(target, language, kind):
                     defined_names.add(name)
 
-            # Collect import mappings: imported_name → module_path
-            if node_type in import_types:
+            # Collect import mappings: imported_name -> module_path
+            if child.type in import_types:
                 self._collect_import_names(child, language, source, import_map)
 
         return import_map, defined_names
 
+    def _collect_python_import_names(
+        self,
+        node: Any,
+        import_map: dict[str, str],
+    ) -> None:
+        """Extract Python names and modules from import_from_statement."""
+        if node.type != "import_from_statement":
+            return
+
+        # from X.Y import A, B -> {A: X.Y, B: X.Y}
+        module = None
+        seen_import_keyword = False
+        for child in node.children:
+            if child.type == "dotted_name" and not seen_import_keyword:
+                module = child.text.decode("utf-8", errors="replace")
+            elif child.type == "import":
+                seen_import_keyword = True
+            elif seen_import_keyword and module:
+                if child.type in ("identifier", "dotted_name"):
+                    name = child.text.decode("utf-8", errors="replace")
+                    import_map[name] = module
+                elif child.type == "aliased_import":
+                    # from X import A as B -> {B: X}
+                    names = [
+                        sub.text.decode("utf-8", errors="replace")
+                        for sub in child.children
+                        if sub.type in ("identifier", "dotted_name")
+                    ]
+                    # Last name is the alias (local name)
+                    if names:
+                        import_map[names[-1]] = module
+
+    def _collect_js_import_names_from_node(
+        self,
+        node: Any,
+        import_map: dict[str, str],
+    ) -> None:
+        """Extract JS/TS names and modules from import_statement."""
+        # import { A, B } from './path' -> {A: ./path, B: ./path}
+        module = None
+        for child in node.children:
+            if child.type == "string":
+                module = child.text.decode("utf-8", errors="replace").strip("'\"")
+
+        if not module:
+            return
+
+        for child in node.children:
+            if child.type == "import_clause":
+                self._collect_js_import_names(child, module, import_map)
+
     def _collect_import_names(
         self,
-        node,
+        node: Any,
         language: str,
         source: bytes,
         import_map: dict[str, str],
     ) -> None:
         """Extract imported names and their source modules into import_map."""
         if language == "python":
-            if node.type == "import_from_statement":
-                # from X.Y import A, B → {A: X.Y, B: X.Y}
-                module = None
-                seen_import_keyword = False
-                for child in node.children:
-                    if child.type == "dotted_name" and not seen_import_keyword:
-                        module = child.text.decode("utf-8", errors="replace")
-                    elif child.type == "import":
-                        seen_import_keyword = True
-                    elif seen_import_keyword and module:
-                        if child.type in ("identifier", "dotted_name"):
-                            name = child.text.decode("utf-8", errors="replace")
-                            import_map[name] = module
-                        elif child.type == "aliased_import":
-                            # from X import A as B → {B: X}
-                            names = [
-                                sub.text.decode("utf-8", errors="replace")
-                                for sub in child.children
-                                if sub.type in ("identifier", "dotted_name")
-                            ]
-                            # Last name is the alias (local name)
-                            if names:
-                                import_map[names[-1]] = module
-
+            self._collect_python_import_names(node, import_map)
         elif language in ("javascript", "typescript", "tsx"):
-            # import { A, B } from './path' → {A: ./path, B: ./path}
-            module = None
-            for child in node.children:
-                if child.type == "string":
-                    module = child.text.decode("utf-8", errors="replace").strip("'\"")
-            if module:
-                for child in node.children:
-                    if child.type == "import_clause":
-                        self._collect_js_import_names(child, module, import_map)
+            self._collect_js_import_names_from_node(node, import_map)
 
     def _collect_js_import_names(
         self,
-        clause_node,
+        clause_node: Any,
         module: str,
         import_map: dict[str, str],
     ) -> None:
@@ -852,7 +873,7 @@ class CodeParser:
             return f"{file_path}::{enclosing_class}.{name}"
         return f"{file_path}::{name}"
 
-    def _get_name(self, node, language: str, kind: str) -> str | None:
+    def _get_name(self, node: Any, language: str, kind: str) -> str | None:
         """Extract the name from a class/function definition node."""
         # Solidity: constructor and receive/fallback have no identifier child
         if language == "solidity":
