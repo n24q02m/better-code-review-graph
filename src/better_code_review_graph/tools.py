@@ -230,6 +230,21 @@ def _validate_repo_root(path: Path) -> Path:
     return resolved
 
 
+def _resolve_safe_path(root: Path, rel_path: str) -> Path | None:
+    """Resolve a relative path safely within the project root."""
+    try:
+        full_path_raw = root / rel_path
+        full_path = full_path_raw.resolve()
+        # Use is_relative_to and check for symlinks for safety
+        if not full_path.is_relative_to(root.resolve()):
+            return None
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            return None
+        return full_path
+    except (OSError, ValueError):
+        return None
+
+
 def _get_store(repo_root: str | None = None) -> tuple[GraphStore, Path]:
     """Resolve repo root and open the graph store."""
     root = _validate_repo_root(Path(repo_root)) if repo_root else find_project_root()
@@ -342,15 +357,10 @@ def get_impact_radius(
 
         # Convert to absolute paths for graph lookup
         abs_files = []
-        root_resolved = root.resolve()
         for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
+            full_path = _resolve_safe_path(root, f)
+            if full_path:
+                abs_files.append(str(full_path))
 
         result = store.get_impact_radius(
             abs_files, max_depth=max_depth, max_nodes=max_results
@@ -527,13 +537,8 @@ def query_graph(
             if node is not None:
                 abs_target = node.file_path
             else:
-                full_target_raw = root / target
-                full_target = full_target_raw.resolve()
-                if (
-                    not full_target.is_relative_to(root.resolve())
-                    or full_target_raw.is_symlink()
-                    or full_target.is_symlink()
-                ):
+                full_target = _resolve_safe_path(root, target)
+                if not full_target:
                     return {
                         "status": "error",
                         "summary": "Invalid target path",
@@ -592,13 +597,8 @@ def query_graph(
                         results.append(node_to_dict(node_map[qn_src]))
 
         elif pattern == "file_summary":
-            full_target_raw = root / target
-            full_target = full_target_raw.resolve()
-            if (
-                not full_target.is_relative_to(root.resolve())
-                or full_target_raw.is_symlink()
-                or full_target.is_symlink()
-            ):
+            full_target = _resolve_safe_path(root, target)
+            if not full_target:
                 return {
                     "status": "error",
                     "summary": "Invalid target path",
@@ -607,7 +607,6 @@ def query_graph(
             file_nodes = store.get_nodes_by_file(abs_path)
             for n in file_nodes:
                 results.append(node_to_dict(n))
-
         return {
             "status": "ok",
             "pattern": pattern,
@@ -637,25 +636,13 @@ def get_review_context(
     """Generate a focused review context from changed files.
 
     Builds a token-optimized subgraph + source snippets for code review.
-
-    Args:
-        changed_files: Files to review (auto-detected from git diff if omitted).
-        max_depth: Impact radius depth (default: 2).
-        include_source: Whether to include source code snippets (default: True).
-        max_lines_per_file: Max source lines per file in output (default: 200).
-        repo_root: Repository root path. Auto-detected if omitted.
-        base: Git ref for change detection (default: HEAD~1).
-
-    Returns:
-        Structured review context with subgraph, source snippets, and review guidance.
     """
     store, root = _get_store(repo_root)
     try:
-        # Get impact radius first
         if changed_files is None:
-            changed_files = get_changed_files(root, base)
-            if not changed_files:
-                changed_files = get_staged_and_unstaged(root)
+            changed_files = get_changed_files(root, base) or get_staged_and_unstaged(
+                root
+            )
 
         if not changed_files:
             return {
@@ -665,19 +652,13 @@ def get_review_context(
             }
 
         abs_files = []
-        root_resolved = root.resolve()
         for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
+            full_path = _resolve_safe_path(root, f)
+            if full_path:
+                abs_files.append(str(full_path))
 
         impact = store.get_impact_radius(abs_files, max_depth=max_depth)
 
-        # Build review context
         context: dict[str, Any] = {
             "changed_files": changed_files,
             "impacted_files": impact["impacted_files"],
@@ -688,54 +669,52 @@ def get_review_context(
             },
         }
 
-        # Add source snippets for changed files
         if include_source:
-            snippets = {}
-            for rel_path in changed_files:
-                full_path_raw = root / rel_path
-                full_path = full_path_raw.resolve()
-                if not full_path.is_relative_to(root.resolve()):
-                    continue
-                if full_path_raw.is_symlink() or full_path.is_symlink():
-                    continue
-                if full_path.is_file():
-                    try:
-                        lines = full_path.read_text(errors="replace").splitlines()
-                        if len(lines) > max_lines_per_file:
-                            # Include only the relevant functions/classes
-                            relevant_lines = _extract_relevant_lines(
-                                lines, impact["changed_nodes"], str(full_path)
-                            )
-                            snippets[rel_path] = relevant_lines
-                        else:
-                            snippets[rel_path] = "\n".join(
-                                f"{i + 1}: {line}" for i, line in enumerate(lines)
-                            )
-                    except (OSError, UnicodeDecodeError):
-                        snippets[rel_path] = "(could not read file)"
-            context["source_snippets"] = snippets
+            context["source_snippets"] = _get_source_snippets(
+                root, changed_files, max_lines_per_file, impact["changed_nodes"]
+            )
 
-        # Generate review guidance
         guidance = _generate_review_guidance(impact, changed_files)
         context["review_guidance"] = guidance
 
-        summary_parts = [
-            f"Review context for {len(changed_files)} changed file(s):",
-            f"  - {len(impact['changed_nodes'])} directly changed nodes",
-            f"  - {len(impact['impacted_nodes'])} impacted nodes"
-            f" in {len(impact['impacted_files'])} files",
-            "",
-            "Review guidance:",
-            guidance,
-        ]
+        summary = (
+            f"Review context for {len(changed_files)} changed file(s):\n"
+            f"  - {len(impact['changed_nodes'])} directly changed nodes\n"
+            f"  - {len(impact['impacted_nodes'])} impacted nodes "
+            f"in {len(impact['impacted_files'])} files\n\n"
+            "Review guidance:\n"
+            f"{guidance}"
+        )
 
-        return {
-            "status": "ok",
-            "summary": "\n".join(summary_parts),
-            "context": context,
-        }
+        return {"status": "ok", "summary": summary, "context": context}
     finally:
         store.close()
+
+
+def _get_source_snippets(
+    root: Path,
+    changed_files: list[str],
+    max_lines_per_file: int,
+    changed_nodes: list,
+) -> dict[str, str]:
+    """Generate source snippets for changed files."""
+    snippets = {}
+    for rel_path in changed_files:
+        full_path = _resolve_safe_path(root, rel_path)
+        if full_path and full_path.is_file():
+            try:
+                lines = full_path.read_text(errors="replace").splitlines()
+                if len(lines) > max_lines_per_file:
+                    snippets[rel_path] = _extract_relevant_lines(
+                        lines, changed_nodes, str(full_path)
+                    )
+                else:
+                    snippets[rel_path] = "\n".join(
+                        f"{i + 1}: {line}" for i, line in enumerate(lines)
+                    )
+            except (OSError, UnicodeDecodeError):
+                snippets[rel_path] = "(could not read file)"
+    return snippets
 
 
 def _extract_relevant_lines(lines: list[str], nodes: list, file_path: str) -> str:
