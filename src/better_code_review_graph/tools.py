@@ -824,6 +824,65 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+
+
+def _run_semantic_search(
+    query: str,
+    store: GraphStore,
+    emb_store: EmbeddingStore,
+    kind: str | None,
+    limit: int,
+) -> dict[str, Any] | None:
+    """Helper to perform semantic search if available."""
+    if not (emb_store.available and emb_store.count() > 0):
+        return None
+
+    raw = semantic_search(query, store, emb_store, limit=limit * 2)
+    if kind:
+        raw = [r for r in raw if r.get("kind") == kind]
+    raw = raw[:limit]
+
+    return {
+        "status": "ok",
+        "query": query,
+        "search_mode": "semantic",
+        "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
+        + (f" (kind={kind})" if kind else ""),
+        "results": raw,
+    }
+
+
+def _run_keyword_search(
+    query: str, store: GraphStore, kind: str | None, limit: int
+) -> dict[str, Any]:
+    """Helper to perform keyword search fallback."""
+    results = store.search_nodes(query, limit=limit * 2)
+
+    if kind:
+        results = [r for r in results if r.kind == kind]
+
+    def score(node):
+        name_lower = node.name.lower()
+        q_lower = query.lower()
+        if name_lower == q_lower:
+            return 0
+        if name_lower.startswith(q_lower):
+            return 1
+        return 2
+
+    results.sort(key=score)
+    results = results[:limit]
+
+    return {
+        "status": "ok",
+        "query": query,
+        "search_mode": "keyword",
+        "summary": f"Found {len(results)} node(s) matching '{query}'"
+        + (f" (kind={kind})" if kind else ""),
+        "results": [node_to_dict(r) for r in results],
+    }
+
+
 # Tool 5: semantic_search_nodes
 # ---------------------------------------------------------------------------
 
@@ -850,59 +909,18 @@ def semantic_search_nodes(
         Ranked list of matching nodes.
     """
     store, root = _get_store(repo_root)
-    try:
+    with store:
         db_path = get_db_path(root)
         backend = init_backend()
         emb_store = EmbeddingStore(db_path, backend)
-        search_mode = "keyword"
-
         try:
-            if emb_store.available and emb_store.count() > 0:
-                # Vector search
-                search_mode = "semantic"
-                raw = semantic_search(query, store, emb_store, limit=limit * 2)
-                if kind:
-                    raw = [r for r in raw if r.get("kind") == kind]
-                raw = raw[:limit]
-                return {
-                    "status": "ok",
-                    "query": query,
-                    "search_mode": search_mode,
-                    "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
-                    + (f" (kind={kind})" if kind else ""),
-                    "results": raw,
-                }
+            result = _run_semantic_search(query, store, emb_store, kind, limit)
+            if result:
+                return result
         finally:
             emb_store.close()
 
-        # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2)
-
-        if kind:
-            results = [r for r in results if r.kind == kind]
-
-        def score(node):
-            name_lower = node.name.lower()
-            q_lower = query.lower()
-            if name_lower == q_lower:
-                return 0
-            if name_lower.startswith(q_lower):
-                return 1
-            return 2
-
-        results.sort(key=score)
-        results = results[:limit]
-
-        return {
-            "status": "ok",
-            "query": query,
-            "search_mode": search_mode,
-            "summary": f"Found {len(results)} node(s) matching '{query}'"
-            + (f" (kind={kind})" if kind else ""),
-            "results": [node_to_dict(r) for r in results],
-        }
-    finally:
-        store.close()
+        return _run_keyword_search(query, store, kind, limit)
 
 
 # ---------------------------------------------------------------------------
