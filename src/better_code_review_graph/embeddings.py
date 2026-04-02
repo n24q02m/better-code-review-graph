@@ -23,6 +23,11 @@ import math
 import operator
 import os
 import sqlite3
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
 import struct
 import time
 from pathlib import Path
@@ -635,18 +640,48 @@ class EmbeddingStore:
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 
-        # Brute-force cosine similarity scan
+        # Precalculate query norm for faster similarity scoring
+        query_norm = math.hypot(*query_vec)
         scored: list[tuple[str, float]] = []
-        cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
-        chunk_size = 500
-        while True:
-            rows = cursor.fetchmany(chunk_size)
-            if not rows:
-                break
-            for row in rows:
-                vec = _decode_vector(row["vector"])
-                sim = _cosine_similarity(query_vec, vec)
-                scored.append((row["qualified_name"], sim))
+
+        if np is not None:
+            # Vectorized scan using numpy
+            query_arr = np.array(query_vec, dtype=np.float32)
+            if query_norm > 0:
+                query_arr /= query_norm
+
+            cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
+            chunk_size = 1000
+            while True:
+                rows = cursor.fetchmany(chunk_size)
+                if not rows:
+                    break
+                names = [r["qualified_name"] for r in rows]
+                blobs = b"".join(r["vector"] for r in rows)
+                # Bulk-decode and calculate dot products
+                vecs = np.frombuffer(blobs, dtype=np.float32).reshape(len(rows), -1)
+                norms = np.linalg.norm(vecs, axis=1)
+                norms[norms == 0] = 1.0  # Avoid division by zero
+                sims = np.dot(vecs, query_arr) / norms
+                scored.extend(zip(names, sims.tolist(), strict=True))
+        else:
+            # Optimized pure Python fallback
+            cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
+            chunk_size = 500
+            while True:
+                rows = cursor.fetchmany(chunk_size)
+                if not rows:
+                    break
+                for row in rows:
+                    # Avoid list() conversion and reuse query_norm
+                    vec = struct.unpack(f"{len(row['vector']) // 4}f", row["vector"])
+                    norm_b = math.hypot(*vec)
+                    if query_norm > 0 and norm_b > 0:
+                        dot = sum(map(operator.mul, query_vec, vec))
+                        sim = dot / (query_norm * norm_b)
+                    else:
+                        sim = 0.0
+                    scored.append((row["qualified_name"], sim))
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:limit]
