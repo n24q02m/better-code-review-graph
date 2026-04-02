@@ -434,19 +434,23 @@ class GraphStore:
         total_impacted = len(impacted - seeds)
 
         # Resolve to full node info
+        all_qns_to_fetch = list(seeds | impacted)
+        all_nodes = {
+            n.qualified_name: n
+            for n in self.get_nodes_by_qualified_names(all_qns_to_fetch)
+        }
+
         changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
+        for qn in sorted(seeds):
+            if qn in all_nodes:
+                changed_nodes.append(all_nodes[qn])
 
         impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        for qn in sorted(impacted - seeds):
+            if qn in all_nodes:
+                impacted_nodes.append(all_nodes[qn])
 
-        impacted_files = list({n.file_path for n in impacted_nodes})
+        impacted_files = sorted({n.file_path for n in impacted_nodes})
 
         # Collect relevant edges in a single batch query
         relevant_edges = []
@@ -465,11 +469,7 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
+        nodes = self.get_nodes_by_qualified_names(qualified_names)
 
         edges = []
         qn_set = set(qualified_names)
