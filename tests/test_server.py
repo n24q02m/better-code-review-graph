@@ -325,6 +325,15 @@ class TestConfigTool:
         result = json.loads(config.fn(action="cache_clear", repo_root=str(repo)))
         assert result["status"] == "cache cleared"
 
+    def test_cache_clear_error_handling(self):
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=ValueError("No repo found"),
+        ):
+            result = json.loads(config.fn(action="cache_clear"))
+            assert result["status"] == "cache cleared"
+            assert result["embeddings_removed"] == 0
+
 
 # ---------------------------------------------------------------------------
 # help tool
