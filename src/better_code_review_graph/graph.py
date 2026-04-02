@@ -391,60 +391,20 @@ class GraphStore:
           - truncated: True if BFS was stopped early due to max_nodes limit
           - total_impacted: total number of impacted nodes found before truncation
         """
-        nxg = self._build_networkx_graph()
-
         # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        seeds = {
+            n.qualified_name for f in changed_files for n in self.get_nodes_by_file(f)
+        }
 
         # BFS outward through all edge types
-        visited: set[str] = set()
-        frontier = seeds.copy()
-        depth = 0
-        impacted: set[str] = set()
-        truncated = False
-
-        while frontier and depth < max_depth:
-            next_frontier: set[str] = set()
-            for qn in frontier:
-                visited.add(qn)
-                # Forward edges (things this node affects)
-                if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor not in visited:
-                            next_frontier.add(neighbor)
-                            impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred not in visited:
-                            next_frontier.add(pred)
-                            impacted.add(pred)
-            # Cap total nodes to prevent resource exhaustion on dense graphs
-            if len(visited) + len(next_frontier) > max_nodes:
-                truncated = True
-                break
-            frontier = next_frontier
-            depth += 1
+        impacted, truncated = self._traverse_impact_graph(seeds, max_depth, max_nodes)
 
         # Record total count before any truncation for the response
         total_impacted = len(impacted - seeds)
 
-        # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
-
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        # Resolve to full node info using batch fetching
+        changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
+        impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -462,6 +422,45 @@ class GraphStore:
             "truncated": truncated,
             "total_impacted": total_impacted,
         }
+
+    def _traverse_impact_graph(
+        self, seeds: set[str], max_depth: int, max_nodes: int
+    ) -> tuple[set[str], bool]:
+        """Perform BFS from seeds to find impacted nodes through all edge types."""
+        nxg = self._build_networkx_graph()
+        visited: set[str] = set()
+        frontier = seeds.copy()
+        depth = 0
+        impacted: set[str] = set()
+        truncated = False
+
+        while frontier and depth < max_depth:
+            next_frontier: set[str] = set()
+            for qn in frontier:
+                visited.add(qn)
+                if qn not in nxg:
+                    continue
+
+                # Forward edges (things this node affects)
+                for neighbor in nxg.neighbors(qn):
+                    if neighbor not in visited:
+                        next_frontier.add(neighbor)
+                        impacted.add(neighbor)
+
+                # Reverse edges (things that depend on this node)
+                for pred in nxg.predecessors(qn):
+                    if pred not in visited:
+                        next_frontier.add(pred)
+                        impacted.add(pred)
+
+            # Cap total nodes to prevent resource exhaustion on dense graphs
+            if len(visited) + len(next_frontier) > max_nodes:
+                truncated = True
+                break
+            frontier = next_frontier
+            depth += 1
+
+        return impacted, truncated
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
