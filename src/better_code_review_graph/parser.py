@@ -1034,21 +1034,22 @@ class CodeParser:
                 imports.append(val)
         return imports
 
+    def _extract_go_import_spec(self, spec) -> list[str]:
+        return [
+            s.text.decode("utf-8", errors="replace").strip('"')
+            for s in spec.children
+            if s.type == "interpreted_string_literal"
+        ]
+
     def _extract_import_go(self, node) -> list[str]:
         imports = []
         for child in node.children:
             if child.type == "import_spec_list":
                 for spec in child.children:
                     if spec.type == "import_spec":
-                        for s in spec.children:
-                            if s.type == "interpreted_string_literal":
-                                val = s.text.decode("utf-8", errors="replace")
-                                imports.append(val.strip('"'))
+                        imports.extend(self._extract_go_import_spec(spec))
             elif child.type == "import_spec":
-                for s in child.children:
-                    if s.type == "interpreted_string_literal":
-                        val = s.text.decode("utf-8", errors="replace")
-                        imports.append(val.strip('"'))
+                imports.extend(self._extract_go_import_spec(child))
         return imports
 
     def _extract_import_rust(self, text: str) -> list[str]:
