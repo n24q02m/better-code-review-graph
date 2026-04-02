@@ -7,11 +7,11 @@ Extracts structural nodes (classes, functions, imports, types) and edges
 from __future__ import annotations
 
 import hashlib
-from typing import Any, cast
 import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import tree_sitter_language_pack as tslp
 
