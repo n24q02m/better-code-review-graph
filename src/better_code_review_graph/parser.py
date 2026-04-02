@@ -921,72 +921,96 @@ class CodeParser:
                     return node.children[i + 1].text.decode("utf-8", errors="replace")
         return None
 
+    def _get_bases_python(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "argument_list":
+                for arg in child.children:
+                    if arg.type in ("identifier", "attribute"):
+                        bases.append(arg.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_jvm_langs(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type in (
+                "superclass",
+                "super_interfaces",
+                "extends_type",
+                "implements_type",
+                "type_identifier",
+                "supertype",
+                "delegation_specifier",
+            ):
+                text = child.text.decode("utf-8", errors="replace")
+                bases.append(text)
+        return bases
+
+    def _get_bases_cpp(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "base_class_clause":
+                for sub in child.children:
+                    if sub.type == "type_identifier":
+                        bases.append(sub.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_js_ts(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type in ("extends_clause", "implements_clause"):
+                for sub in child.children:
+                    if sub.type in (
+                        "identifier",
+                        "type_identifier",
+                        "nested_identifier",
+                    ):
+                        bases.append(sub.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_solidity(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "inheritance_specifier":
+                for sub in child.children:
+                    if sub.type == "user_defined_type":
+                        for ident in sub.children:
+                            if ident.type == "identifier":
+                                bases.append(
+                                    ident.text.decode("utf-8", errors="replace")
+                                )
+        return bases
+
+    def _get_bases_go(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "type_spec":
+                for sub in child.children:
+                    if sub.type in ("struct_type", "interface_type"):
+                        for field_node in sub.children:
+                            if field_node.type == "field_declaration_list":
+                                for f in field_node.children:
+                                    if f.type == "type_identifier":
+                                        bases.append(
+                                            f.text.decode("utf-8", errors="replace")
+                                        )
+        return bases
+
     def _get_bases(self, node, language: str, source: bytes) -> list[str]:
         """Extract base classes / implemented interfaces."""
-        bases = []
         if language == "python":
-            for child in node.children:
-                if child.type == "argument_list":
-                    for arg in child.children:
-                        if arg.type in ("identifier", "attribute"):
-                            bases.append(arg.text.decode("utf-8", errors="replace"))
-        elif language in ("java", "csharp", "kotlin"):
-            # Look for superclass/interfaces in extends/implements clauses
-            for child in node.children:
-                if child.type in (
-                    "superclass",
-                    "super_interfaces",
-                    "extends_type",
-                    "implements_type",
-                    "type_identifier",
-                    "supertype",
-                    "delegation_specifier",
-                ):
-                    text = child.text.decode("utf-8", errors="replace")
-                    bases.append(text)
-        elif language == "cpp":
-            # C++: base_class_clause contains type_identifiers
-            for child in node.children:
-                if child.type == "base_class_clause":
-                    for sub in child.children:
-                        if sub.type == "type_identifier":
-                            bases.append(sub.text.decode("utf-8", errors="replace"))
-        elif language in ("typescript", "javascript", "tsx"):
-            # extends clause
-            for child in node.children:
-                if child.type in ("extends_clause", "implements_clause"):
-                    for sub in child.children:
-                        if sub.type in (
-                            "identifier",
-                            "type_identifier",
-                            "nested_identifier",
-                        ):
-                            bases.append(sub.text.decode("utf-8", errors="replace"))
-        elif language == "solidity":
-            # contract Foo is Bar, Baz { ... }
-            for child in node.children:
-                if child.type == "inheritance_specifier":
-                    for sub in child.children:
-                        if sub.type == "user_defined_type":
-                            for ident in sub.children:
-                                if ident.type == "identifier":
-                                    bases.append(
-                                        ident.text.decode("utf-8", errors="replace")
-                                    )
-        elif language == "go":
-            # Embedded structs / interface composition
-            for child in node.children:
-                if child.type == "type_spec":
-                    for sub in child.children:
-                        if sub.type in ("struct_type", "interface_type"):
-                            for field_node in sub.children:
-                                if field_node.type == "field_declaration_list":
-                                    for f in field_node.children:
-                                        if f.type == "type_identifier":
-                                            bases.append(
-                                                f.text.decode("utf-8", errors="replace")
-                                            )
-        return bases
+            return self._get_bases_python(node)
+        if language in ("java", "csharp", "kotlin"):
+            return self._get_bases_jvm_langs(node)
+        if language == "cpp":
+            return self._get_bases_cpp(node)
+        if language in ("typescript", "javascript", "tsx"):
+            return self._get_bases_js_ts(node)
+        if language == "solidity":
+            return self._get_bases_solidity(node)
+        if language == "go":
+            return self._get_bases_go(node)
+        return []
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
         """Extract import targets as module/path strings."""
