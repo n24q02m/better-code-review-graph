@@ -234,8 +234,10 @@ class TestTools:
         # Mock _get_store to return a NEW store instance each time
         # to simulate how find_large_functions behaves (it closes the store in finally)
         with patch("better_code_review_graph.tools._get_store") as mock_get:
+
             def side_effect(*args, **kwargs):
                 return (GraphStore(self.db_path), Path("/repo"))
+
             mock_get.side_effect = side_effect
 
             # Test default call (min_lines=100)
