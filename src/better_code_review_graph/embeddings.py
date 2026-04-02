@@ -693,11 +693,14 @@ def semantic_search(
     """Search nodes using vector similarity, falling back to keyword search."""
     if embedding_store.available and embedding_store.count() > 0:
         results = embedding_store.search(query, limit=limit)
+        qns = [r[0] for r in results]
+        node_list = graph_store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in node_list}
+
         output = []
         for qn, score in results:
-            node = graph_store.get_node(qn)
-            if node:
-                d = node_to_dict(node)
+            if qn in node_map:
+                d = node_to_dict(node_map[qn])
                 d["similarity_score"] = round(score, 4)
                 output.append(d)
         return output
