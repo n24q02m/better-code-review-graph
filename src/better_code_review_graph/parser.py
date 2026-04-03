@@ -854,23 +854,17 @@ class CodeParser:
 
     def _get_name(self, node, language: str, kind: str) -> str | None:
         """Extract the name from a class/function definition node."""
-        # Solidity: constructor and receive/fallback have no identifier child
         if language == "solidity":
-            if node.type == "constructor_definition":
-                return "constructor"
-            if node.type == "fallback_receive_definition":
-                for child in node.children:
-                    if child.type in ("receive", "fallback"):
-                        return child.text.decode("utf-8", errors="replace")
-        # For C/C++: function names are inside function_declarator/pointer_declarator
-        # Check these first to avoid matching the return type_identifier
-        if language in ("c", "cpp") and kind == "function":
-            for child in node.children:
-                if child.type in ("function_declarator", "pointer_declarator"):
-                    result = self._get_name(child, language, kind)
-                    if result:
-                        return result
-        # Most languages use a 'name' child
+            res = self._get_solidity_name(node)
+            if res:
+                return res
+
+        if language in ("c", "cpp"):
+            res = self._get_cpp_name(node, language, kind)
+            if res:
+                return res
+
+        # Most languages use a "name" child
         for child in node.children:
             if child.type in (
                 "identifier",
@@ -881,8 +875,35 @@ class CodeParser:
                 "constant",
             ):
                 return child.text.decode("utf-8", errors="replace")
-        # For Go type declarations, look for type_spec
-        if language == "go" and node.type == "type_declaration":
+
+        if language == "go":
+            res = self._get_go_name(node, language, kind)
+            if res:
+                return res
+
+        return None
+
+    def _get_solidity_name(self, node) -> str | None:
+        """Extract name for Solidity nodes."""
+        if node.type == "constructor_definition":
+            return "constructor"
+        if node.type == "fallback_receive_definition":
+            for child in node.children:
+                if child.type in ("receive", "fallback"):
+                    return child.text.decode("utf-8", errors="replace")
+        return None
+
+    def _get_cpp_name(self, node, language: str, kind: str) -> str | None:
+        """Extract name for C/C++ nodes."""
+        if kind == "function":
+            for child in node.children:
+                if child.type in ("function_declarator", "pointer_declarator"):
+                    return self._get_name(child, language, kind)
+        return None
+
+    def _get_go_name(self, node, language: str, kind: str) -> str | None:
+        """Extract name for Go nodes."""
+        if node.type == "type_declaration":
             for child in node.children:
                 if child.type == "type_spec":
                     return self._get_name(child, language, kind)
