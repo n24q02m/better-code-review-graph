@@ -1040,16 +1040,19 @@ class CodeParser:
             if child.type == "import_spec_list":
                 for spec in child.children:
                     if spec.type == "import_spec":
-                        for s in spec.children:
-                            if s.type == "interpreted_string_literal":
-                                val = s.text.decode("utf-8", errors="replace")
-                                imports.append(val.strip('"'))
+                        if val := self._get_go_import_from_spec(spec):
+                            imports.append(val)
             elif child.type == "import_spec":
-                for s in child.children:
-                    if s.type == "interpreted_string_literal":
-                        val = s.text.decode("utf-8", errors="replace")
-                        imports.append(val.strip('"'))
+                if val := self._get_go_import_from_spec(child):
+                    imports.append(val)
         return imports
+
+    def _get_go_import_from_spec(self, spec) -> str | None:
+        for s in spec.children:
+            if s.type == "interpreted_string_literal":
+                val = s.text.decode("utf-8", errors="replace")
+                return val.strip('"')
+        return None
 
     def _extract_import_rust(self, text: str) -> list[str]:
         # use crate::module::item
