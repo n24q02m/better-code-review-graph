@@ -498,18 +498,27 @@ def _decode_vector(blob: bytes) -> list[float]:
     return list(struct.unpack(f"{n}f", blob))
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors."""
+def _cosine_similarity(
+    a: list[float], b: list[float], norm_a: float | None = None
+) -> float:
+    """Compute cosine similarity between two vectors.
+
+    Args:
+        a: First vector.
+        b: Second vector.
+        norm_a: Optional precalculated Euclidean norm of ``a`` to avoid
+            redundant recalculation in hot loops.
+    """
     if len(a) != len(b) or len(a) == 0:
         return 0.0
     # Use map and operator.mul for dot product to avoid generator overhead in Python loops
     dot = sum(map(operator.mul, a, b))
     # math.hypot calculates the Euclidean norm efficiently in C
-    norm_a = math.hypot(*a)
-    norm_b = math.hypot(*b)
-    if norm_a == 0 or norm_b == 0:
+    n_a = norm_a if norm_a is not None else math.hypot(*a)
+    n_b = math.hypot(*b)
+    if n_a == 0 or n_b == 0:
         return 0.0
-    return dot / (norm_a * norm_b)
+    return dot / (n_a * n_b)
 
 
 def _node_to_text(node: GraphNode) -> str:
@@ -635,8 +644,9 @@ class EmbeddingStore:
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 
-        # Brute-force cosine similarity scan
+        # Brute-force cosine similarity scan with precalculated query norm
         scored: list[tuple[str, float]] = []
+        query_norm = math.hypot(*query_vec)
         cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
         chunk_size = 500
         while True:
@@ -645,7 +655,7 @@ class EmbeddingStore:
                 break
             for row in rows:
                 vec = _decode_vector(row["vector"])
-                sim = _cosine_similarity(query_vec, vec)
+                sim = _cosine_similarity(query_vec, vec, norm_a=query_norm)
                 scored.append((row["qualified_name"], sim))
 
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -693,11 +703,15 @@ def semantic_search(
     """Search nodes using vector similarity, falling back to keyword search."""
     if embedding_store.available and embedding_store.count() > 0:
         results = embedding_store.search(query, limit=limit)
+        # Batch fetch all nodes to avoid N+1 queries
+        qns = [r[0] for r in results]
+        node_list = graph_store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in node_list}
+
         output = []
         for qn, score in results:
-            node = graph_store.get_node(qn)
-            if node:
-                d = node_to_dict(node)
+            if qn in node_map:
+                d = node_to_dict(node_map[qn])
                 d["similarity_score"] = round(score, 4)
                 output.append(d)
         return output

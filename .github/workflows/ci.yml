@@ -155,7 +155,7 @@ jobs:
           service_account: ${{ vars.VERTEX_SERVICE_ACCOUNT }}
 
       - name: PR Agent action step
-        uses: qodo-ai/pr-agent@42d55d4182a4839820b11b6c4d06fce855970301 # main
+        uses: qodo-ai/pr-agent@d82f7d3e696cd00822694aaa3096265d3889f3f1 # main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERTEXAI_PROJECT: ${{ vars.VERTEX_PROJECT }}
