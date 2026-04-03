@@ -1,8 +1,10 @@
 """Shared fixtures and test helpers for better-code-review-graph tests."""
-
 from __future__ import annotations
 
 import pytest
+
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 def pytest_addoption(parser):
@@ -10,8 +12,6 @@ def pytest_addoption(parser):
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture(autouse=True)
