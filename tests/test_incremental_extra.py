@@ -407,7 +407,9 @@ class TestWatchMode:
             def join(self):
                 pass
 
-        with patch("watchdog.observers.Observer", return_value=FakeObserver()):
+        with patch(
+            "better_code_review_graph.incremental.Observer", return_value=FakeObserver()
+        ):
             with patch("time.sleep", side_effect=KeyboardInterrupt()):
                 watch(tmp_path, store)
 
@@ -511,7 +513,9 @@ class TestWatchMode:
             def join(self):
                 pass
 
-        with patch("watchdog.observers.Observer", return_value=FakeObserver()):
+        with patch(
+            "better_code_review_graph.incremental.Observer", return_value=FakeObserver()
+        ):
             with patch("time.sleep", side_effect=KeyboardInterrupt()):
                 watch(tmp_path, store)
 
