@@ -532,8 +532,8 @@ class GraphStore:
         """
         sql = """
             SELECT * FROM nodes
-            WHERE line_start IS NOT NULL
-              AND line_end IS NOT NULL
+            WHERE line_start > 0
+              AND line_end >= line_start
               AND (line_end - line_start + 1) >= ?
               AND (? IS NULL OR (line_end - line_start + 1) <= ?)
               AND (? IS NULL OR kind = ?)
