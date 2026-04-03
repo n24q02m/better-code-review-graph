@@ -400,11 +400,9 @@ class GraphStore:
         nxg = self._build_networkx_graph()
 
         # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        seeds = {
+            n.qualified_name for f in changed_files for n in self.get_nodes_by_file(f)
+        }
 
         # BFS outward through all edge types
         visited: set[str] = set()
@@ -417,18 +415,9 @@ class GraphStore:
             next_frontier: set[str] = set()
             for qn in frontier:
                 visited.add(qn)
-                # Forward edges (things this node affects)
-                if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor not in visited:
-                            next_frontier.add(neighbor)
-                            impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred not in visited:
-                            next_frontier.add(pred)
-                            impacted.add(pred)
+                for found in self._get_neighbors_and_predecessors(qn, nxg, visited):
+                    next_frontier.add(found)
+                    impacted.add(found)
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True
@@ -584,6 +573,24 @@ class GraphStore:
         return results
 
     # --- Internal helpers ---
+
+    def _get_neighbors_and_predecessors(
+        self, qn: str, nxg: nx.DiGraph, visited: set[str]
+    ) -> set[str]:
+        """Helper to find neighbors and predecessors not yet visited."""
+        if qn not in nxg:
+            return set()
+
+        results = set()
+        # Forward edges (things this node affects)
+        for neighbor in nxg.neighbors(qn):
+            if neighbor not in visited:
+                results.add(neighbor)
+        # Reverse edges (things that depend on this node)
+        for pred in nxg.predecessors(qn):
+            if pred not in visited:
+                results.add(pred)
+        return results
 
     def _build_networkx_graph(self) -> nx.DiGraph:
         """Build (or return cached) in-memory NetworkX directed graph from all edges."""
