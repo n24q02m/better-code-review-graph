@@ -256,6 +256,7 @@ jobs:
         with:
           app-id: ${{ vars.CI_APP_ID }}
           private-key: ${{ secrets.CI_APP_KEY }}
+          repositories: claude-plugins
 
       - name: Dispatch plugin sync
         env:
