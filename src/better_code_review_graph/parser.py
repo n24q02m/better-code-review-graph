@@ -219,10 +219,10 @@ class CodeParser:
         self._parsers: dict[str, object] = {}
         self._module_file_cache: dict[str, str | None] = {}
 
-    def _get_parser(self, language: str):  # type: ignore[arg-type]
+    def _get_parser(self, language: str):
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(language)  # type: ignore
             except Exception:
                 return None
         return self._parsers[language]
