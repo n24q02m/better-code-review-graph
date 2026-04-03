@@ -19,7 +19,7 @@ def test_embedding_store_migration_adds_provider_column(tmp_path):
     # Insert a row to ensure data is preserved and default value is applied during migration
     conn.execute(
         "INSERT INTO embeddings (qualified_name, vector, text_hash) VALUES (?, ?, ?)",
-        ("old_node", b"old_vector", "old_hash")
+        ("old_node", b"old_vector", "old_hash"),
     )
     conn.commit()
     conn.close()
@@ -37,7 +37,7 @@ def test_embedding_store_migration_adds_provider_column(tmp_path):
     # 4. Verify new inserts also work with the default value
     store._conn.execute(
         "INSERT INTO embeddings (qualified_name, vector, text_hash) VALUES (?, ?, ?)",
-        ("new_node", b"new_vector", "new_hash")
+        ("new_node", b"new_vector", "new_hash"),
     )
     store._conn.commit()
     row = store._conn.execute(
