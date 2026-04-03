@@ -50,12 +50,6 @@ Via marketplace (includes skills: /refactor-check, /review-delta, /review-pr + h
 
 Includes hooks (SessionStart auto-build, PostToolUse auto-update). Configure env vars in `~/.claude/settings.local.json` or shell profile.
 
-### Gemini CLI Extension
-
-```bash
-gemini extensions install https://github.com/n24q02m/better-code-review-graph
-```
-
 ### Codex CLI
 
 Add to `~/.codex/config.toml`:
