@@ -632,6 +632,56 @@ def query_graph(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_review_files(root: Path, files: list[str]) -> list[str]:
+    """Resolve paths and filter out symlinks and out-of-root files."""
+    abs_files = []
+    root_resolved = root.resolve()
+    for f in files:
+        full_path_raw = root / f
+        full_path = full_path_raw.resolve()
+        if not full_path.is_relative_to(root_resolved):
+            continue
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            continue
+        abs_files.append(str(full_path))
+    return abs_files
+
+
+def _build_source_snippets(
+    root: Path,
+    changed_files: list[str],
+    changed_nodes: list,
+    max_lines_per_file: int,
+) -> dict[str, str]:
+    """Extract source snippets for changed files."""
+    snippets = {}
+    root_resolved = root.resolve()
+    for rel_path in changed_files:
+        full_path_raw = root / rel_path
+        full_path = full_path_raw.resolve()
+        if not full_path.is_relative_to(root_resolved):
+            continue
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            continue
+        if not full_path.is_file():
+            continue
+
+        try:
+            lines = full_path.read_text(errors="replace").splitlines()
+            if len(lines) > max_lines_per_file:
+                # Include only the relevant functions/classes
+                snippets[rel_path] = _extract_relevant_lines(
+                    lines, changed_nodes, str(full_path)
+                )
+            else:
+                snippets[rel_path] = "\n".join(
+                    f"{i + 1}: {line}" for i, line in enumerate(lines)
+                )
+        except (OSError, UnicodeDecodeError):
+            snippets[rel_path] = "(could not read file)"
+    return snippets
+
+
 def get_review_context(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
@@ -670,17 +720,7 @@ def get_review_context(
                 "context": {},
             }
 
-        abs_files = []
-        root_resolved = root.resolve()
-        for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
-
+        abs_files = _resolve_review_files(root, changed_files)
         impact = store.get_impact_radius(abs_files, max_depth=max_depth)
 
         # Build review context
@@ -696,30 +736,9 @@ def get_review_context(
 
         # Add source snippets for changed files
         if include_source:
-            snippets = {}
-            for rel_path in changed_files:
-                full_path_raw = root / rel_path
-                full_path = full_path_raw.resolve()
-                if not full_path.is_relative_to(root.resolve()):
-                    continue
-                if full_path_raw.is_symlink() or full_path.is_symlink():
-                    continue
-                if full_path.is_file():
-                    try:
-                        lines = full_path.read_text(errors="replace").splitlines()
-                        if len(lines) > max_lines_per_file:
-                            # Include only the relevant functions/classes
-                            relevant_lines = _extract_relevant_lines(
-                                lines, impact["changed_nodes"], str(full_path)
-                            )
-                            snippets[rel_path] = relevant_lines
-                        else:
-                            snippets[rel_path] = "\n".join(
-                                f"{i + 1}: {line}" for i, line in enumerate(lines)
-                            )
-                    except (OSError, UnicodeDecodeError):
-                        snippets[rel_path] = "(could not read file)"
-            context["source_snippets"] = snippets
+            context["source_snippets"] = _build_source_snippets(
+                root, changed_files, impact["changed_nodes"], max_lines_per_file
+            )
 
         # Generate review guidance
         guidance = _generate_review_guidance(impact, changed_files)
