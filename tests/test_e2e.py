@@ -15,7 +15,7 @@ pytestmark = pytest.mark.timeout(180)
 @pytest.mark.full
 async def test_all_tools(tmp_path):
     r = tmp_path / "repo"
-    r.mkdir()
+
     subprocess.run(["git", "init"], cwd=r, capture_output=True, check=True)
     subprocess.run(
         ["git", "config", "user.email", "t@t"], cwd=r, capture_output=True, check=True
