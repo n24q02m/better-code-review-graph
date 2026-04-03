@@ -326,6 +326,16 @@ class TestConfigTool:
             assert result["graph_path"] is None
             assert "No graph found" in result["message"]
 
+    def test_status_runtime_error_handling(self):
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=RuntimeError("Runtime error"),
+        ):
+            result = json.loads(config.fn(action="status"))
+            assert result["status"] == "ok"
+            assert result["graph_path"] is None
+            assert "No graph found" in result["message"]
+
     def test_cache_clear_no_graph(self):
         result = json.loads(config.fn(action="cache_clear"))
         assert result["status"] == "cache cleared"
