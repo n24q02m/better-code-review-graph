@@ -829,6 +829,72 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
     return "\n".join(guidance_parts)
 
 
+def _run_semantic_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    store: GraphStore,
+    root: Path,
+) -> dict[str, Any] | None:
+    """Try semantic search if embeddings are available."""
+    db_path = get_db_path(root)
+    backend = init_backend()
+    emb_store = EmbeddingStore(db_path, backend)
+    try:
+        if not (emb_store.available and emb_store.count() > 0):
+            return None
+
+        # Vector search
+        raw = semantic_search(query, store, emb_store, limit=limit * 2)
+        if kind:
+            raw = [r for r in raw if r.get("kind") == kind]
+        raw = raw[:limit]
+        return {
+            "status": "ok",
+            "query": query,
+            "search_mode": "semantic",
+            "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
+            + (f" (kind={kind})" if kind else ""),
+            "results": raw,
+        }
+    finally:
+        emb_store.close()
+
+
+def _run_keyword_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    store: GraphStore,
+) -> dict[str, Any]:
+    """Perform keyword search as a fallback."""
+    results = store.search_nodes(query, limit=limit * 2)
+
+    if kind:
+        results = [r for r in results if r.kind == kind]
+
+    def score(node):
+        name_lower = node.name.lower()
+        q_lower = query.lower()
+        if name_lower == q_lower:
+            return 0
+        if name_lower.startswith(q_lower):
+            return 1
+        return 2
+
+    results.sort(key=score)
+    results = results[:limit]
+
+    return {
+        "status": "ok",
+        "query": query,
+        "search_mode": "keyword",
+        "summary": f"Found {len(results)} node(s) matching '{query}'"
+        + (f" (kind={kind})" if kind else ""),
+        "results": [node_to_dict(r) for r in results],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tool 5: semantic_search_nodes
 # ---------------------------------------------------------------------------
@@ -863,63 +929,15 @@ def semantic_search_nodes(
 
     store, root = _get_store(repo_root)
     try:
-        db_path = get_db_path(root)
-        backend = init_backend()
-        emb_store = EmbeddingStore(db_path, backend)
-        search_mode = "keyword"
+        # Try semantic search first
+        result = _run_semantic_search(query, kind, limit, store, root)
+        if result:
+            return result
 
-        try:
-            if emb_store.available and emb_store.count() > 0:
-                # Vector search
-                search_mode = "semantic"
-                raw = semantic_search(query, store, emb_store, limit=limit * 2)
-                if kind:
-                    raw = [r for r in raw if r.get("kind") == kind]
-                raw = raw[:limit]
-                return {
-                    "status": "ok",
-                    "query": query,
-                    "search_mode": search_mode,
-                    "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
-                    + (f" (kind={kind})" if kind else ""),
-                    "results": raw,
-                }
-        finally:
-            emb_store.close()
-
-        # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2)
-
-        if kind:
-            results = [r for r in results if r.kind == kind]
-
-        def score(node):
-            name_lower = node.name.lower()
-            q_lower = query.lower()
-            if name_lower == q_lower:
-                return 0
-            if name_lower.startswith(q_lower):
-                return 1
-            return 2
-
-        results.sort(key=score)
-        results = results[:limit]
-
-        return {
-            "status": "ok",
-            "query": query,
-            "search_mode": search_mode,
-            "summary": f"Found {len(results)} node(s) matching '{query}'"
-            + (f" (kind={kind})" if kind else ""),
-            "results": [node_to_dict(r) for r in results],
-        }
+        # Fallback to keyword search
+        return _run_keyword_search(query, kind, limit, store)
     finally:
         store.close()
-
-
-# ---------------------------------------------------------------------------
-# Tool 6: list_graph_stats
-# ---------------------------------------------------------------------------
 
 
 def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
