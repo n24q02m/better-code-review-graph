@@ -8,7 +8,9 @@ from better_code_review_graph.cli import main
 
 
 class TestMainCLI:
-    def test_starts_server(self):
+    @patch("better_code_review_graph.cli.asyncio.run")
+    def test_starts_server(self, mock_asyncio_run):
         with patch("better_code_review_graph.server.serve_main") as mock_serve:
             main()
             mock_serve.assert_called_once()
+            mock_asyncio_run.assert_called_once()
