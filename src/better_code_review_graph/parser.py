@@ -222,7 +222,7 @@ class CodeParser:
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(language)  # type: ignore
             except Exception:
                 return None
         return self._parsers[language]
@@ -641,6 +641,51 @@ class CodeParser:
                 defined_names=defined_names,
             )
 
+    def _find_decorated_definition(
+        self,
+        node,
+        func_types: set[str],
+        class_types: set[str],
+    ):
+        """Unwrap decorator wrappers to reach the inner definition."""
+        for inner in node.children:
+            if inner.type in func_types or inner.type in class_types:
+                return inner
+        return node
+
+    def _handle_file_scope_node(
+        self,
+        node,
+        language: str,
+        source: bytes,
+        func_types: set[str],
+        class_types: set[str],
+        import_types: set[str],
+        import_map: dict[str, str],
+        defined_names: set[str],
+    ) -> None:
+        """Process a single node at file scope for imports and definitions."""
+        node_type = node.type
+        decorator_wrappers = {"decorated_definition", "decorator"}
+
+        # Unwrap decorator wrappers to reach the inner definition
+        target = node
+        if node_type in decorator_wrappers:
+            target = self._find_decorated_definition(node, func_types, class_types)
+
+        target_type = target.type
+
+        # Collect defined function/class names
+        if target_type in func_types or target_type in class_types:
+            kind = "class" if target_type in class_types else "function"
+            name = self._get_name(target, language, kind)
+            if name:
+                defined_names.add(name)
+
+        # Collect import mappings: imported_name → module_path
+        if node_type in import_types:
+            self._collect_import_names(node, language, source, import_map)
+
     def _collect_file_scope(
         self,
         root,
@@ -661,35 +706,17 @@ class CodeParser:
         func_types = set(_FUNCTION_TYPES.get(language, []))
         import_types = set(_IMPORT_TYPES.get(language, []))
 
-        # Node types that wrap a class/function with decorators/annotations
-        decorator_wrappers = {"decorated_definition", "decorator"}
-
         for child in root.children:
-            node_type = child.type
-
-            # Unwrap decorator wrappers to reach the inner definition
-            target = child
-            if node_type in decorator_wrappers:
-                for inner in child.children:
-                    if inner.type in func_types or inner.type in class_types:
-                        target = inner
-                        break
-
-            target_type = target.type
-
-            # Collect defined function/class names
-            if target_type in func_types or target_type in class_types:
-                name = self._get_name(
-                    target,
-                    language,
-                    "class" if target_type in class_types else "function",
-                )
-                if name:
-                    defined_names.add(name)
-
-            # Collect import mappings: imported_name → module_path
-            if node_type in import_types:
-                self._collect_import_names(child, language, source, import_map)
+            self._handle_file_scope_node(
+                child,
+                language,
+                source,
+                func_types,
+                class_types,
+                import_types,
+                import_map,
+                defined_names,
+            )
 
         return import_map, defined_names
 
