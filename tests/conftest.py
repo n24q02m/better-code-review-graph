@@ -14,7 +14,6 @@ def pytest_addoption(parser):
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
 
 
-
 @pytest.fixture(autouse=True)
 def force_local_embeddings(monkeypatch):
     """Force tests to use the local ONNX embedding backend.
