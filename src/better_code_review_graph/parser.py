@@ -275,7 +275,6 @@ class CodeParser:
         import_map, defined_names = self._collect_file_scope(
             tree.root_node,
             language,
-            source,
         )
 
         # Walk the tree
@@ -645,7 +644,6 @@ class CodeParser:
         self,
         root,
         language: str,
-        source: bytes,
     ) -> tuple[dict[str, str], set[str]]:
         """Pre-scan top-level AST to collect import mappings and defined names.
 
@@ -689,7 +687,7 @@ class CodeParser:
 
             # Collect import mappings: imported_name → module_path
             if node_type in import_types:
-                self._collect_import_names(child, language, source, import_map)
+                self._collect_import_names(child, language, import_map)
 
         return import_map, defined_names
 
@@ -697,45 +695,69 @@ class CodeParser:
         self,
         node,
         language: str,
-        source: bytes,
         import_map: dict[str, str],
     ) -> None:
         """Extract imported names and their source modules into import_map."""
         if language == "python":
-            if node.type == "import_from_statement":
-                # from X.Y import A, B → {A: X.Y, B: X.Y}
-                module = None
-                seen_import_keyword = False
-                for child in node.children:
-                    if child.type == "dotted_name" and not seen_import_keyword:
-                        module = child.text.decode("utf-8", errors="replace")
-                    elif child.type == "import":
-                        seen_import_keyword = True
-                    elif seen_import_keyword and module:
-                        if child.type in ("identifier", "dotted_name"):
-                            name = child.text.decode("utf-8", errors="replace")
-                            import_map[name] = module
-                        elif child.type == "aliased_import":
-                            # from X import A as B → {B: X}
-                            names = [
-                                sub.text.decode("utf-8", errors="replace")
-                                for sub in child.children
-                                if sub.type in ("identifier", "dotted_name")
-                            ]
-                            # Last name is the alias (local name)
-                            if names:
-                                import_map[names[-1]] = module
+            self._collect_python_import_names(node, import_map)
+            return
 
-        elif language in ("javascript", "typescript", "tsx"):
-            # import { A, B } from './path' → {A: ./path, B: ./path}
-            module = None
-            for child in node.children:
-                if child.type == "string":
-                    module = child.text.decode("utf-8", errors="replace").strip("'\"")
-            if module:
-                for child in node.children:
-                    if child.type == "import_clause":
-                        self._collect_js_import_names(child, module, import_map)
+        if language not in ("javascript", "typescript", "tsx"):
+            return
+
+        # JS/TS logic
+        module = None
+        for child in node.children:
+            if child.type == "string":
+                module = child.text.decode("utf-8", errors="replace").strip(
+                    chr(39) + chr(34)
+                )
+
+        if not module:
+            return
+
+        for child in node.children:
+            if child.type == "import_clause":
+                self._collect_js_import_names(child, module, import_map)
+
+    def _collect_python_import_names(
+        self,
+        node,
+        import_map: dict[str, str],
+    ) -> None:
+        if node.type != "import_from_statement":
+            return
+
+        # from X.Y import A, B → {A: X.Y, B: X.Y}
+        module = None
+        seen_import_keyword = False
+        for child in node.children:
+            if child.type == "dotted_name" and not seen_import_keyword:
+                module = child.text.decode("utf-8", errors="replace")
+            elif child.type == "import":
+                seen_import_keyword = True
+            elif seen_import_keyword and module:
+                self._process_python_import_child(child, module, import_map)
+
+    def _process_python_import_child(
+        self,
+        child,
+        module: str,
+        import_map: dict[str, str],
+    ) -> None:
+        if child.type in ("identifier", "dotted_name"):
+            name = child.text.decode("utf-8", errors="replace")
+            import_map[name] = module
+        elif child.type == "aliased_import":
+            # from X import A as B → {B: X}
+            names = [
+                sub.text.decode("utf-8", errors="replace")
+                for sub in child.children
+                if sub.type in ("identifier", "dotted_name")
+            ]
+            # Last name is the alias (local name)
+            if names:
+                import_map[names[-1]] = module
 
     def _collect_js_import_names(
         self,
