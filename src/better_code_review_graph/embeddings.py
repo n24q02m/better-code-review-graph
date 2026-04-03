@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import operator
 import os
@@ -583,25 +584,31 @@ class EmbeddingStore:
 
         provider_name = self._get_backend_name()
 
-        # Filter to nodes that need embedding
-        to_embed: list[tuple[GraphNode, str, str]] = []
+        # Batch fetch existing metadata to skip up-to-date nodes
+        non_file_nodes = [n for n in nodes if n.kind != "File"]
+        if not non_file_nodes:
+            return 0
 
-        for node in nodes:
-            if node.kind == "File":
-                continue
+        qns = [n.qualified_name for n in non_file_nodes]
+        existing_meta = {}
+        batch_size_meta = 450
+        for i in range(0, len(qns), batch_size_meta):
+            batch = qns[i : i + batch_size_meta]
+            rows = self._conn.execute(
+                "SELECT qualified_name, text_hash, provider FROM embeddings "
+                "WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            for r in rows:
+                existing_meta[r["qualified_name"]] = (r["text_hash"], r["provider"])
+
+        to_embed: list[tuple[GraphNode, str, str]] = []
+        for node in non_file_nodes:
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
-
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+            meta = existing_meta.get(node.qualified_name)
+            if meta and meta[0] == text_hash and meta[1] == provider_name:
                 continue
             to_embed.append((node, text, text_hash))
 
@@ -631,11 +638,6 @@ class EmbeddingStore:
         otherwise falls back to embed_single.
         """
         if not self.backend:
-            return []
-
-        # Count embeddings first
-        count = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
-        if count == 0:
             return []
 
         # Embed query -- use query-specific method if available
@@ -686,11 +688,7 @@ def embed_all_nodes(graph_store: GraphStore, embedding_store: EmbeddingStore) ->
     if not embedding_store.available:
         return 0
 
-    all_files = graph_store.get_all_files()
-    all_nodes: list[GraphNode] = []
-    for f in all_files:
-        all_nodes.extend(graph_store.get_nodes_by_file(f))
-
+    all_nodes = graph_store.get_all_nodes()
     return embedding_store.embed_nodes(all_nodes)
 
 

@@ -347,6 +347,11 @@ class GraphStore:
         ).fetchall()
         return [r["file_path"] for r in rows]
 
+    def get_all_nodes(self) -> list[GraphNode]:
+        """Return all nodes in the graph."""
+        rows = self._conn.execute("SELECT * FROM nodes").fetchall()
+        return [self._row_to_node(r) for r in rows]
+
     def search_nodes(
         self, query: str, kind: str | None = None, limit: int = 20
     ) -> list[GraphNode]:
