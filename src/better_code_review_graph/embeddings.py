@@ -586,23 +586,24 @@ class EmbeddingStore:
         # Filter to nodes that need embedding
         to_embed: list[tuple[GraphNode, str, str]] = []
 
+        # Batch fetch existing hashes for this provider to prevent N+1 queries
+        existing_hashes = {}
+        cursor = self._conn.execute(
+            "SELECT qualified_name, text_hash FROM embeddings WHERE provider = ?",
+            (provider_name,),
+        )
+        for row in cursor.fetchall():
+            existing_hashes[row["qualified_name"]] = row["text_hash"]
+
         for node in nodes:
             if node.kind == "File":
                 continue
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
-
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+            if existing_hashes.get(node.qualified_name) == text_hash:
                 continue
+
             to_embed.append((node, text, text_hash))
 
         if not to_embed:
