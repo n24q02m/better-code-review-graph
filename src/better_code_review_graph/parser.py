@@ -222,7 +222,7 @@ class CodeParser:
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(language)  # type: ignore
             except Exception:
                 return None
         return self._parsers[language]

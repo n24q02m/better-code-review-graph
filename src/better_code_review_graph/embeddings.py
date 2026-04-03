@@ -381,7 +381,7 @@ class CloudEmbeddingBackend:
                 else:
                     break
 
-        raise last_exc  # type: ignore[misc]
+        raise last_exc  # type: ignore
 
     def embed_texts(
         self,
@@ -640,7 +640,7 @@ class EmbeddingStore:
 
         # Embed query -- use query-specific method if available
         if hasattr(self.backend, "embed_single_query"):
-            query_vec = self.backend.embed_single_query(query, dimensions=_DEFAULT_DIMS)
+            query_vec = self.backend.embed_single_query(query, dimensions=_DEFAULT_DIMS)  # type: ignore
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 

@@ -1093,8 +1093,8 @@ class TestQueryGraphEdgeCases:
                 kind="Function",
                 name="no_lines",
                 file_path=abs_auth,
-                line_start=None,
-                line_end=None,
+                line_start=0,
+                line_end=0,
                 language="python",
             )
         )
