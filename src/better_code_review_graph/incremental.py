@@ -157,6 +157,17 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
         return []
 
 
+def _parse_porcelain_line(line: str) -> str | None:
+    """Parse a single line from 'git status --porcelain'."""
+    if len(line) <= 3:
+        return None
+    entry = line[3:].strip()
+    # Handle renamed files: "R  old -> new"
+    if " -> " in entry:
+        entry = entry.split(" -> ", 1)[1]
+    return entry
+
+
 def get_staged_and_unstaged(repo_root: Path) -> list[str]:
     """Get all modified files (staged + unstaged + untracked)."""
     try:
@@ -167,15 +178,8 @@ def get_staged_and_unstaged(repo_root: Path) -> list[str]:
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
         )
-        files = []
-        for line in result.stdout.splitlines():
-            if len(line) > 3:
-                entry = line[3:].strip()
-                # Handle renamed files: "R  old -> new"
-                if " -> " in entry:
-                    entry = entry.split(" -> ", 1)[1]
-                files.append(entry)
-        return files
+        parsed = (_parse_porcelain_line(line) for line in result.stdout.splitlines())
+        return [f for f in parsed if f is not None]
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return []
 
