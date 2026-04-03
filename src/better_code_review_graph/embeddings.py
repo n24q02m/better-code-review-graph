@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import hashlib
 import math
-import operator
 import os
 import sqlite3
 import struct
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -492,14 +492,14 @@ def _encode_vector(vec: list[float]) -> bytes:
     return struct.pack(f"{len(vec)}f", *vec)
 
 
-def _decode_vector(blob: bytes) -> list[float]:
+def _decode_vector(blob: bytes) -> Sequence[float]:
     """Decode a binary blob back to a float vector."""
     n = len(blob) // 4  # 4 bytes per float32
-    return list(struct.unpack(f"{n}f", blob))
+    return struct.unpack(f"{n}f", blob)
 
 
 def _cosine_similarity(
-    a: list[float], b: list[float], norm_a: float | None = None
+    a: Sequence[float], b: Sequence[float], norm_a: float | None = None
 ) -> float:
     """Compute cosine similarity between two vectors.
 
@@ -511,8 +511,8 @@ def _cosine_similarity(
     """
     if len(a) != len(b) or len(a) == 0:
         return 0.0
-    # Use map and operator.mul for dot product to avoid generator overhead in Python loops
-    dot = sum(map(operator.mul, a, b))
+    # Use math.sumprod for efficient dot product calculation in C
+    dot = math.sumprod(a, b)
     # math.hypot calculates the Euclidean norm efficiently in C
     n_a = norm_a if norm_a is not None else math.hypot(*a)
     n_b = math.hypot(*b)

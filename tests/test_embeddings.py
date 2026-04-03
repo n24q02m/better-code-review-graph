@@ -59,15 +59,15 @@ class TestVectorEncoding:
     def test_roundtrip(self):
         original = [1.0, 2.5, -3.14, 0.0, 100.0]
         blob = _encode_vector(original)
-        decoded = _decode_vector(blob)
+        decoded = list(_decode_vector(blob))
         assert len(decoded) == len(original)
         for a, b in zip(original, decoded, strict=True):
             assert abs(a - b) < 1e-5
 
     def test_empty_vector(self):
         blob = _encode_vector([])
-        decoded = _decode_vector(blob)
-        assert decoded == []
+        decoded = list(_decode_vector(blob))
+        assert list(decoded) == []
 
     def test_blob_size(self):
         vec = [1.0, 2.0, 3.0]
