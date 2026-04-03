@@ -48,9 +48,7 @@ def test_callers_of_n1_performance(tmp_path):
 
         # Test callers_of logic
         start = time.time()
-        result = query_graph(
-            "callers_of", "target.py::target", repo_root=str(tmp_path)
-        )
+        result = query_graph("callers_of", "target.py::target", repo_root=str(tmp_path))
         elapsed = time.time() - start
 
         assert result["status"] == "ok"
