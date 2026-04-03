@@ -1,5 +1,8 @@
 """E2E test for better-code-review-graph -- all tools except embed."""
-import json, os, subprocess
+import json
+import os
+import subprocess
+
 import pytest
 from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
