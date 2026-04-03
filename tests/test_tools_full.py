@@ -756,6 +756,69 @@ class TestEmbedGraph:
 
 
 class TestGetDocsSection:
+    def test_get_docs_section_with_different_store_root(self, tmp_path):
+        """get_docs_section should try _get_store path if different from repo_root."""
+        # repo_root will point to an empty directory
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # _get_store will return a different directory containing the docs
+        store_root = tmp_path / "store"
+        store_root.mkdir()
+        docs_dir = store_root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "LLM-OPTIMIZED-REFERENCE.md").write_text(
+            '<section name="troubleshooting">Fix stuff.</section>\n'
+        )
+
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            return_value=(MagicMock(), store_root),
+        ):
+            result = get_docs_section("troubleshooting", repo_root=str(repo_root))
+
+        assert result["status"] == "ok"
+        assert "Fix stuff" in result["content"]
+
+    def test_get_docs_section_runtime_error_fallback(self, tmp_path):
+        """get_docs_section should fallback to repo_root if _get_store raises RuntimeError."""
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        docs_file = docs_dir / "LLM-OPTIMIZED-REFERENCE.md"
+        docs_file.write_text(
+            '<section name="usage">Runtime error fallback works!</section>',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=RuntimeError("Simulated runtime error"),
+        ):
+            result = get_docs_section("usage", repo_root=str(tmp_path))
+
+        assert result["status"] == "ok"
+        assert result["content"] == "Runtime error fallback works!"
+
+    def test_get_docs_section_no_repo_root_success(self, tmp_path):
+        """get_docs_section should work without repo_root if _get_store finds one."""
+        store_root = tmp_path / "store_root"
+        store_root.mkdir()
+        docs_dir = store_root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "LLM-OPTIMIZED-REFERENCE.md").write_text(
+            '<section name="usage">Auto-detected store root works!</section>',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            return_value=(MagicMock(), store_root),
+        ):
+            result = get_docs_section("usage")
+
+        assert result["status"] == "ok"
+        assert result["content"] == "Auto-detected store root works!"
+
     def test_existing_section(self, repo_with_graph):
         # Create docs with sections
         docs_dir = repo_with_graph / "docs"
@@ -1118,17 +1181,6 @@ class TestQueryGraphEdgeCases:
             repo_root=str(repo_with_graph),
         )
         assert result["status"] == "ok"
-
-    def test_get_docs_section_with_repo_root_and_store(self, repo_with_graph):
-        """get_docs_section with repo_root should try _get_store path too."""
-        docs_dir = repo_with_graph / "docs"
-        docs_dir.mkdir(exist_ok=True)
-        (docs_dir / "LLM-OPTIMIZED-REFERENCE.md").write_text(
-            '<section name="troubleshooting">Fix stuff.</section>\n'
-        )
-        result = get_docs_section("troubleshooting", repo_root=str(repo_with_graph))
-        assert result["status"] == "ok"
-        assert "Fix stuff" in result["content"]
 
     def test_callers_of_bare_name_fallback(self, repo_with_graph):
         """callers_of should fallback to search_edges_by_target_name when no qualified match.
