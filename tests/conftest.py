@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import pytest
 
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
+
 
 def pytest_addoption(parser):
     """Add --setup and --browser CLI options for E2E tests."""
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-
 
 @pytest.fixture(autouse=True)
 def force_local_embeddings(monkeypatch):
     """Force tests to use the local ONNX embedding backend.
-
     Prevents tests from attempting to hit Cohere/LiteLLM APIs if API keys
     happen to be present in the CI environment.
     """
@@ -40,11 +39,9 @@ def _make_node(
     **kwargs,
 ) -> NodeInfo:
     """Helper to create a NodeInfo for testing.
-
     The ``qualified_name`` is only used to derive defaults for ``file_path``
     (everything before ``::``).  The actual qualified name stored in the DB is
     computed by ``GraphStore._make_qualified()`` from the NodeInfo fields.
-
     Common kwargs: file_path, line_start, line_end, language, parent_name,
     params, return_type, modifiers, is_test, extra.
     """
@@ -53,7 +50,6 @@ def _make_node(
         default_file_path = qualified_name.split("::")[0]
     else:
         default_file_path = "test.py"
-
     return NodeInfo(
         kind=kind,
         name=name,
@@ -79,7 +75,6 @@ def _make_edge(
     **kwargs,
 ) -> EdgeInfo:
     """Helper to create an EdgeInfo for testing.
-
     ``source`` and ``target`` map to EdgeInfo.source and EdgeInfo.target
     (which are stored as source_qualified / target_qualified in the DB).
     """
