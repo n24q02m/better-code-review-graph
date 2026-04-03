@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
+
 
 def pytest_addoption(parser):
     """Add --setup and --browser CLI options for E2E tests."""
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
-
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def _make_node(
     """Helper to create a NodeInfo for testing.
 
     The ``qualified_name`` is only used to derive defaults for ``file_path``
-    (everything before ``::``).  The actual qualified name stored in the DB is
+    (everything before ``::`\").  The actual qualified name stored in the DB is
     computed by ``GraphStore._make_qualified()`` from the NodeInfo fields.
 
     Common kwargs: file_path, line_start, line_end, language, parent_name,
