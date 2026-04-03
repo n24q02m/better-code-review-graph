@@ -298,10 +298,9 @@ class GraphStore:
 
         for i in range(0, len(unique_qns), batch_size):
             batch = unique_qns[i : i + batch_size]
-            placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM nodes WHERE qualified_name IN ({placeholders})",
-                batch,
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
             ).fetchall()
             results.extend(self._row_to_node(r) for r in rows)
 
@@ -360,19 +359,26 @@ class GraphStore:
         if not words:
             return []
 
-        conditions: list[str] = []
-        params: list[Any] = []
-        for word in words:
-            conditions.append("(LOWER(name) LIKE ? OR LOWER(qualified_name) LIKE ?)")
-            params.extend([f"%{word}%", f"%{word}%"])
+        # Use json_each to avoid dynamic SQL construction.
+        # The query ensures ALL words match (AND logic).
+        sql = """
+            SELECT * FROM nodes
+            WHERE (
+                SELECT COUNT(*)
+                FROM json_each(?)
+                WHERE LOWER(nodes.name) LIKE '%' || LOWER(value) || '%'
+                   OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
+            ) = (SELECT COUNT(*) FROM json_each(?))
+        """
+        params: list[Any] = [json.dumps(words), json.dumps(words)]
 
-        where = " AND ".join(conditions)
         if kind:
-            where = f"({where}) AND kind = ?"
+            sql += " AND kind = ?"
             params.append(kind)
 
-        sql = f"SELECT * FROM nodes WHERE {where} ORDER BY name LIMIT ?"  # nosec B608
+        sql += " ORDER BY name LIMIT ?"
         params.append(limit)
+
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
@@ -433,18 +439,9 @@ class GraphStore:
         # Record total count before any truncation for the response
         total_impacted = len(impacted - seeds)
 
-        # Resolve to full node info
-        changed_nodes = []
-        for qn in seeds:
-            node = self.get_node(qn)
-            if node:
-                changed_nodes.append(node)
-
-        impacted_nodes = []
-        for qn in impacted - seeds:
-            node = self.get_node(qn)
-            if node:
-                impacted_nodes.append(node)
+        # Resolve to full node info using batch fetch to prevent N+1 queries
+        changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
+        impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -465,18 +462,11 @@ class GraphStore:
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
-        nodes = []
-        for qn in qualified_names:
-            node = self.get_node(qn)
-            if node:
-                nodes.append(node)
+        node_list = self.get_nodes_by_qualified_names(qualified_names)
+        node_map = {n.qualified_name: n for n in node_list}
+        nodes = [node_map[qn] for qn in qualified_names if qn in node_map]
 
-        edges = []
-        qn_set = set(qualified_names)
-        for qn in qualified_names:
-            for e in self.get_edges_by_source(qn):
-                if e.target_qualified in qn_set:
-                    edges.append(e)
+        edges = self.get_edges_among(set(qualified_names))
 
         return {"nodes": nodes, "edges": edges}
 
@@ -540,30 +530,27 @@ class GraphStore:
         Returns:
             List of GraphNode objects, ordered by line count descending.
         """
-        conditions = [
-            "line_start IS NOT NULL",
-            "line_end IS NOT NULL",
-            "(line_end - line_start + 1) >= ?",
+        sql = """
+            SELECT * FROM nodes
+            WHERE line_start IS NOT NULL
+              AND line_end IS NOT NULL
+              AND (line_end - line_start + 1) >= ?
+              AND (? IS NULL OR (line_end - line_start + 1) <= ?)
+              AND (? IS NULL OR kind = ?)
+              AND (? IS NULL OR file_path LIKE '%' || ? || '%')
+            ORDER BY (line_end - line_start + 1) DESC LIMIT ?
+        """
+        params = [
+            min_lines,
+            max_lines,
+            max_lines,
+            kind,
+            kind,
+            file_path_pattern,
+            file_path_pattern,
+            limit,
         ]
-        params: list = [min_lines]
-
-        if max_lines is not None:
-            conditions.append("(line_end - line_start + 1) <= ?")
-            params.append(max_lines)
-        if kind:
-            conditions.append("kind = ?")
-            params.append(kind)
-        if file_path_pattern:
-            conditions.append("file_path LIKE ?")
-            params.append(f"%{file_path_pattern}%")
-
-        params.append(limit)
-        where = " AND ".join(conditions)
-        rows = self._conn.execute(
-            f"SELECT * FROM nodes WHERE {where} "  # nosec B608
-            "ORDER BY (line_end - line_start + 1) DESC LIMIT ?",
-            params,
-        ).fetchall()
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Public edge access (for visualization etc.) ---
@@ -586,10 +573,9 @@ class GraphStore:
         batch_size = 450  # Stay well under SQLite's default 999 limit
         for i in range(0, len(qns), batch_size):
             batch = qns[i : i + batch_size]
-            placeholders = ",".join("?" for _ in batch)
-            rows = self._conn.execute(  # nosec B608
-                f"SELECT * FROM edges WHERE source_qualified IN ({placeholders})",
-                batch,
+            rows = self._conn.execute(
+                "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
             ).fetchall()
             for r in rows:
                 edge = self._row_to_edge(r)

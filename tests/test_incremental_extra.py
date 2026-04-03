@@ -537,6 +537,30 @@ class TestWatchMode:
 # ---------------------------------------------------------------------------
 
 
+class TestGetChangedFilesErrors:
+    @patch("better_code_review_graph.incremental.subprocess.run")
+    def test_get_changed_files_fallback_timeout(self, mock_run, tmp_path):
+        # First call fails with non-zero return code, second call timeouts
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            subprocess.TimeoutExpired("git", 30),
+        ]
+        result = get_changed_files(tmp_path)
+        assert result == []
+        assert mock_run.call_count == 2
+
+    @patch("better_code_review_graph.incremental.subprocess.run")
+    def test_get_changed_files_fallback_file_not_found(self, mock_run, tmp_path):
+        # First call fails with non-zero return code, second call raises FileNotFoundError
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            FileNotFoundError("git not found"),
+        ]
+        result = get_changed_files(tmp_path)
+        assert result == []
+        assert mock_run.call_count == 2
+
+
 class TestMainModule:
     def test_main_module_calls_cli(self):
         with patch("better_code_review_graph.cli.main"):
