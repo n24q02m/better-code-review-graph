@@ -80,6 +80,28 @@ class TestGraphStore:
         assert result is not None
         assert result.parent_name == "MyClass"
 
+    def test_get_nodes_by_files(self):
+        node1 = self._make_file_node("/test/a.py")
+        node2 = self._make_func_node("func_a", "/test/a.py")
+        node3 = self._make_file_node("/test/b.py")
+        self.store.upsert_node(node1)
+        self.store.upsert_node(node2)
+        self.store.upsert_node(node3)
+        self.store.commit()
+
+        # Fetch multiple files
+        results = self.store.get_nodes_by_files(["/test/a.py", "/test/b.py"])
+        assert len(results) == 3
+        paths = {r.file_path for r in results}
+        assert paths == {"/test/a.py", "/test/b.py"}
+
+        # Fetch non-existent file
+        results = self.store.get_nodes_by_files(["/test/missing.py"])
+        assert len(results) == 0
+
+        # Empty input
+        assert self.store.get_nodes_by_files([]) == []
+
     def test_upsert_edge(self):
         edge = EdgeInfo(
             kind="CALLS",
