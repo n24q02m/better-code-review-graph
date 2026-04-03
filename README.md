@@ -35,98 +35,14 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 | Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
-## Quick Start
+## Setup
 
-### Claude Code Plugin (Recommended)
+**With AI Agent** -- copy and send this to your AI agent:
 
-Via marketplace (includes skills: /refactor-check, /review-delta, /review-pr + hooks):
+> Please set up better-code-review-graph for me. Follow this guide:
+> https://raw.githubusercontent.com/n24q02m/better-code-review-graph/main/docs/setup-with-agent.md
 
-```bash
-/plugin marketplace add n24q02m/claude-plugins
-/plugin install better-code-review-graph@n24q02m-plugins
-```
-
-
-
-Includes hooks (SessionStart auto-build, PostToolUse auto-update). Configure env vars in `~/.claude/settings.local.json` or shell profile.
-
-### Codex CLI
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.better-code-review-graph]
-command = "uvx"
-args = ["--python", "3.13", "better-code-review-graph"]
-```
-
-### MCP Server
-
-#### Option 1: uvx
-
-```jsonc
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
-    }
-  }
-}
-```
-
-<details>
-<summary>Other MCP clients (Cursor, Codex, Gemini CLI, Windsurf, Cline, Amp, OpenCode)</summary>
-
-```jsonc
-// Cursor (~/.cursor/mcp.json)
-// Windsurf (~/.codeium/windsurf/mcp_config.json)
-// Cline (cline_mcp_settings.json)
-// Amp (~/.config/amp/settings.json)
-// OpenCode (~/.opencode.json)
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
-    }
-  }
-}
-```
-
-```toml
-# Codex (~/.codex/config.toml)
-[mcp_servers.better-code-review-graph]
-command = "uvx"
-args = ["--python", "3.13", "better-code-review-graph"]
-```
-
-```jsonc
-// Gemini CLI (~/.gemini/settings.json)
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
-    }
-  }
-}
-```
-
-</details>
-
-#### Option 2: Docker
-
-```jsonc
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", ".:/repo:ro", "n24q02m/better-code-review-graph:latest"]
-    }
-  }
-}
-```
+**Manual Setup** -- follow [docs/setup-manual.md](docs/setup-manual.md)
 
 ## Tools
 
@@ -171,71 +87,6 @@ Actions: `status` | `set` | `cache_clear`
 Topics: `graph` | `query` | `review` | `config`
 
 Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
-
-## Zero-Config Setup
-
-No environment variables needed. On first start, the server opens a setup page in your browser:
-
-1. Start the server (via plugin, `uvx`, or Docker)
-2. A setup URL appears -- open it in any browser
-3. Fill in your credentials on the guided form
-4. Credentials are encrypted and stored locally
-
-Your credentials never leave your machine. The relay server only sees encrypted data.
-
-For CI/automation, you can still use environment variables (see below).
-
-## Configuration
-
-| Variable | Default | Description |
-|:---------|:--------|:------------|
-| `EMBEDDING_BACKEND` | (auto-detect) | `local` or `cloud`. Auto-detects from available API keys. |
-| `EMBEDDING_MODEL` | (provider default) | Override cloud model name. Provider auto-detected from model prefix. |
-| `JINA_AI_API_KEY` | - | Jina AI API key (embedding, highest priority). |
-| `GEMINI_API_KEY` | - | Google Gemini API key (embedding). Also accepts `GOOGLE_API_KEY`. |
-| `OPENAI_API_KEY` | - | OpenAI API key (embedding). |
-| `COHERE_API_KEY` | - | Cohere API key (embedding). Also accepts `CO_API_KEY`. |
-
-### Claude Code Plugin Details
-
-When installed as a plugin, you get:
-
-**Hooks:**
-
-- **SessionStart**: Auto-builds the code graph when a conversation starts
-- **PostToolUse**: Auto-updates the graph after file modifications (Write, Edit, Bash)
-
-**Skills:**
-
-- **refactor-check**: Safety analysis before refactoring -- dependency graph, blast radius
-- **review-delta**: Review uncommitted changes using graph context
-- **review-pr**: Review a pull request with structural analysis
-
-### Embedding Backends
-
-| Backend | Config | Size | Description |
-|:--------|:-------|:-----|:------------|
-| **local** (default) | Nothing needed | ~570 MB (first use) | qwen3-embed ONNX. Zero-config. |
-| **cloud** | Any supported API key | 0 MB | Multi-provider: Jina AI, Gemini, OpenAI, Cohere (priority order). |
-
-- **Auto-detection**: Any supported API key set -> cloud (priority: Jina > Gemini > OpenAI > Cohere). Otherwise -> local ONNX.
-- **Override**: `EMBEDDING_BACKEND=local` or `EMBEDDING_BACKEND=cloud`.
-- **Fixed 768-dim storage**: Switching backends does NOT invalidate existing vectors.
-
-### Supported Languages
-
-Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++, Solidity
-
-### Ignore Files
-
-Create `.code-review-graphignore` in your project root:
-
-```
-generated/**
-*.generated.ts
-vendor/**
-node_modules/**
-```
 
 ## Security
 

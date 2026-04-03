@@ -62,4 +62,7 @@ medium/
 
 # Worktrees
 .worktrees/
-docs/
+
+# Generated files
+*_e2e_result.json
+docs/superpowers/
