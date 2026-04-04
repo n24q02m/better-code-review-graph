@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-
 
 def pytest_addoption(parser):
     """Add --setup and --browser CLI options for E2E tests."""
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
+
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture(autouse=True)

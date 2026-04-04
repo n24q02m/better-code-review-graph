@@ -12,10 +12,12 @@ Copy this file to each MCP server's tests/ directory unchanged.
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from typing import TextIO
 
