@@ -1,0 +1,6 @@
+1. **Identify Performance Bottleneck**: The file `src/better_code_review_graph/graph.py` contains N+1 queries when fetching nodes for multiple files in `get_impact_radius` (looping over `changed_files` and calling `get_nodes_by_file`). Similarly, `src/better_code_review_graph/incremental.py` (in `find_dependents` and `incremental_update`) and `embeddings.py` (in `embed_all_nodes`) use `get_nodes_by_file` in a loop over files. This creates N+1 query bottlenecks.
+2. **Implement `get_nodes_by_files`**: Add a `get_nodes_by_files(self, file_paths: list[str]) -> list[GraphNode]` method in `src/better_code_review_graph/graph.py` that accepts a list of file paths. It will use `json_each` to batch query `SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))` similar to how `get_nodes_by_qualified_names` is implemented.
+3. **Refactor Call Sites**:
+    - `src/better_code_review_graph/graph.py`: In `get_impact_radius`, replace the `for f in changed_files: nodes = self.get_nodes_by_file(f)` loop with a single `get_nodes_by_files(changed_files)` call.
+    - `src/better_code_review_graph/embeddings.py`: In `embed_all_nodes`, replace the loop over `all_files` with a single `get_nodes_by_files(all_files)` call.
+4. **Run Tests and verify impact**: The goal is to optimize a slow process and prove it via unit tests or measurement.
