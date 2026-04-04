@@ -67,7 +67,7 @@ class TestVectorEncoding:
     def test_empty_vector(self):
         blob = _encode_vector([])
         decoded = _decode_vector(blob)
-        assert decoded == []
+        assert decoded == ()
 
     def test_blob_size(self):
         vec = [1.0, 2.0, 3.0]
