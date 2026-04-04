@@ -10,8 +10,9 @@ def pytest_addoption(parser):
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+
+from better_code_review_graph.graph import GraphStore  # noqa: E402
+from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
