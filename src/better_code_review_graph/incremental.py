@@ -9,6 +9,8 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import logging
+import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -131,12 +133,13 @@ _GIT_TIMEOUT = 30  # seconds
 
 def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
     """Get list of changed files via git diff."""
-    if base.startswith("-"):
+    if base.startswith("-") or not re.match(r"^[a-zA-Z0-9_./\^~:-]+$", base):
         raise ValueError(f"Invalid git ref: {base}")
 
+    git_cmd = shutil.which("git") or "git"
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", base],
+            [git_cmd, "diff", "--name-only", base],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
@@ -145,7 +148,7 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
         if result.returncode != 0:
             # Fallback: try diff against empty tree (initial commit)
             result = subprocess.run(
-                ["git", "diff", "--name-only", "--cached"],
+                [git_cmd, "diff", "--name-only", "--cached"],
                 capture_output=True,
                 text=True,
                 cwd=str(repo_root),
@@ -159,9 +162,10 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
 
 def get_staged_and_unstaged(repo_root: Path) -> list[str]:
     """Get all modified files (staged + unstaged + untracked)."""
+    git_cmd = shutil.which("git") or "git"
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
+            [git_cmd, "status", "--porcelain"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
@@ -182,9 +186,10 @@ def get_staged_and_unstaged(repo_root: Path) -> list[str]:
 
 def get_all_tracked_files(repo_root: Path) -> list[str]:
     """Get all files tracked by git."""
+    git_cmd = shutil.which("git") or "git"
     try:
         result = subprocess.run(
-            ["git", "ls-files"],
+            [git_cmd, "ls-files"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
