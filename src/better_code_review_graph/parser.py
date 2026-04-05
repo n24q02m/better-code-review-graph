@@ -292,6 +292,370 @@ class CodeParser:
 
         return nodes, edges
 
+    def _handle_class_node(
+        self,
+        child,
+        language: str,
+        file_path: str,
+        source: bytes,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+        import_map: dict[str, str] | None,
+        defined_names: set[str] | None,
+    ) -> bool:
+        name = self._get_name(child, language, "class")
+        if not name:
+            return False
+
+        node = NodeInfo(
+            kind="Class",
+            name=name,
+            file_path=file_path,
+            line_start=child.start_point[0] + 1,
+            line_end=child.end_point[0] + 1,
+            language=language,
+            parent_name=enclosing_class,
+        )
+        nodes.append(node)
+
+        # CONTAINS edge
+        edges.append(
+            EdgeInfo(
+                kind="CONTAINS",
+                source=file_path,
+                target=self._qualify(name, file_path, enclosing_class),
+                file_path=file_path,
+                line=child.start_point[0] + 1,
+            )
+        )
+
+        # Inheritance edges
+        bases = self._get_bases(child, language, source)
+        for base in bases:
+            edges.append(
+                EdgeInfo(
+                    kind="INHERITS",
+                    source=self._qualify(name, file_path, enclosing_class),
+                    target=base,
+                    file_path=file_path,
+                    line=child.start_point[0] + 1,
+                )
+            )
+
+        # Recurse into class body
+        self._extract_from_tree(
+            child,
+            source,
+            language,
+            file_path,
+            nodes,
+            edges,
+            enclosing_class=name,
+            enclosing_func=None,
+            import_map=import_map,
+            defined_names=defined_names,
+        )
+        return True
+
+    def _handle_function_node(
+        self,
+        child,
+        language: str,
+        file_path: str,
+        source: bytes,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+        import_map: dict[str, str] | None,
+        defined_names: set[str] | None,
+    ) -> bool:
+        name = self._get_name(child, language, "function")
+        if not name:
+            return False
+
+        is_test = _is_test_function(name, file_path)
+        kind = "Test" if is_test else "Function"
+        qualified = self._qualify(name, file_path, enclosing_class)
+        params = self._get_params(child, language, source)
+        ret_type = self._get_return_type(child, language, source)
+
+        node = NodeInfo(
+            kind=kind,
+            name=name,
+            file_path=file_path,
+            line_start=child.start_point[0] + 1,
+            line_end=child.end_point[0] + 1,
+            language=language,
+            parent_name=enclosing_class,
+            params=params,
+            return_type=ret_type,
+            is_test=is_test,
+        )
+        nodes.append(node)
+
+        # CONTAINS edge
+        container = (
+            self._qualify(enclosing_class, file_path, None)
+            if enclosing_class
+            else file_path
+        )
+        edges.append(
+            EdgeInfo(
+                kind="CONTAINS",
+                source=container,
+                target=qualified,
+                file_path=file_path,
+                line=child.start_point[0] + 1,
+            )
+        )
+
+        # Solidity: modifier invocations on functions → CALLS edges
+        if language == "solidity":
+            for sub in child.children:
+                if sub.type == "modifier_invocation":
+                    for ident in sub.children:
+                        if ident.type == "identifier":
+                            edges.append(
+                                EdgeInfo(
+                                    kind="CALLS",
+                                    source=qualified,
+                                    target=ident.text.decode(
+                                        "utf-8",
+                                        errors="replace",
+                                    ),
+                                    file_path=file_path,
+                                    line=sub.start_point[0] + 1,
+                                )
+                            )
+                            break
+
+        # Recurse to find calls inside the function
+        self._extract_from_tree(
+            child,
+            source,
+            language,
+            file_path,
+            nodes,
+            edges,
+            enclosing_class=enclosing_class,
+            enclosing_func=name,
+            import_map=import_map,
+            defined_names=defined_names,
+        )
+        return True
+
+    def _handle_import_node(
+        self,
+        child,
+        language: str,
+        file_path: str,
+        source: bytes,
+        edges: list[EdgeInfo],
+    ) -> bool:
+        imports = self._extract_import(child, language, source)
+        for imp_target in imports:
+            edges.append(
+                EdgeInfo(
+                    kind="IMPORTS_FROM",
+                    source=file_path,
+                    target=imp_target,
+                    file_path=file_path,
+                    line=child.start_point[0] + 1,
+                )
+            )
+        return True
+
+    def _handle_call_node(
+        self,
+        child,
+        language: str,
+        file_path: str,
+        source: bytes,
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+        enclosing_func: str | None,
+        import_map: dict[str, str] | None,
+        defined_names: set[str] | None,
+    ) -> None:
+        call_name = self._get_call_name(child, language, source)
+        if call_name and enclosing_func:
+            caller = self._qualify(enclosing_func, file_path, enclosing_class)
+            target = self._resolve_call_target(
+                call_name,
+                file_path,
+                language,
+                import_map or {},
+                defined_names or set(),
+            )
+            edges.append(
+                EdgeInfo(
+                    kind="CALLS",
+                    source=caller,
+                    target=target,
+                    file_path=file_path,
+                    line=child.start_point[0] + 1,
+                )
+            )
+
+    def _handle_solidity_specifics(
+        self,
+        child,
+        node_type: str,
+        file_path: str,
+        language: str,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+        enclosing_func: str | None,
+    ) -> bool:
+        # Emit statements: emit EventName(...) → CALLS edge
+        if node_type == "emit_statement" and enclosing_func:
+            for sub in child.children:
+                if sub.type == "expression":
+                    for ident in sub.children:
+                        if ident.type == "identifier":
+                            caller = self._qualify(
+                                enclosing_func,
+                                file_path,
+                                enclosing_class,
+                            )
+                            edges.append(
+                                EdgeInfo(
+                                    kind="CALLS",
+                                    source=caller,
+                                    target=ident.text.decode(
+                                        "utf-8", errors="replace"
+                                    ),
+                                    file_path=file_path,
+                                    line=child.start_point[0] + 1,
+                                )
+                            )
+
+        # State variable declarations → Function nodes (public ones
+        # auto-generate getters, and all are critical for reviews)
+        if node_type == "state_variable_declaration" and enclosing_class:
+            var_name = None
+            var_visibility = None
+            var_mutability = None
+            var_type = None
+            for sub in child.children:
+                if sub.type == "identifier":
+                    var_name = sub.text.decode("utf-8", errors="replace")
+                elif sub.type == "visibility":
+                    var_visibility = sub.text.decode("utf-8", errors="replace")
+                elif sub.type == "type_name":
+                    var_type = sub.text.decode("utf-8", errors="replace")
+                elif sub.type in ("constant", "immutable"):
+                    var_mutability = sub.type
+            if var_name:
+                qualified = self._qualify(var_name, file_path, enclosing_class)
+                nodes.append(
+                    NodeInfo(
+                        kind="Function",
+                        name=var_name,
+                        file_path=file_path,
+                        line_start=child.start_point[0] + 1,
+                        line_end=child.end_point[0] + 1,
+                        language=language,
+                        parent_name=enclosing_class,
+                        return_type=var_type,
+                        modifiers=var_visibility,
+                        extra={
+                            "solidity_kind": "state_variable",
+                            "mutability": var_mutability,
+                        },
+                    )
+                )
+                edges.append(
+                    EdgeInfo(
+                        kind="CONTAINS",
+                        source=self._qualify(
+                            enclosing_class,
+                            file_path,
+                            None,
+                        ),
+                        target=qualified,
+                        file_path=file_path,
+                        line=child.start_point[0] + 1,
+                    )
+                )
+                return True
+
+        # File-level and contract-level constant declarations
+        if node_type == "constant_variable_declaration":
+            var_name = None
+            var_type = None
+            for sub in child.children:
+                if sub.type == "identifier":
+                    var_name = sub.text.decode("utf-8", errors="replace")
+                elif sub.type == "type_name":
+                    var_type = sub.text.decode("utf-8", errors="replace")
+            if var_name:
+                qualified = self._qualify(
+                    var_name,
+                    file_path,
+                    enclosing_class,
+                )
+                nodes.append(
+                    NodeInfo(
+                        kind="Function",
+                        name=var_name,
+                        file_path=file_path,
+                        line_start=child.start_point[0] + 1,
+                        line_end=child.end_point[0] + 1,
+                        language=language,
+                        parent_name=enclosing_class,
+                        return_type=var_type,
+                        extra={"solidity_kind": "constant"},
+                    )
+                )
+                container = (
+                    self._qualify(enclosing_class, file_path, None)
+                    if enclosing_class
+                    else file_path
+                )
+                edges.append(
+                    EdgeInfo(
+                        kind="CONTAINS",
+                        source=container,
+                        target=qualified,
+                        file_path=file_path,
+                        line=child.start_point[0] + 1,
+                    )
+                )
+                return True
+
+        # Using directives: using LibName for Type → DEPENDS_ON edge
+        if node_type == "using_directive":
+            lib_name = None
+            for sub in child.children:
+                if sub.type == "type_alias":
+                    for ident in sub.children:
+                        if ident.type == "identifier":
+                            lib_name = ident.text.decode(
+                                "utf-8",
+                                errors="replace",
+                            )
+            if lib_name:
+                source_name = (
+                    self._qualify(enclosing_class, file_path, None)
+                    if enclosing_class
+                    else file_path
+                )
+                edges.append(
+                    EdgeInfo(
+                        kind="DEPENDS_ON",
+                        source=source_name,
+                        target=lib_name,
+                        file_path=file_path,
+                        line=child.start_point[0] + 1,
+                    )
+                )
+                return True
+
+        return False
+
     def _extract_from_tree(
         self,
         root,
@@ -316,315 +680,71 @@ class CodeParser:
 
             # --- Classes ---
             if node_type in class_types:
-                name = self._get_name(child, language, "class")
-                if name:
-                    node = NodeInfo(
-                        kind="Class",
-                        name=name,
-                        file_path=file_path,
-                        line_start=child.start_point[0] + 1,
-                        line_end=child.end_point[0] + 1,
-                        language=language,
-                        parent_name=enclosing_class,
-                    )
-                    nodes.append(node)
-
-                    # CONTAINS edge
-                    edges.append(
-                        EdgeInfo(
-                            kind="CONTAINS",
-                            source=file_path,
-                            target=self._qualify(name, file_path, enclosing_class),
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        )
-                    )
-
-                    # Inheritance edges
-                    bases = self._get_bases(child, language, source)
-                    for base in bases:
-                        edges.append(
-                            EdgeInfo(
-                                kind="INHERITS",
-                                source=self._qualify(name, file_path, enclosing_class),
-                                target=base,
-                                file_path=file_path,
-                                line=child.start_point[0] + 1,
-                            )
-                        )
-
-                    # Recurse into class body
-                    self._extract_from_tree(
-                        child,
-                        source,
-                        language,
-                        file_path,
-                        nodes,
-                        edges,
-                        enclosing_class=name,
-                        enclosing_func=None,
-                        import_map=import_map,
-                        defined_names=defined_names,
-                    )
+                if self._handle_class_node(
+                    child,
+                    language,
+                    file_path,
+                    source,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    import_map,
+                    defined_names,
+                ):
                     continue
 
             # --- Functions ---
             if node_type in func_types:
-                name = self._get_name(child, language, "function")
-                if name:
-                    is_test = _is_test_function(name, file_path)
-                    kind = "Test" if is_test else "Function"
-                    qualified = self._qualify(name, file_path, enclosing_class)
-                    params = self._get_params(child, language, source)
-                    ret_type = self._get_return_type(child, language, source)
-
-                    node = NodeInfo(
-                        kind=kind,
-                        name=name,
-                        file_path=file_path,
-                        line_start=child.start_point[0] + 1,
-                        line_end=child.end_point[0] + 1,
-                        language=language,
-                        parent_name=enclosing_class,
-                        params=params,
-                        return_type=ret_type,
-                        is_test=is_test,
-                    )
-                    nodes.append(node)
-
-                    # CONTAINS edge
-                    container = (
-                        self._qualify(enclosing_class, file_path, None)
-                        if enclosing_class
-                        else file_path
-                    )
-                    edges.append(
-                        EdgeInfo(
-                            kind="CONTAINS",
-                            source=container,
-                            target=qualified,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        )
-                    )
-
-                    # Solidity: modifier invocations on functions → CALLS edges
-                    if language == "solidity":
-                        for sub in child.children:
-                            if sub.type == "modifier_invocation":
-                                for ident in sub.children:
-                                    if ident.type == "identifier":
-                                        edges.append(
-                                            EdgeInfo(
-                                                kind="CALLS",
-                                                source=qualified,
-                                                target=ident.text.decode(
-                                                    "utf-8",
-                                                    errors="replace",
-                                                ),
-                                                file_path=file_path,
-                                                line=sub.start_point[0] + 1,
-                                            )
-                                        )
-                                        break
-
-                    # Recurse to find calls inside the function
-                    self._extract_from_tree(
-                        child,
-                        source,
-                        language,
-                        file_path,
-                        nodes,
-                        edges,
-                        enclosing_class=enclosing_class,
-                        enclosing_func=name,
-                        import_map=import_map,
-                        defined_names=defined_names,
-                    )
+                if self._handle_function_node(
+                    child,
+                    language,
+                    file_path,
+                    source,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    import_map,
+                    defined_names,
+                ):
                     continue
 
             # --- Imports ---
             if node_type in import_types:
-                imports = self._extract_import(child, language, source)
-                for imp_target in imports:
-                    edges.append(
-                        EdgeInfo(
-                            kind="IMPORTS_FROM",
-                            source=file_path,
-                            target=imp_target,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        )
-                    )
-                continue
+                if self._handle_import_node(
+                    child,
+                    language,
+                    file_path,
+                    source,
+                    edges,
+                ):
+                    continue
 
             # --- Calls ---
             if node_type in call_types:
-                call_name = self._get_call_name(child, language, source)
-                if call_name and enclosing_func:
-                    caller = self._qualify(enclosing_func, file_path, enclosing_class)
-                    target = self._resolve_call_target(
-                        call_name,
-                        file_path,
-                        language,
-                        import_map or {},
-                        defined_names or set(),
-                    )
-                    edges.append(
-                        EdgeInfo(
-                            kind="CALLS",
-                            source=caller,
-                            target=target,
-                            file_path=file_path,
-                            line=child.start_point[0] + 1,
-                        )
-                    )
+                self._handle_call_node(
+                    child,
+                    language,
+                    file_path,
+                    source,
+                    edges,
+                    enclosing_class,
+                    enclosing_func,
+                    import_map,
+                    defined_names,
+                )
 
             # --- Solidity-specific constructs ---
             if language == "solidity":
-                # Emit statements: emit EventName(...) → CALLS edge
-                if node_type == "emit_statement" and enclosing_func:
-                    for sub in child.children:
-                        if sub.type == "expression":
-                            for ident in sub.children:
-                                if ident.type == "identifier":
-                                    caller = self._qualify(
-                                        enclosing_func,
-                                        file_path,
-                                        enclosing_class,
-                                    )
-                                    edges.append(
-                                        EdgeInfo(
-                                            kind="CALLS",
-                                            source=caller,
-                                            target=ident.text.decode(
-                                                "utf-8", errors="replace"
-                                            ),
-                                            file_path=file_path,
-                                            line=child.start_point[0] + 1,
-                                        )
-                                    )
-
-                # State variable declarations → Function nodes (public ones
-                # auto-generate getters, and all are critical for reviews)
-                if node_type == "state_variable_declaration" and enclosing_class:
-                    var_name = None
-                    var_visibility = None
-                    var_mutability = None
-                    var_type = None
-                    for sub in child.children:
-                        if sub.type == "identifier":
-                            var_name = sub.text.decode("utf-8", errors="replace")
-                        elif sub.type == "visibility":
-                            var_visibility = sub.text.decode("utf-8", errors="replace")
-                        elif sub.type == "type_name":
-                            var_type = sub.text.decode("utf-8", errors="replace")
-                        elif sub.type in ("constant", "immutable"):
-                            var_mutability = sub.type
-                    if var_name:
-                        qualified = self._qualify(var_name, file_path, enclosing_class)
-                        nodes.append(
-                            NodeInfo(
-                                kind="Function",
-                                name=var_name,
-                                file_path=file_path,
-                                line_start=child.start_point[0] + 1,
-                                line_end=child.end_point[0] + 1,
-                                language=language,
-                                parent_name=enclosing_class,
-                                return_type=var_type,
-                                modifiers=var_visibility,
-                                extra={
-                                    "solidity_kind": "state_variable",
-                                    "mutability": var_mutability,
-                                },
-                            )
-                        )
-                        edges.append(
-                            EdgeInfo(
-                                kind="CONTAINS",
-                                source=self._qualify(
-                                    enclosing_class,
-                                    file_path,
-                                    None,
-                                ),
-                                target=qualified,
-                                file_path=file_path,
-                                line=child.start_point[0] + 1,
-                            )
-                        )
-                        continue
-
-                # File-level and contract-level constant declarations
-                if node_type == "constant_variable_declaration":
-                    var_name = None
-                    var_type = None
-                    for sub in child.children:
-                        if sub.type == "identifier":
-                            var_name = sub.text.decode("utf-8", errors="replace")
-                        elif sub.type == "type_name":
-                            var_type = sub.text.decode("utf-8", errors="replace")
-                    if var_name:
-                        qualified = self._qualify(
-                            var_name,
-                            file_path,
-                            enclosing_class,
-                        )
-                        nodes.append(
-                            NodeInfo(
-                                kind="Function",
-                                name=var_name,
-                                file_path=file_path,
-                                line_start=child.start_point[0] + 1,
-                                line_end=child.end_point[0] + 1,
-                                language=language,
-                                parent_name=enclosing_class,
-                                return_type=var_type,
-                                extra={"solidity_kind": "constant"},
-                            )
-                        )
-                        container = (
-                            self._qualify(enclosing_class, file_path, None)
-                            if enclosing_class
-                            else file_path
-                        )
-                        edges.append(
-                            EdgeInfo(
-                                kind="CONTAINS",
-                                source=container,
-                                target=qualified,
-                                file_path=file_path,
-                                line=child.start_point[0] + 1,
-                            )
-                        )
-                        continue
-
-                # Using directives: using LibName for Type → DEPENDS_ON edge
-                if node_type == "using_directive":
-                    lib_name = None
-                    for sub in child.children:
-                        if sub.type == "type_alias":
-                            for ident in sub.children:
-                                if ident.type == "identifier":
-                                    lib_name = ident.text.decode(
-                                        "utf-8",
-                                        errors="replace",
-                                    )
-                    if lib_name:
-                        source_name = (
-                            self._qualify(enclosing_class, file_path, None)
-                            if enclosing_class
-                            else file_path
-                        )
-                        edges.append(
-                            EdgeInfo(
-                                kind="DEPENDS_ON",
-                                source=source_name,
-                                target=lib_name,
-                                file_path=file_path,
-                                line=child.start_point[0] + 1,
-                            )
-                        )
+                if self._handle_solidity_specifics(
+                    child,
+                    node_type,
+                    file_path,
+                    language,
+                    nodes,
+                    edges,
+                    enclosing_class,
+                    enclosing_func,
+                ):
                     continue
 
             # Recurse for other node types
@@ -640,7 +760,6 @@ class CodeParser:
                 import_map=import_map,
                 defined_names=defined_names,
             )
-
     def _collect_file_scope(
         self,
         root,
