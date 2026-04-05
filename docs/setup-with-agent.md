@@ -107,7 +107,9 @@ All environment variables are **optional**. The server works with local ONNX emb
 
 ## Authentication
 
-### Zero-Config Relay (Default)
+### Zero-Config Relay (BETA, Optional)
+
+> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Environment Variables** above. The relay blocks server startup on first run and may time out in some MCP clients.
 
 On first run without any API keys in environment:
 
@@ -126,7 +128,7 @@ The relay form has 4 optional fields:
 
 Leave all empty to use local ONNX mode (Qwen3 embedding, ~570MB download on first use).
 
-### Environment Variables (CI/Automation)
+### Environment Variables (Recommended)
 
 Set API keys directly as environment variables to skip relay entirely.
 

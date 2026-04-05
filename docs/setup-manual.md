@@ -110,21 +110,7 @@ For Claude Code users, the plugin approach includes auto-build hooks and review 
 
 ## Credential Setup
 
-### Option A: Zero-Config Relay (Recommended)
-
-No manual configuration needed. On first start:
-
-1. The server prints a setup URL to stderr
-2. Open the URL in any browser
-3. Fill in your API keys on the guided form:
-   - **Jina AI API Key** -- embedding + reranking ([get key](https://jina.ai/api-key))
-   - **Gemini API Key** -- embedding, free tier available ([get key](https://aistudio.google.com/apikey))
-   - **OpenAI API Key** -- embedding ([get key](https://platform.openai.com/api-keys))
-   - **Cohere API Key** -- embedding + reranking ([get key](https://dashboard.cohere.com/api-keys))
-4. All fields are optional -- leave empty for local ONNX mode
-5. Credentials are encrypted and stored at `~/.config/mcp/config.enc`
-
-### Option B: Environment Variables
+### Option A: Environment Variables (Recommended)
 
 Set API keys in your shell profile or MCP client settings:
 
@@ -145,6 +131,22 @@ When environment variables are set, the relay is skipped entirely.
 | `EMBEDDING_BACKEND` | auto-detect | `cloud` or `local` (ONNX) |
 | `EMBEDDING_MODEL` | auto-detect | Cloud embedding model name |
 | `LOG_LEVEL` | `INFO` | Logging level |
+
+### Option B: Zero-Config Relay (BETA)
+
+> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Option A: Environment Variables**. The relay currently blocks MCP server startup on first run and may time out in some MCP clients -- see [upcoming redesign](https://github.com/n24q02m/claude-plugins/issues).
+
+No manual configuration needed. On first start:
+
+1. The server prints a setup URL to stderr
+2. Open the URL in any browser
+3. Fill in your API keys on the guided form:
+   - **Jina AI API Key** -- embedding + reranking ([get key](https://jina.ai/api-key))
+   - **Gemini API Key** -- embedding, free tier available ([get key](https://aistudio.google.com/apikey))
+   - **OpenAI API Key** -- embedding ([get key](https://platform.openai.com/api-keys))
+   - **Cohere API Key** -- embedding + reranking ([get key](https://dashboard.cohere.com/api-keys))
+4. All fields are optional -- leave empty for local ONNX mode
+5. Credentials are encrypted and stored at `~/.config/mcp/config.enc`
 
 ### Embedding Provider Priority
 
