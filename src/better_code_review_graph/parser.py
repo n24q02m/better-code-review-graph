@@ -222,7 +222,7 @@ class CodeParser:
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(language)  # type: ignore
             except Exception:
                 return None
         return self._parsers[language]
@@ -924,92 +924,110 @@ class CodeParser:
     def _get_bases(self, node, language: str, source: bytes) -> list[str]:
         """Extract base classes / implemented interfaces."""
         bases = []
-        if language == "python":
-            for child in node.children:
-                if child.type == "argument_list":
-                    for arg in child.children:
-                        if arg.type in ("identifier", "attribute"):
-                            bases.append(arg.text.decode("utf-8", errors="replace"))
-        elif language in ("java", "csharp", "kotlin"):
-            # Look for superclass/interfaces in extends/implements clauses
-            for child in node.children:
-                if child.type in (
-                    "superclass",
-                    "super_interfaces",
-                    "extends_type",
-                    "implements_type",
-                    "type_identifier",
-                    "supertype",
-                    "delegation_specifier",
-                ):
-                    text = child.text.decode("utf-8", errors="replace")
-                    bases.append(text)
-        elif language == "cpp":
-            # C++: base_class_clause contains type_identifiers
-            for child in node.children:
-                if child.type == "base_class_clause":
-                    for sub in child.children:
-                        if sub.type == "type_identifier":
-                            bases.append(sub.text.decode("utf-8", errors="replace"))
-        elif language in ("typescript", "javascript", "tsx"):
-            # extends clause
-            for child in node.children:
-                if child.type in ("extends_clause", "implements_clause"):
-                    for sub in child.children:
-                        if sub.type in (
-                            "identifier",
-                            "type_identifier",
-                            "nested_identifier",
-                        ):
-                            bases.append(sub.text.decode("utf-8", errors="replace"))
-        elif language == "solidity":
-            # contract Foo is Bar, Baz { ... }
-            for child in node.children:
-                if child.type == "inheritance_specifier":
-                    for sub in child.children:
-                        if sub.type == "user_defined_type":
-                            for ident in sub.children:
-                                if ident.type == "identifier":
-                                    bases.append(
-                                        ident.text.decode("utf-8", errors="replace")
-                                    )
-        elif language == "go":
-            # Embedded structs / interface composition
-            for child in node.children:
-                if child.type == "type_spec":
-                    for sub in child.children:
-                        if sub.type in ("struct_type", "interface_type"):
-                            for field_node in sub.children:
-                                if field_node.type == "field_declaration_list":
-                                    for f in field_node.children:
-                                        if f.type == "type_identifier":
-                                            bases.append(
-                                                f.text.decode("utf-8", errors="replace")
-                                            )
+        match language:
+            case "python":
+                bases.extend(self._get_bases_python(node))
+            case "java" | "csharp" | "kotlin":
+                bases.extend(self._get_bases_java_csharp_kotlin(node))
+            case "cpp":
+                bases.extend(self._get_bases_cpp(node))
+            case "typescript" | "javascript" | "tsx":
+                bases.extend(self._get_bases_js_ts(node))
+            case "solidity":
+                bases.extend(self._get_bases_solidity(node))
+            case "go":
+                bases.extend(self._get_bases_go(node))
+        return bases
+
+    def _get_bases_python(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "argument_list":
+                for arg in child.children:
+                    if arg.type in ("identifier", "attribute"):
+                        bases.append(arg.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_java_csharp_kotlin(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type in (
+                "superclass",
+                "super_interfaces",
+                "extends_type",
+                "implements_type",
+                "type_identifier",
+                "supertype",
+                "delegation_specifier",
+            ):
+                bases.append(child.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_cpp(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "base_class_clause":
+                for sub in child.children:
+                    if sub.type == "type_identifier":
+                        bases.append(sub.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_js_ts(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type in ("extends_clause", "implements_clause"):
+                for sub in child.children:
+                    if sub.type in ("identifier", "type_identifier", "nested_identifier"):
+                        bases.append(sub.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_solidity(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "inheritance_specifier":
+                for sub in child.children:
+                    if sub.type == "user_defined_type":
+                        for ident in sub.children:
+                            if ident.type == "identifier":
+                                bases.append(ident.text.decode("utf-8", errors="replace"))
+        return bases
+
+    def _get_bases_go(self, node) -> list[str]:
+        bases = []
+        for child in node.children:
+            if child.type == "type_spec":
+                for sub in child.children:
+                    if sub.type in ("struct_type", "interface_type"):
+                        for field_node in sub.children:
+                            if field_node.type == "field_declaration_list":
+                                for f in field_node.children:
+                                    if f.type == "type_identifier":
+                                        bases.append(f.text.decode("utf-8", errors="replace"))
         return bases
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
         """Extract import targets as module/path strings."""
         text = node.text.decode("utf-8", errors="replace").strip()
 
-        if language == "python":
-            return self._extract_import_python(node)
-        elif language in ("javascript", "typescript", "tsx"):
-            return self._extract_import_javascript(node)
-        elif language == "go":
-            return self._extract_import_go(node)
-        elif language == "rust":
-            return self._extract_import_rust(text)
-        elif language in ("c", "cpp"):
-            return self._extract_import_c(node)
-        elif language in ("java", "csharp"):
-            return self._extract_import_java(text)
-        elif language == "solidity":
-            return self._extract_import_solidity(node)
-        elif language == "ruby":
-            return self._extract_import_ruby(text)
-        else:
-            return [text]
+        match language:
+            case "python":
+                return self._extract_import_python(node)
+            case "javascript" | "typescript" | "tsx":
+                return self._extract_import_javascript(node)
+            case "go":
+                return self._extract_import_go(node)
+            case "rust":
+                return self._extract_import_rust(text)
+            case "c" | "cpp":
+                return self._extract_import_c(node)
+            case "java" | "csharp":
+                return self._extract_import_java(text)
+            case "solidity":
+                return self._extract_import_solidity(node)
+            case "ruby":
+                return self._extract_import_ruby(text)
+            case _:
+                return [text]
 
     def _extract_import_python(self, node) -> list[str]:
         imports = []
@@ -1040,16 +1058,18 @@ class CodeParser:
             if child.type == "import_spec_list":
                 for spec in child.children:
                     if spec.type == "import_spec":
-                        for s in spec.children:
-                            if s.type == "interpreted_string_literal":
-                                val = s.text.decode("utf-8", errors="replace")
-                                imports.append(val.strip('"'))
+                        if val := self._get_go_import_from_spec(spec):
+                            imports.append(val)
             elif child.type == "import_spec":
-                for s in child.children:
-                    if s.type == "interpreted_string_literal":
-                        val = s.text.decode("utf-8", errors="replace")
-                        imports.append(val.strip('"'))
+                if val := self._get_go_import_from_spec(child):
+                    imports.append(val)
         return imports
+
+    def _get_go_import_from_spec(self, spec) -> str | None:
+        for s in spec.children:
+            if s.type == "interpreted_string_literal":
+                return s.text.decode("utf-8", errors="replace").strip("\"")
+        return None
 
     def _extract_import_rust(self, text: str) -> list[str]:
         # use crate::module::item
