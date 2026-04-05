@@ -351,6 +351,10 @@ def incremental_update(
     total_edges = 0
     errors = []
 
+    # First pass: Resolve paths, filter ignored/invalid, and prepare pre-fetch
+    valid_files_to_process: list[tuple[str, Path, Path]] = []
+    all_abs_paths: list[str] = []
+
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
@@ -358,33 +362,55 @@ def incremental_update(
         abs_path = abs_path_raw.resolve()
         if not abs_path.is_relative_to(repo_root.resolve()):
             continue
+
         if not abs_path.is_file():
             # File was deleted
             store.remove_file_data(str(abs_path))
             continue
+
         if abs_path_raw.is_symlink() or abs_path.is_symlink():
             continue
+
         if parser.detect_language(abs_path) is None:
             continue
 
-        try:
-            source = abs_path.read_bytes()
-            fhash = hashlib.sha256(source).hexdigest()
-            # Check if file actually changed (compare against stored file_hash column)
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
-            if existing_nodes and existing_nodes[0].file_hash == fhash:
-                # Skip unchanged files (hash match)
-                continue
+        valid_files_to_process.append((rel_path, abs_path_raw, abs_path))
+        all_abs_paths.append(str(abs_path))
 
-            nodes, edges = parser.parse_bytes(abs_path, source)
-            store.store_file_nodes_edges(str(abs_path), nodes, edges, fhash)
-            total_nodes += len(nodes)
-            total_edges += len(edges)
-        except (OSError, PermissionError) as e:
-            errors.append({"file": rel_path, "error": str(e)})
-        except Exception as e:
-            logger.warning("Error parsing %s: %s", rel_path, e)
-            errors.append({"file": rel_path, "error": str(e)})
+    # Process files in batches to bound memory usage
+    batch_size = 500
+    for i in range(0, len(valid_files_to_process), batch_size):
+        batch = valid_files_to_process[i : i + batch_size]
+        batch_paths = all_abs_paths[i : i + batch_size]
+
+        # Pre-fetch existing nodes for this batch to avoid N+1 queries
+        existing_nodes_by_file = {}
+        if batch_paths:
+            batch_nodes = store.get_nodes_by_files(batch_paths)
+            for node in batch_nodes:
+                if node.file_path not in existing_nodes_by_file:
+                    existing_nodes_by_file[node.file_path] = []
+                existing_nodes_by_file[node.file_path].append(node)
+
+        for rel_path, abs_path_raw, abs_path in batch:
+            try:
+                source = abs_path.read_bytes()
+                fhash = hashlib.sha256(source).hexdigest()
+                # Check if file actually changed (compare against stored file_hash column)
+                existing_nodes = existing_nodes_by_file.get(str(abs_path), [])
+                if existing_nodes and existing_nodes[0].file_hash == fhash:
+                    # Skip unchanged files (hash match)
+                    continue
+
+                nodes, edges = parser.parse_bytes(abs_path, source)
+                store.store_file_nodes_edges(str(abs_path), nodes, edges, fhash)
+                total_nodes += len(nodes)
+                total_edges += len(edges)
+            except (OSError, PermissionError) as e:
+                errors.append({"file": rel_path, "error": str(e)})
+            except Exception as e:
+                logger.warning("Error parsing %s: %s", rel_path, e)
+                errors.append({"file": rel_path, "error": str(e)})
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "incremental")
