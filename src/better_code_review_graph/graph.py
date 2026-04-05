@@ -359,8 +359,8 @@ class GraphStore:
         if not words:
             return []
 
-        # Use json_each to avoid dynamic SQL construction.
-        # The query ensures ALL words match (AND logic).
+        # Use a single static SQL query to avoid all dynamic concatenation (B608).
+        # The (? IS NULL OR kind = ?) pattern handles optional filters securely.
         sql = """
             SELECT * FROM nodes
             WHERE (
@@ -369,15 +369,16 @@ class GraphStore:
                 WHERE LOWER(nodes.name) LIKE '%' || LOWER(value) || '%'
                    OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
+              AND (? IS NULL OR kind = ?)
+            ORDER BY name LIMIT ?
         """
-        params: list[Any] = [json.dumps(words), json.dumps(words)]
-
-        if kind:
-            sql += " AND kind = ?"
-            params.append(kind)
-
-        sql += " ORDER BY name LIMIT ?"
-        params.append(limit)
+        params: list[Any] = [
+            json.dumps(words),
+            json.dumps(words),
+            kind,
+            kind,
+            limit,
+        ]
 
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]

@@ -1,0 +1,5 @@
+I have refactored the search_nodes method in src/better_code_review_graph/graph.py to eliminate dynamic SQL construction.
+The previous implementation used f-strings to build the WHERE clause and concatenated strings for the kind filter and LIMIT clause.
+The new implementation uses a single static SQL string with placeholders for all parameters, including the optional kind filter (using the (? IS NULL OR kind = ?) pattern) and the limit.
+Keywords are handled via json_each to maintain AND logic across multiple words without dynamic SQL.
+This fix addresses Bandit B608 and improves security against SQL injection.
