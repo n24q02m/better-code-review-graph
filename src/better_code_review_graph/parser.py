@@ -780,6 +780,50 @@ class CodeParser:
         self._module_file_cache[cache_key] = resolved
         return resolved
 
+    def _resolve_python_module(self, module: str, caller_dir: Path) -> str | None:
+        """Resolve a Python module to a file path by walking up directories."""
+        rel_path = module.replace(".", "/")
+        candidates = [rel_path + ".py", rel_path + "/__init__.py"]
+        # Walk up from caller's directory to find the module file
+        current = caller_dir
+        while True:
+            for candidate in candidates:
+                target = current / candidate
+                if target.is_file():
+                    return str(target.resolve())
+            if current == current.parent:
+                break
+            current = current.parent
+        return None
+
+    def _resolve_js_module(self, module: str, caller_dir: Path) -> str | None:
+        """Resolve a JS/TS module to a file path, handling extensions and index files."""
+        if not module.startswith("."):
+            return None
+
+        # Relative import — resolve from caller's directory
+        base = caller_dir / module
+        extensions = [".ts", ".tsx", ".js", ".jsx"]
+
+        # Try exact path first (might already have extension)
+        if base.is_file():
+            return str(base.resolve())
+
+        # Try with extensions
+        for ext in extensions:
+            target = base.with_suffix(ext)
+            if target.is_file():
+                return str(target.resolve())
+
+        # Try index file in directory
+        if base.is_dir():
+            for ext in extensions:
+                target = base / f"index{ext}"
+                if target.is_file():
+                    return str(target.resolve())
+
+        return None
+
     def _do_resolve_module(
         self,
         module: str,
@@ -790,38 +834,10 @@ class CodeParser:
         caller_dir = Path(file_path).parent
 
         if language == "python":
-            rel_path = module.replace(".", "/")
-            candidates = [rel_path + ".py", rel_path + "/__init__.py"]
-            # Walk up from caller's directory to find the module file
-            current = caller_dir
-            while True:
-                for candidate in candidates:
-                    target = current / candidate
-                    if target.is_file():
-                        return str(target.resolve())
-                if current == current.parent:
-                    break
-                current = current.parent
+            return self._resolve_python_module(module, caller_dir)
 
-        elif language in ("javascript", "typescript", "tsx"):
-            if module.startswith("."):
-                # Relative import — resolve from caller's directory
-                base = caller_dir / module
-                extensions = [".ts", ".tsx", ".js", ".jsx"]
-                # Try exact path first (might already have extension)
-                if base.is_file():
-                    return str(base.resolve())
-                # Try with extensions
-                for ext in extensions:
-                    target = base.with_suffix(ext)
-                    if target.is_file():
-                        return str(target.resolve())
-                # Try index file in directory
-                if base.is_dir():
-                    for ext in extensions:
-                        target = base / f"index{ext}"
-                        if target.is_file():
-                            return str(target.resolve())
+        if language in ("javascript", "typescript", "tsx"):
+            return self._resolve_js_module(module, caller_dir)
 
         return None
 
