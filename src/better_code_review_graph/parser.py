@@ -222,7 +222,7 @@ class CodeParser:
     def _get_parser(self, language: str):  # type: ignore[arg-type]
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                self._parsers[language] = tslp.get_parser(language)  # type: ignore
             except Exception:
                 return None
         return self._parsers[language]
@@ -1034,21 +1034,27 @@ class CodeParser:
                 imports.append(val)
         return imports
 
+    def _get_go_import_from_spec(self, spec) -> str | None:
+        if spec.type != "import_spec":
+            return None
+        for s in spec.children:
+            if s.type == "interpreted_string_literal":
+                val = s.text.decode("utf-8", errors="replace")
+                return val.strip('"')
+        return None
+
     def _extract_import_go(self, node) -> list[str]:
         imports = []
         for child in node.children:
             if child.type == "import_spec_list":
                 for spec in child.children:
-                    if spec.type == "import_spec":
-                        for s in spec.children:
-                            if s.type == "interpreted_string_literal":
-                                val = s.text.decode("utf-8", errors="replace")
-                                imports.append(val.strip('"'))
+                    val = self._get_go_import_from_spec(spec)
+                    if val:
+                        imports.append(val)
             elif child.type == "import_spec":
-                for s in child.children:
-                    if s.type == "interpreted_string_literal":
-                        val = s.text.decode("utf-8", errors="replace")
-                        imports.append(val.strip('"'))
+                val = self._get_go_import_from_spec(child)
+                if val:
+                    imports.append(val)
         return imports
 
     def _extract_import_rust(self, text: str) -> list[str]:
