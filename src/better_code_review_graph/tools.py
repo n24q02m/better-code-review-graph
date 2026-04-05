@@ -707,7 +707,10 @@ def get_review_context(
     finally:
         store.close()
 
-def _resolve_changed_files(root: Path, base: str, changed_files: list[str] | None) -> list[str]:
+
+def _resolve_changed_files(
+    root: Path, base: str, changed_files: list[str] | None
+) -> list[str]:
     """Resolve changed files using git diff if not provided."""
     if changed_files is not None:
         return changed_files
