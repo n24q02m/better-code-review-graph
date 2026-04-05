@@ -817,6 +817,40 @@ class TestGetDocsSection:
         assert result["section"] == "usage"
         assert result["content"] == "Fallback content works!"
 
+    def test_get_docs_section_runtime_error_fallback(self, tmp_path):
+        """get_docs_section should fallback to repo_root if _get_store raises RuntimeError."""
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        docs_file = docs_dir / "LLM-OPTIMIZED-REFERENCE.md"
+        docs_file.write_text(
+            '<section name="usage">Runtime fallback content.</section>',
+            encoding="utf-8",
+        )
+
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=RuntimeError("Store init failed"),
+        ):
+            result = get_docs_section("usage", repo_root=str(tmp_path))
+
+        assert result["status"] == "ok"
+        assert result["content"] == "Runtime fallback content."
+
+    def test_get_docs_section_auto_detect_root(self, repo_with_graph):
+        """get_docs_section should use root from _get_store when repo_root is None."""
+        docs_dir = repo_with_graph / "docs"
+        docs_dir.mkdir(exist_ok=True)
+        (docs_dir / "LLM-OPTIMIZED-REFERENCE.md").write_text(
+            '<section name="usage">Auto-detected root content.</section>',
+            encoding="utf-8",
+        )
+
+        with patch("better_code_review_graph.tools.find_project_root", return_value=repo_with_graph):
+            result = get_docs_section("usage", repo_root=None)
+
+        assert result["status"] == "ok"
+        assert result["content"] == "Auto-detected root content."
+
 
 # ---------------------------------------------------------------------------
 # Tool 9: find_large_functions

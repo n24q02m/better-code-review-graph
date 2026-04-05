@@ -1053,9 +1053,12 @@ def get_docs_section(section_name: str, repo_root: str | None = None) -> dict[st
         search_roots.append(Path(repo_root))
 
     try:
-        _, root = _get_store(repo_root)
-        if root not in search_roots:
-            search_roots.append(root)
+        store, root = _get_store(repo_root)
+        try:
+            if root not in search_roots:
+                search_roots.append(root)
+        finally:
+            store.close()
     except (RuntimeError, ValueError):
         pass
 
