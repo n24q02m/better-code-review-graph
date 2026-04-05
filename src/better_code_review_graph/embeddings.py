@@ -18,7 +18,9 @@ Switching backend does NOT invalidate existing vectors.
 
 from __future__ import annotations
 
+import array
 import hashlib
+import heapq
 import math
 import os
 import sqlite3
@@ -591,7 +593,7 @@ class EmbeddingStore:
             if node.kind == "File":
                 continue
             text = _node_to_text(node)
-            text_hash = hashlib.sha256(text.encode()).hexdigest()
+            text_hash = "v2:" + hashlib.sha256(text.encode()).hexdigest()
 
             existing = self._conn.execute(
                 "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
@@ -614,6 +616,9 @@ class EmbeddingStore:
         vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
 
         for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
+            norm = math.hypot(*vec)
+            if norm > 0:
+                vec = [x / norm for x in vec]
             blob = _encode_vector(vec)
             self._conn.execute(
                 """INSERT OR REPLACE INTO embeddings
@@ -645,9 +650,13 @@ class EmbeddingStore:
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 
-        # Brute-force cosine similarity scan with precalculated query norm
+        # Pre-normalize query for dot product similarity
+        q_norm = math.hypot(*query_vec)
+        if q_norm > 0:
+            query_vec = [x / q_norm for x in query_vec]
+
+        # Brute-force dot product scan (equivalent to cosine similarity for normalized vectors)
         scored: list[tuple[str, float]] = []
-        query_norm = math.hypot(*query_vec)
         cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
         chunk_size = 500
         while True:
@@ -655,12 +664,12 @@ class EmbeddingStore:
             if not rows:
                 break
             for row in rows:
-                vec = _decode_vector(row["vector"])
-                sim = _cosine_similarity(query_vec, vec, norm_a=query_norm)
+                # array.array is faster than struct.unpack for decoding binary blobs
+                vec = array.array("f", row["vector"])
+                sim = math.sumprod(query_vec, vec)
                 scored.append((row["qualified_name"], sim))
 
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return scored[:limit]
+        return heapq.nlargest(limit, scored, key=lambda x: x[1])
 
     def remove_node(self, qualified_name: str) -> None:
         self._conn.execute(
