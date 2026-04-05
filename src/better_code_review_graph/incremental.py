@@ -392,7 +392,7 @@ def incremental_update(
                     existing_nodes_by_file[node.file_path] = []
                 existing_nodes_by_file[node.file_path].append(node)
 
-        for rel_path, abs_path_raw, abs_path in batch:
+        for rel_path, _abs_path_raw, abs_path in batch:
             try:
                 source = abs_path.read_bytes()
                 fhash = hashlib.sha256(source).hexdigest()
