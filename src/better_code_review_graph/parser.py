@@ -524,9 +524,7 @@ class CodeParser:
                                 EdgeInfo(
                                     kind="CALLS",
                                     source=caller,
-                                    target=ident.text.decode(
-                                        "utf-8", errors="replace"
-                                    ),
+                                    target=ident.text.decode("utf-8", errors="replace"),
                                     file_path=file_path,
                                     line=child.start_point[0] + 1,
                                 )
@@ -760,6 +758,7 @@ class CodeParser:
                 import_map=import_map,
                 defined_names=defined_names,
             )
+
     def _collect_file_scope(
         self,
         root,
