@@ -246,8 +246,9 @@ def find_dependents(store: GraphStore, file_path: str) -> list[str]:
 
     # Also check for DEPENDS_ON edges
     nodes = store.get_nodes_by_file(file_path)
-    for node in nodes:
-        for e in store.get_edges_by_target(node.qualified_name):
+    if nodes:
+        qns = [n.qualified_name for n in nodes]
+        for e in store.get_edges_by_targets(qns):
             if e.kind in ("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS"):
                 dependents.add(e.file_path)
 
@@ -345,13 +346,21 @@ def incremental_update(
                 dependent_files.add(d)
 
     # Combine changed + dependent
-    all_files = set(changed_files) | dependent_files
+    all_files_list = list(set(changed_files) | dependent_files)
+
+    # Pre-fetch existing nodes to check hashes in batch
+    all_abs_paths = [str((repo_root / f).resolve()) for f in all_files_list]
+    existing_nodes_by_file = {}
+    for node in store.get_nodes_by_files(all_abs_paths):
+        if node.file_path not in existing_nodes_by_file:
+            existing_nodes_by_file[node.file_path] = []
+        existing_nodes_by_file[node.file_path].append(node)
 
     total_nodes = 0
     total_edges = 0
     errors = []
 
-    for rel_path in all_files:
+    for rel_path in all_files_list:
         if _should_ignore(rel_path, ignore_patterns):
             continue
         abs_path_raw = repo_root / rel_path
@@ -371,7 +380,7 @@ def incremental_update(
             source = abs_path.read_bytes()
             fhash = hashlib.sha256(source).hexdigest()
             # Check if file actually changed (compare against stored file_hash column)
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
+            existing_nodes = existing_nodes_by_file.get(str(abs_path), [])
             if existing_nodes and existing_nodes[0].file_hash == fhash:
                 # Skip unchanged files (hash match)
                 continue
@@ -391,7 +400,7 @@ def incremental_update(
     store.commit()
 
     return {
-        "files_updated": len(all_files),
+        "files_updated": len(all_files_list),
         "total_nodes": total_nodes,
         "total_edges": total_edges,
         "changed_files": list(changed_files),

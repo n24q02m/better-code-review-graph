@@ -1,0 +1,11 @@
+File: src/better_code_review_graph/graph.py
+Changes:
+- Added get_nodes_by_files for batch fetching nodes by file paths.
+- Added get_edges_by_targets for batch fetching edges by target names.
+- Optimized get_impact_radius to use get_nodes_by_files.
+- Extracted _get_neighbors_and_predecessors helper in get_impact_radius.
+
+File: src/better_code_review_graph/incremental.py
+Changes:
+- Optimized incremental_update to batch fetch existing nodes and their hashes.
+- Optimized find_dependents to batch fetch edges by target qualified names using get_edges_by_targets.
