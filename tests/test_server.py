@@ -339,6 +339,15 @@ class TestConfigTool:
             assert result["status"] == "cache cleared"
             assert result["embeddings_removed"] == 0
 
+    def test_cache_clear_runtime_error_handling(self):
+        with patch(
+            "better_code_review_graph.tools._get_store",
+            side_effect=RuntimeError("Runtime error during store init"),
+        ):
+            result = json.loads(config.fn(action="cache_clear"))
+            assert result["status"] == "cache cleared"
+            assert result["embeddings_removed"] == 0
+
     def test_cache_clear_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
         result = json.loads(config.fn(action="cache_clear", repo_root=str(repo)))
