@@ -142,7 +142,7 @@ class TestGitOperations:
         assert result == ["src/a.py", "src/b.py"]
         mock_run.assert_called_once()
         call_args = mock_run.call_args
-        assert "git" in call_args[0][0]
+        assert any("git" in str(arg) for arg in call_args[0][0])
         assert call_args[1].get("timeout") == 30
 
     @patch("better_code_review_graph.incremental.subprocess.run")
