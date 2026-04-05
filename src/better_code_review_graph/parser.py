@@ -977,7 +977,11 @@ class CodeParser:
         for child in node.children:
             if child.type in ("extends_clause", "implements_clause"):
                 for sub in child.children:
-                    if sub.type in ("identifier", "type_identifier", "nested_identifier"):
+                    if sub.type in (
+                        "identifier",
+                        "type_identifier",
+                        "nested_identifier",
+                    ):
                         bases.append(sub.text.decode("utf-8", errors="replace"))
         return bases
 
@@ -989,7 +993,9 @@ class CodeParser:
                     if sub.type == "user_defined_type":
                         for ident in sub.children:
                             if ident.type == "identifier":
-                                bases.append(ident.text.decode("utf-8", errors="replace"))
+                                bases.append(
+                                    ident.text.decode("utf-8", errors="replace")
+                                )
         return bases
 
     def _get_bases_go(self, node) -> list[str]:
@@ -1002,7 +1008,9 @@ class CodeParser:
                             if field_node.type == "field_declaration_list":
                                 for f in field_node.children:
                                     if f.type == "type_identifier":
-                                        bases.append(f.text.decode("utf-8", errors="replace"))
+                                        bases.append(
+                                            f.text.decode("utf-8", errors="replace")
+                                        )
         return bases
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
@@ -1068,7 +1076,7 @@ class CodeParser:
     def _get_go_import_from_spec(self, spec) -> str | None:
         for s in spec.children:
             if s.type == "interpreted_string_literal":
-                return s.text.decode("utf-8", errors="replace").strip("\"")
+                return s.text.decode("utf-8", errors="replace").strip('"')
         return None
 
     def _extract_import_rust(self, text: str) -> list[str]:
