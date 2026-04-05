@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -486,6 +487,29 @@ class TestCloudEmbeddingBackend:
 
 
 class TestEmbeddingStore:
+    def test_migration_adds_provider_column(self, tmp_path):
+        """Test that provider column is added if missing (schema migration)."""
+        db_path = tmp_path / "migration.db"
+        # Manually create old schema
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE embeddings (
+                qualified_name TEXT PRIMARY KEY,
+                vector BLOB NOT NULL,
+                text_hash TEXT NOT NULL
+            );
+        """)
+        conn.close()
+
+        # Initialize store - should trigger migration
+        store = EmbeddingStore(db_path)
+
+        # Verify provider column exists
+        cursor = store._conn.execute("PRAGMA table_info(embeddings)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        assert "provider" in columns
+        store.close()
+
     def test_store_initializes(self, tmp_path):
         db = tmp_path / "graph.db"
         backend = Qwen3EmbedBackend()
