@@ -281,6 +281,22 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
+    def get_nodes_by_files(self, file_paths: list[str]) -> list[GraphNode]:
+        """Batch fetch all nodes for multiple file paths in a single query."""
+        if not file_paths:
+            return []
+
+        results: list[GraphNode] = []
+        batch_size = 450
+        for i in range(0, len(file_paths), batch_size):
+            batch = file_paths[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_node(r) for r in rows)
+        return results
+
     def get_nodes_by_qualified_names(
         self, qualified_names: list[str]
     ) -> list[GraphNode]:
@@ -400,11 +416,7 @@ class GraphStore:
         nxg = self._build_networkx_graph()
 
         # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        seeds = {n.qualified_name for n in self.get_nodes_by_files(changed_files)}
 
         # BFS outward through all edge types
         visited: set[str] = set()
@@ -417,18 +429,10 @@ class GraphStore:
             next_frontier: set[str] = set()
             for qn in frontier:
                 visited.add(qn)
-                # Forward edges (things this node affects)
-                if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor not in visited:
-                            next_frontier.add(neighbor)
-                            impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred not in visited:
-                            next_frontier.add(pred)
-                            impacted.add(pred)
+                discovered = self._get_neighbors_and_predecessors(nxg, qn, visited)
+                next_frontier.update(discovered)
+                impacted.update(discovered)
+
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True
@@ -596,6 +600,20 @@ class GraphStore:
                 g.add_edge(r["source_qualified"], r["target_qualified"], kind=r["kind"])
             self._nxg_cache = g
             return g
+
+    def _get_neighbors_and_predecessors(
+        self, nxg: nx.DiGraph, qn: str, visited: set[str]
+    ) -> set[str]:
+        """Helper to find all unvisited neighbors and predecessors for a node."""
+        discovered = set()
+        if qn in nxg:
+            for neighbor in nxg.neighbors(qn):
+                if neighbor not in visited:
+                    discovered.add(neighbor)
+            for pred in nxg.predecessors(qn):
+                if pred not in visited:
+                    discovered.add(pred)
+        return discovered
 
     def _make_qualified(self, node: NodeInfo) -> str:
         if node.kind == "File":
