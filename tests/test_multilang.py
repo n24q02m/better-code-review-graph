@@ -468,4 +468,5 @@ class TestSolidityParsing:
             for n in self.nodes
             if n.kind == "Function" and n.parent_name == "RewardMath"
         }
+        assert funcs["mulPrecise"].return_type is not None
         assert "uint256" in funcs["mulPrecise"].return_type

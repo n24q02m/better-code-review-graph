@@ -238,13 +238,13 @@ class TestCLIIntegration:
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "test"},
             ) as mock_ensure,
-            patch("better_code_review_graph.server.mcp") as mock_mcp,
+            patch("better_code_review_graph.server.serve_main") as mock_serve,
         ):
             from better_code_review_graph.cli import main
 
             main()
             mock_ensure.assert_called_once()
-            mock_mcp.run.assert_called_once()
+            mock_serve.assert_called_once()
 
     def test_main_continues_on_relay_error(self):
         with (
@@ -252,10 +252,11 @@ class TestCLIIntegration:
                 "better_code_review_graph.relay_setup.ensure_config",
                 new_callable=AsyncMock,
                 side_effect=Exception("relay broken"),
-            ),
-            patch("better_code_review_graph.server.mcp") as mock_mcp,
+            ) as mock_ensure,
+            patch("better_code_review_graph.server.serve_main") as mock_serve,
         ):
             from better_code_review_graph.cli import main
 
             main()
-            mock_mcp.run.assert_called_once()
+            mock_ensure.assert_called_once()
+            mock_serve.assert_called_once()
