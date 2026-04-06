@@ -80,6 +80,8 @@ def resolve_credential_state() -> CredentialState:
                     os.environ[key] = value
             logger.info("Config loaded from encrypted file")
             _state = CredentialState.CONFIGURED
+            # Propagate shared cloud keys to sibling servers on every startup
+            _share_cloud_keys_to_peers(saved)
             return _state
     except Exception:
         pass
