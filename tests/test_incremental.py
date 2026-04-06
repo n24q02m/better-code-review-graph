@@ -228,6 +228,46 @@ class TestIncrementalUpdate:
         finally:
             store.close()
 
+    def test_incremental_dependent_value_error(self, tmp_path):
+        # Coverage for ValueError catch when converting dependent file back to relative path
+        db_path = tmp_path / "test.db"
+        store = GraphStore(db_path)
+        try:
+            # Mock find_dependents to return a path outside repo_root
+            with patch("better_code_review_graph.incremental.find_dependents") as mock_find:
+                mock_find.return_value = ["/outside/repo/file.py"]
+                result = incremental_update(tmp_path, store, changed_files=["mod.py"])
+                assert "/outside/repo/file.py" in result["dependent_files"]
+        finally:
+            store.close()
+
+    def test_incremental_exceptions(self, tmp_path):
+        # Coverage for OSError and generic Exception during parsing
+        db_path = tmp_path / "test.db"
+        store = GraphStore(db_path)
+        py_file = tmp_path / "error.py"
+        py_file.write_text("def a(): pass")
+
+        try:
+            with patch("better_code_review_graph.incremental.CodeParser.parse_bytes", side_effect=OSError("os error")):
+                result = incremental_update(tmp_path, store, changed_files=["error.py"])
+                assert any("os error" in str(e) for e in result["errors"])
+
+            with patch("better_code_review_graph.incremental.CodeParser.parse_bytes", side_effect=ValueError("other error")):
+                result = incremental_update(tmp_path, store, changed_files=["error.py"])
+                assert any("other error" in str(e) for e in result["errors"])
+        finally:
+            store.close()
+
+    def test_incremental_with_no_changes_2(self, tmp_path):
+        db_path = tmp_path / "test.db"
+        store = GraphStore(db_path)
+        try:
+            result = incremental_update(tmp_path, store, changed_files=[])
+            assert result["files_updated"] == 0
+        finally:
+            store.close()
+
     def test_incremental_with_changed_file(self, tmp_path):
         py_file = tmp_path / "mod.py"
         py_file.write_text("def greet():\n    return 'hi'\n")

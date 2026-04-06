@@ -232,18 +232,19 @@ class TestEnsureConfigRelay:
 
 class TestCLIIntegration:
     def test_main_calls_ensure_config(self):
+        from better_code_review_graph.credential_state import reset_state
+        import os
         with (
             patch(
-                "better_code_review_graph.relay_setup.ensure_config",
-                new_callable=AsyncMock,
-                return_value={"GEMINI_API_KEY": "test"},
-            ) as mock_ensure,
+                "better_code_review_graph.credential_state.resolve_credential_state",
+            ) as mock_resolve,
             patch("better_code_review_graph.server.mcp") as mock_mcp,
         ):
+            reset_state()
             from better_code_review_graph.cli import main
 
             main()
-            mock_ensure.assert_called_once()
+            mock_resolve.assert_called_once()
             mock_mcp.run.assert_called_once()
 
     def test_main_continues_on_relay_error(self):
