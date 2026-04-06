@@ -351,6 +351,19 @@ def incremental_update(
     total_edges = 0
     errors = []
 
+    # Pre-fetch existing file hashes to prevent N+1 DB queries in the loop
+    abs_paths_to_check = []
+    for rel_path in all_files:
+        if not _should_ignore(rel_path, ignore_patterns):
+            abs_paths_to_check.append(str((repo_root / rel_path).resolve()))
+
+    existing_nodes_batch = (
+        store.get_nodes_by_files(abs_paths_to_check) if abs_paths_to_check else []
+    )
+    file_hashes = {
+        n.file_path: n.file_hash for n in existing_nodes_batch if n.file_hash
+    }
+
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
@@ -371,8 +384,8 @@ def incremental_update(
             source = abs_path.read_bytes()
             fhash = hashlib.sha256(source).hexdigest()
             # Check if file actually changed (compare against stored file_hash column)
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
-            if existing_nodes and existing_nodes[0].file_hash == fhash:
+            existing_hash = file_hashes.get(str(abs_path))
+            if existing_hash == fhash:
                 # Skip unchanged files (hash match)
                 continue
 

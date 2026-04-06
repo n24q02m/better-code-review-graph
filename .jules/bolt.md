@@ -1,3 +1,3 @@
-## 2024-05-24 - N+1 Graph Queries Bottleneck
-**Learning:** SQLite backend graph traversal functions in `tools.py` suffer from N+1 query bottlenecks when resolving target node objects one-by-one from edges.
-**Action:** When resolving node relationships, collect target qualified names first and batch fetch using `get_nodes_by_qualified_names` to retrieve nodes, preventing N+1 queries. Note that `imports_of` and `importers_of` only return dictionaries of qualified names or file paths, not full node objects, and thus do not require this optimization.
+## 2026-04-06 - SQLite N+1 Batching via `json_each`
+**Learning:** In a SQLite-backed Python application, replacing a loop that queries the database for single records with a single batch query using `json_each` to pass a list (avoiding query parameter limits) significantly reduces I/O overhead and avoids N+1 query bottlenecks.
+**Action:** When iterating over a list of items to perform individual `SELECT` queries, replace the loop by passing the entire list to a batch query that uses `json_each` and load the results into memory (e.g. into a hash map/dictionary) for O(1) lookups inside the application logic.
