@@ -25,6 +25,26 @@ def force_local_embeddings(monkeypatch):
     monkeypatch.setenv("EMBEDDING_BACKEND", "local")
 
 
+@pytest.fixture(autouse=True)
+def mock_credential_state(monkeypatch):
+    """Prevent tests from triggering real relay sessions.
+
+    Patches _maybe_include_setup_hint to passthrough and
+    resolve_credential_state to set CONFIGURED state.
+    """
+    from better_code_review_graph import server as _srv
+    from better_code_review_graph.credential_state import CredentialState
+
+    def _noop_hint(result: dict) -> dict:
+        return result
+
+    monkeypatch.setattr(_srv, "_maybe_include_setup_hint", _noop_hint)
+    monkeypatch.setattr(
+        "better_code_review_graph.credential_state._state",
+        CredentialState.CONFIGURED,
+    )
+
+
 @pytest.fixture
 def tmp_graph_store(tmp_path):
     """Create a temporary GraphStore for testing."""

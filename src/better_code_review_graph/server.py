@@ -1,12 +1,13 @@
 """MCP server entry point for Better Code Review Graph.
 
-5-tool architecture: graph + query + review (3 main) + config + help.
+5-tool architecture: graph + query + review (3 main) + config + setup + help.
 Run as: better-code-review-graph serve
 """
 
 from __future__ import annotations
 
 import json
+import os
 from importlib.resources import files
 
 from fastmcp import FastMCP
@@ -34,19 +35,36 @@ def _json(obj: object) -> str:
     return json.dumps(obj, indent=2)
 
 
+def _maybe_include_setup_hint(result: dict) -> dict:
+    """If in awaiting_setup, add hint about cloud setup to response."""
+    from .credential_state import CredentialState, get_setup_url, get_state
+
+    if get_state() == CredentialState.AWAITING_SETUP:
+        url = get_setup_url()
+        if url:
+            result["_setup_hint"] = (
+                f"Cloud embeddings available. Configure API keys: {url}"
+            )
+        else:
+            result["_setup_hint"] = (
+                "Cloud embeddings available. Use config(action='setup_start') to configure."
+            )
+    return result
+
+
 mcp = FastMCP(
     "better-code-review-graph",
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
-        "context-aware code reviews. 5 tools: graph (build/embed/stats), "
+        "context-aware code reviews. 6 tools: graph (build/embed/stats), "
         "query (search/impact/patterns), review (code review context), "
-        "config (status/set), help (full docs)."
+        "config (status/set), setup (relay/credentials), help (full docs)."
     ),
 )
 
 
 # ---------------------------------------------------------------------------
-# Tool 1: graph — lifecycle (build, update, stats, embed)
+# Tool 1: graph -- lifecycle (build, update, stats, embed)
 # ---------------------------------------------------------------------------
 
 
@@ -95,7 +113,9 @@ def graph(
         case "stats":
             return _json(list_graph_stats(repo_root=repo_root))
         case "embed":
-            return _json(embed_graph(repo_root=repo_root))
+            result = embed_graph(repo_root=repo_root)
+            result = _maybe_include_setup_hint(result)
+            return _json(result)
         case _:
             import difflib
 
@@ -111,7 +131,7 @@ def graph(
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: query — read operations (query, search, impact, large_functions)
+# Tool 2: query -- read operations (query, search, impact, large_functions)
 # ---------------------------------------------------------------------------
 
 
@@ -184,11 +204,11 @@ def query(
         case "search":
             if not search_query:
                 return _json({"error": "search_query is required for search action"})
-            return _json(
-                semantic_search_nodes(
-                    query=search_query, kind=kind, limit=limit, repo_root=repo_root
-                )
+            result = semantic_search_nodes(
+                query=search_query, kind=kind, limit=limit, repo_root=repo_root
             )
+            result = _maybe_include_setup_hint(result)
+            return _json(result)
         case "impact":
             return _json(
                 get_impact_radius(
@@ -224,7 +244,7 @@ def query(
 
 
 # ---------------------------------------------------------------------------
-# Tool 3: review — token-efficient code review context
+# Tool 3: review -- token-efficient code review context
 # ---------------------------------------------------------------------------
 
 
@@ -449,7 +469,151 @@ def _config_cache_clear(repo_root: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 5: help (documentation)
+# Tool 5: setup (credential relay management)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    description=(
+        "Credential setup and relay management. Actions: "
+        "status|start|skip|reset|complete. "
+        "status: Show current credential state. "
+        "start: Start relay setup to configure API keys via browser. "
+        "skip: Set local mode (skip relay permanently). "
+        "reset: Clear credentials and reset state. "
+        "complete: Re-resolve credentials from env vars."
+    ),
+    annotations=ToolAnnotations(
+        title="Setup",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=True,
+    ),
+)
+async def setup(
+    action: str,
+    force: bool = False,
+) -> str:
+    """Credential setup and relay management.
+
+    Actions:
+    - status: Show current credential state and setup URL
+    - start: Start relay setup to configure API keys via browser
+    - skip: Set local mode (skip relay permanently)
+    - reset: Clear credentials and reset to awaiting_setup
+    - complete: Re-resolve credentials from env vars (pick up manually set keys)
+    """
+    match action:
+        case "status":
+            from . import credential_state as _cs
+
+            state = _cs.get_state()
+            return _json(
+                {
+                    "state": state.value,
+                    "setup_url": _cs.get_setup_url(),
+                    "cloud_keys_in_env": [
+                        k for k in _cs.CLOUD_KEYS if os.environ.get(k)
+                    ],
+                }
+            )
+
+        case "start":
+            from .credential_state import (
+                CredentialState,
+                get_state,
+                trigger_relay_setup,
+            )
+
+            if get_state() == CredentialState.CONFIGURED and not force:
+                return _json(
+                    {
+                        "status": "already_configured",
+                        "message": "Already configured. Use force=true to reconfigure.",
+                    }
+                )
+            url = await trigger_relay_setup(force=True)
+            if url:
+                return _json(
+                    {
+                        "status": "setup_started",
+                        "setup_url": url,
+                        "message": "Open this URL to configure API keys.",
+                    }
+                )
+            return _json(
+                {
+                    "status": "error",
+                    "message": "Failed to start relay session.",
+                }
+            )
+
+        case "skip":
+            from mcp_relay_core import set_local_mode
+
+            from .credential_state import CredentialState, set_state
+
+            set_local_mode(SERVER_NAME)
+            set_state(CredentialState.LOCAL)
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Local mode set. Relay will not trigger on restart.",
+                }
+            )
+
+        case "reset":
+            from .credential_state import reset_state
+
+            reset_state()
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Credentials cleared. Next tool call will offer setup.",
+                }
+            )
+
+        case "complete":
+            from .credential_state import (
+                get_state as _get_state,
+            )
+            from .credential_state import (
+                resolve_credential_state,
+            )
+
+            resolve_credential_state()
+            state = _get_state()
+            return _json(
+                {
+                    "status": "ok",
+                    "state": state.value,
+                    "message": "Credential state refreshed.",
+                }
+            )
+
+        case _:
+            import difflib
+
+            valid_actions = [
+                "complete",
+                "reset",
+                "skip",
+                "start",
+                "status",
+            ]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
+            return _json(
+                {
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
+                }
+            )
+
+
+# ---------------------------------------------------------------------------
+# Tool 6: help (documentation)
 # ---------------------------------------------------------------------------
 
 
@@ -514,6 +678,13 @@ def help(topic: str = "graph") -> str:
 
 
 # ---------------------------------------------------------------------------
+# Constants (used by setup tool)
+# ---------------------------------------------------------------------------
+
+SERVER_NAME = "better-code-review-graph"
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -522,6 +693,12 @@ def serve_main(repo_root: str | None = None) -> None:
     """Run the MCP server via stdio."""
     global _default_repo_root
     _default_repo_root = repo_root
+
+    # Non-blocking credential resolution (fast, <10ms)
+    from .credential_state import resolve_credential_state
+
+    resolve_credential_state()
+
     mcp.run(transport="stdio")
 
 
