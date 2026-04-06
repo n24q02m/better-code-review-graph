@@ -3,6 +3,8 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.incremental import (
     _is_binary,
@@ -133,8 +135,6 @@ class TestIsBinary:
 
 class TestGitOperations:
     def test_get_changed_files_invalid_base(self, tmp_path):
-        import pytest
-        from better_code_review_graph.incremental import incremental_update
         with pytest.raises(ValueError, match="Invalid git ref"):
             get_changed_files(tmp_path, base="-invalid")
         with pytest.raises(ValueError, match="Invalid git ref"):
