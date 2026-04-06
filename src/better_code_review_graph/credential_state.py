@@ -195,6 +195,26 @@ async def _poll_relay_background(
         _state = CredentialState.CONFIGURED
         logger.info("Relay config applied successfully")
 
+        # Share cloud keys with wet-mcp and mnemo-mcp peers
+        _share_cloud_keys_to_peers(config)
+
+        # Notify browser: setup complete (CRG has no GDrive OAuth step)
+        session_id = getattr(session, "session_id", None)
+        if session_id:
+            try:
+                from mcp_relay_core.relay.client import send_message
+
+                await send_message(
+                    relay_base,
+                    session_id,
+                    {
+                        "type": "complete",
+                        "text": "Setup complete! Cloud embedding configured. You can close this tab.",
+                    },
+                )
+            except Exception:
+                pass
+
         # Release session lock
         from mcp_relay_core import release_session_lock
 
@@ -213,6 +233,24 @@ async def _poll_relay_background(
             _state = CredentialState.AWAITING_SETUP
     except Exception:
         _state = CredentialState.AWAITING_SETUP
+
+
+def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
+    """Write shared cloud API keys to wet-mcp and mnemo-mcp config files."""
+    try:
+        from mcp_relay_core.storage.config_file import write_config
+
+        shared = {k: v for k, v in config.items() if k in CLOUD_KEYS and v}
+        if not shared:
+            return
+        for peer in ("wet-mcp", "mnemo-mcp"):
+            try:
+                write_config(peer, shared)
+                logger.debug("Shared cloud keys to {}", peer)
+            except Exception as e:
+                logger.debug("Failed to share keys to {}: {}", peer, e)
+    except Exception as e:
+        logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
 
 
 def set_state(state: CredentialState) -> None:

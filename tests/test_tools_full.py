@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1320,6 +1321,10 @@ class TestQueryGraphEdgeCases:
             if r["name"] == "external_func":
                 assert r["relative_path"] == "/external/path/module.py"
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="chmod 000 does not deny read access on Windows",
+    )
     def test_review_context_source_read_error(self, repo_with_graph):
         """Source snippet handling for files that raise exceptions during read."""
         import os
