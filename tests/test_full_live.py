@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from mcp import StdioServerParameters
@@ -111,8 +112,6 @@ function totalArea(shapes: Shape[]): number {
 export { Circle, Rectangle, totalArea };
 """
 
-
-from typing import Any
 
 def _parse_result_text(result) -> Any:
     """Extract text from MCP call_tool result and try to parse as JSON."""
