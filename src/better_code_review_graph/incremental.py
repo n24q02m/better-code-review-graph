@@ -9,6 +9,8 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import logging
+import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -127,29 +129,34 @@ def _is_binary(path: Path) -> bool:
 
 
 _GIT_TIMEOUT = 30  # seconds
+GIT_EXE = shutil.which("git") or "git"
 
 
 def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
     """Get list of changed files via git diff."""
     if base.startswith("-"):
         raise ValueError(f"Invalid git ref: {base}")
+    if not re.match(r"^[a-zA-Z0-9_.~^/@{}-]+$", base):
+        raise ValueError(f"Invalid git ref: {base}")
 
     try:
-        result = subprocess.run(
-            ["git", "diff", "--name-only", base],
+        result = subprocess.run(  # noqa: S603
+            [GIT_EXE, "diff", "--name-only", base],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            check=False,
         )
         if result.returncode != 0:
             # Fallback: try diff against empty tree (initial commit)
-            result = subprocess.run(
-                ["git", "diff", "--name-only", "--cached"],
+            result = subprocess.run(  # noqa: S603
+                [GIT_EXE, "diff", "--name-only", "--cached"],
                 capture_output=True,
                 text=True,
                 cwd=str(repo_root),
                 timeout=_GIT_TIMEOUT,
+                check=False,
             )
         files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
         return files
@@ -160,12 +167,13 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
 def get_staged_and_unstaged(repo_root: Path) -> list[str]:
     """Get all modified files (staged + unstaged + untracked)."""
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
+        result = subprocess.run(  # noqa: S603
+            [GIT_EXE, "status", "--porcelain"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            check=False,
         )
         files = []
         for line in result.stdout.splitlines():
@@ -183,12 +191,13 @@ def get_staged_and_unstaged(repo_root: Path) -> list[str]:
 def get_all_tracked_files(repo_root: Path) -> list[str]:
     """Get all files tracked by git."""
     try:
-        result = subprocess.run(
-            ["git", "ls-files"],
+        result = subprocess.run(  # noqa: S603
+            [GIT_EXE, "ls-files"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            check=False,
         )
         return [f.strip() for f in result.stdout.splitlines() if f.strip()]
     except (FileNotFoundError, subprocess.TimeoutExpired):
