@@ -132,6 +132,18 @@ class TestIsBinary:
 
 
 class TestGitOperations:
+    def test_get_changed_files_invalid_base(self, tmp_path):
+        import pytest
+        from better_code_review_graph.incremental import incremental_update
+        with pytest.raises(ValueError, match="Invalid git ref"):
+            get_changed_files(tmp_path, base="-invalid")
+        with pytest.raises(ValueError, match="Invalid git ref"):
+            get_changed_files(tmp_path, base="invalid base")
+
+        store_mock = MagicMock()
+        with pytest.raises(ValueError, match="Invalid git ref"):
+            incremental_update(tmp_path, store_mock, base="-invalid")
+
     @patch("better_code_review_graph.incremental.subprocess.run")
     def test_get_changed_files(self, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
