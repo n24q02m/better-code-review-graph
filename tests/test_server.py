@@ -277,10 +277,18 @@ def _make_mini_repo(tmp_path):
 
 
 class TestConfigTool:
-    def test_unknown_action(self):
-        result = json.loads(config.fn(action="nonexistent"))
+    def test_unknown_action_no_suggestion(self):
+        result = json.loads(config.fn(action="zzzz"))
         assert "error" in result
-        assert "valid_actions" in result
+        assert "Unknown action 'zzzz'." in result["error"]
+        assert "Did you mean" not in result["error"]
+        assert result["valid_actions"] == ["cache_clear", "set", "status"]
+
+    def test_unknown_action_with_suggestion(self):
+        result = json.loads(config.fn(action="stat"))
+        assert "error" in result
+        assert "Unknown action 'stat'. Did you mean 'status'?" in result["error"]
+        assert result["valid_actions"] == ["cache_clear", "set", "status"]
 
     def test_set_missing_key(self):
         result = json.loads(config.fn(action="set"))
