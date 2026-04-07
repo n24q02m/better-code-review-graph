@@ -7,13 +7,11 @@ and _maybe_include_setup_hint helper.
 from __future__ import annotations
 
 import json
-import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from better_code_review_graph.credential_state import CredentialState
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,6 +44,8 @@ class TestMaybeIncludeSetupHint:
         # We re-import the original implementation directly to test it.
         from better_code_review_graph.credential_state import (
             CredentialState as _CS,
+        )
+        from better_code_review_graph.credential_state import (
             get_setup_url,
             get_state,
         )

@@ -256,7 +256,7 @@ class TestCLIIntegration:
                 "better_code_review_graph.credential_state.resolve_credential_state",
                 side_effect=Exception("relay broken"),
             ),
-            patch("better_code_review_graph.server.mcp") as mock_mcp,
+            patch("better_code_review_graph.server.mcp"),
         ):
             from better_code_review_graph.cli import main
 
