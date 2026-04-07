@@ -722,7 +722,7 @@ def get_review_context(
             context["source_snippets"] = snippets
 
         # Generate review guidance
-        guidance = _generate_review_guidance(impact, changed_files)
+        guidance = _generate_review_guidance(impact)
         context["review_guidance"] = guidance
 
         summary_parts = [
@@ -776,7 +776,7 @@ def _extract_relevant_lines(lines: list[str], nodes: list, file_path: str) -> st
     return "\n".join(parts)
 
 
-def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
+def _generate_review_guidance(impact: dict) -> str:
     """Generate review guidance based on the impact analysis."""
     guidance_parts = []
 
