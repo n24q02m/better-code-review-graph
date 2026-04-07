@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import sqlite3
@@ -578,52 +579,71 @@ class EmbeddingStore:
         """Compute and store embeddings for a list of nodes.
 
         Skips File nodes and nodes whose text + provider haven't changed.
+        Processes nodes in batches to optimize database and backend calls.
         """
         if not self.backend:
             return 0
 
         provider_name = self._get_backend_name()
+        total_embedded = 0
 
-        # Filter to nodes that need embedding
-        to_embed: list[tuple[GraphNode, str, str]] = []
-
-        for node in nodes:
-            if node.kind == "File":
+        for i in range(0, len(nodes), batch_size):
+            batch = nodes[i : i + batch_size]
+            qns = [n.qualified_name for n in batch if n.kind != "File"]
+            if not qns:
                 continue
-            text = _node_to_text(node)
-            text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
-
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
-                continue
-            to_embed.append((node, text, text_hash))
-
-        if not to_embed:
-            return 0
-
-        # Encode in batches
-        texts = [t for _, t, _ in to_embed]
-        vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
-
-        for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
-            blob = _encode_vector(vec)
-            self._conn.execute(
-                """INSERT OR REPLACE INTO embeddings
-                   (qualified_name, vector, text_hash, provider)
-                   VALUES (?, ?, ?, ?)""",
-                (node.qualified_name, blob, text_hash, provider_name),
+            # Batch fetch existing metadata to avoid N+1 queries
+            existing_data = {}
+            cursor = self._conn.execute(
+                "SELECT qualified_name, text_hash, provider FROM embeddings "
+                "WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                (json.dumps(qns),),
             )
+            for row in cursor:
+                existing_data[row["qualified_name"]] = (
+                    row["text_hash"],
+                    row["provider"],
+                )
 
-        self._conn.commit()
-        return len(to_embed)
+            # Filter to nodes that actually need embedding
+            to_embed: list[tuple[GraphNode, str, str]] = []
+            for node in batch:
+                if node.kind == "File":
+                    continue
+                text = _node_to_text(node)
+                text_hash = hashlib.sha256(text.encode()).hexdigest()
+
+                existing = existing_data.get(node.qualified_name)
+                if (
+                    existing
+                    and existing[0] == text_hash
+                    and existing[1] == provider_name
+                ):
+                    continue
+                to_embed.append((node, text, text_hash))
+
+            if not to_embed:
+                continue
+
+            # Encode batch
+            texts = [t for _, t, _ in to_embed]
+            vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
+
+            # Batch insert
+            for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
+                blob = _encode_vector(vec)
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO embeddings
+                       (qualified_name, vector, text_hash, provider)
+                       VALUES (?, ?, ?, ?)""",
+                    (node.qualified_name, blob, text_hash, provider_name),
+                )
+
+            self._conn.commit()
+            total_embedded += len(to_embed)
+
+        return total_embedded
 
     def search(self, query: str, limit: int = 20) -> list[tuple[str, float]]:
         """Search for nodes by semantic similarity.
