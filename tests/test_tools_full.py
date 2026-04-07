@@ -624,7 +624,7 @@ class TestGenerateReviewGuidance:
             "impacted_files": [],
             "edges": [],
         }
-        result = _generate_review_guidance(impact, ["a.py"])
+        result = _generate_review_guidance(impact)
         assert "well-contained" in result
 
     def test_untested_functions(self):
@@ -639,7 +639,7 @@ class TestGenerateReviewGuidance:
             "impacted_files": [],
             "edges": [],
         }
-        result = _generate_review_guidance(impact, ["a.py"])
+        result = _generate_review_guidance(impact)
         assert "test coverage" in result.lower() or "lack test" in result.lower()
 
     def test_wide_blast_radius(self):
@@ -649,7 +649,7 @@ class TestGenerateReviewGuidance:
             "impacted_files": [],
             "edges": [],
         }
-        result = _generate_review_guidance(impact, ["a.py"])
+        result = _generate_review_guidance(impact)
         assert "Wide blast radius" in result
 
     def test_inheritance_edges(self):
@@ -661,7 +661,7 @@ class TestGenerateReviewGuidance:
             "impacted_files": [],
             "edges": [edge],
         }
-        result = _generate_review_guidance(impact, ["a.py"])
+        result = _generate_review_guidance(impact)
         assert "inheritance" in result.lower() or "Liskov" in result
 
     def test_cross_file_impact(self):
@@ -671,7 +671,7 @@ class TestGenerateReviewGuidance:
             "impacted_files": ["b.py", "c.py", "d.py", "e.py"],
             "edges": [],
         }
-        result = _generate_review_guidance(impact, ["a.py"])
+        result = _generate_review_guidance(impact)
         assert "impact" in result.lower()
 
 
