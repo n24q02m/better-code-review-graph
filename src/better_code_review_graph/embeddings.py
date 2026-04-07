@@ -574,7 +574,7 @@ class EmbeddingStore:
             return "none"
         return getattr(self.backend, "name", "unknown")
 
-    def embed_nodes(self, nodes: list[GraphNode], batch_size: int = 64) -> int:
+    def embed_nodes(self, nodes: list[GraphNode]) -> int:
         """Compute and store embeddings for a list of nodes.
 
         Skips File nodes and nodes whose text + provider haven't changed.
