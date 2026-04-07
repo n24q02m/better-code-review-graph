@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import sqlite3
@@ -584,6 +585,20 @@ class EmbeddingStore:
 
         provider_name = self._get_backend_name()
 
+        # Batch fetch existing metadata to avoid N+1 queries
+        qualified_names = [n.qualified_name for n in nodes if n.kind != "File"]
+        existing_meta = {}
+        if qualified_names:
+            batch_sz = 450
+            for i in range(0, len(qualified_names), batch_sz):
+                batch = qualified_names[i : i + batch_sz]
+                rows = self._conn.execute(
+                    "SELECT qualified_name, text_hash, provider FROM embeddings WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                    (json.dumps(batch),),
+                ).fetchall()
+                for r in rows:
+                    existing_meta[r["qualified_name"]] = (r["text_hash"], r["provider"])
+
         # Filter to nodes that need embedding
         to_embed: list[tuple[GraphNode, str, str]] = []
 
@@ -593,16 +608,9 @@ class EmbeddingStore:
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
+            existing = existing_meta.get(node.qualified_name)
 
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+            if existing and existing[0] == text_hash and existing[1] == provider_name:
                 continue
             to_embed.append((node, text, text_hash))
 

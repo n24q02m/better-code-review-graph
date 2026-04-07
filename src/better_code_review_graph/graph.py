@@ -281,6 +281,25 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
+    def get_nodes_by_files(self, file_paths: list[str]) -> list[GraphNode]:
+        """Batch fetch nodes by their file paths to prevent N+1 queries."""
+        if not file_paths:
+            return []
+
+        unique_paths = list(set(file_paths))
+        results: list[GraphNode] = []
+        batch_size = 450
+
+        for i in range(0, len(unique_paths), batch_size):
+            batch = unique_paths[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_node(r) for r in rows)
+
+        return results
+
     def get_nodes_by_qualified_names(
         self, qualified_names: list[str]
     ) -> list[GraphNode]:
@@ -323,6 +342,25 @@ class GraphStore:
                 "SELECT * FROM edges WHERE target_qualified = ?", (bare_name,)
             ).fetchall()
         return [self._row_to_edge(r) for r in rows]
+
+    def get_edges_by_targets(self, qualified_names: list[str]) -> list[GraphEdge]:
+        """Batch fetch edges by their target qualified names."""
+        if not qualified_names:
+            return []
+
+        unique_qns = list(set(qualified_names))
+        results: list[GraphEdge] = []
+        batch_size = 450
+
+        for i in range(0, len(unique_qns), batch_size):
+            batch = unique_qns[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_edge(r) for r in rows)
+
+        return results
 
     def search_edges_by_target_name(
         self, name: str, kind: str = "CALLS"
@@ -400,11 +438,7 @@ class GraphStore:
         nxg = self._build_networkx_graph()
 
         # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        seeds = {n.qualified_name for n in self.get_nodes_by_files(changed_files)}
 
         # BFS outward through all edge types
         visited: set[str] = set()
@@ -563,24 +597,24 @@ class GraphStore:
     def get_edges_among(self, qualified_names: set[str]) -> list[GraphEdge]:
         """Return edges where both source and target are in the given set.
 
-        Batches the source-side IN clause to stay under SQLite's default
-        SQLITE_MAX_VARIABLE_NUMBER limit, then filters targets in Python.
+        Uses json_each to avoid dynamic SQL construction and filters both
+        source and target in SQL to minimize data transfer.
         """
         if not qualified_names:
             return []
         qns = list(qualified_names)
         results: list[GraphEdge] = []
-        batch_size = 450  # Stay well under SQLite's default 999 limit
+        batch_size = 450  # Stay well under SQLites default 999 limit
+        qns_json = json.dumps(qns)
         for i in range(0, len(qns), batch_size):
             batch = qns[i : i + batch_size]
             rows = self._conn.execute(
-                "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
+                """SELECT * FROM edges
+                   WHERE source_qualified IN (SELECT value FROM json_each(?))
+                     AND target_qualified IN (SELECT value FROM json_each(?))""",
+                (json.dumps(batch), qns_json),
             ).fetchall()
-            for r in rows:
-                edge = self._row_to_edge(r)
-                if edge.target_qualified in qualified_names:
-                    results.append(edge)
+            results.extend(self._row_to_edge(r) for r in rows)
         return results
 
     # --- Internal helpers ---

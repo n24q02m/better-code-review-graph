@@ -246,8 +246,9 @@ def find_dependents(store: GraphStore, file_path: str) -> list[str]:
 
     # Also check for DEPENDS_ON edges
     nodes = store.get_nodes_by_file(file_path)
-    for node in nodes:
-        for e in store.get_edges_by_target(node.qualified_name):
+    if nodes:
+        qns = [n.qualified_name for n in nodes]
+        for e in store.get_edges_by_targets(qns):
             if e.kind in ("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS"):
                 dependents.add(e.file_path)
 
@@ -347,6 +348,15 @@ def incremental_update(
     # Combine changed + dependent
     all_files = set(changed_files) | dependent_files
 
+    # Pre-fetch existing nodes to avoid N+1 queries
+    abs_paths = []
+    for rel_path in all_files:
+        abs_path = (repo_root / rel_path).resolve()
+        abs_paths.append(str(abs_path))
+
+    existing_nodes_batch = store.get_nodes_by_files(abs_paths)
+    file_to_hash = {n.file_path: n.file_hash for n in existing_nodes_batch}
+
     total_nodes = 0
     total_edges = 0
     errors = []
@@ -358,9 +368,10 @@ def incremental_update(
         abs_path = abs_path_raw.resolve()
         if not abs_path.is_relative_to(repo_root.resolve()):
             continue
+        abs_path_str = str(abs_path)
         if not abs_path.is_file():
             # File was deleted
-            store.remove_file_data(str(abs_path))
+            store.remove_file_data(abs_path_str)
             continue
         if abs_path_raw.is_symlink() or abs_path.is_symlink():
             continue
@@ -370,14 +381,13 @@ def incremental_update(
         try:
             source = abs_path.read_bytes()
             fhash = hashlib.sha256(source).hexdigest()
-            # Check if file actually changed (compare against stored file_hash column)
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
-            if existing_nodes and existing_nodes[0].file_hash == fhash:
-                # Skip unchanged files (hash match)
+
+            # Check if file actually changed using pre-fetched hash
+            if file_to_hash.get(abs_path_str) == fhash:
                 continue
 
             nodes, edges = parser.parse_bytes(abs_path, source)
-            store.store_file_nodes_edges(str(abs_path), nodes, edges, fhash)
+            store.store_file_nodes_edges(abs_path_str, nodes, edges, fhash)
             total_nodes += len(nodes)
             total_edges += len(edges)
         except (OSError, PermissionError) as e:
