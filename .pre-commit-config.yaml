@@ -38,8 +38,8 @@ repos:
   - repo: local
     hooks:
       - id: ty
-        name: ty type check
-        entry: mise exec -- uv run ty check
+        name: ty type check (non-blocking, matches CI continue-on-error)
+        entry: bash -c 'mise exec -- uv run ty check || true'
         language: system
         types: [python]
         pass_filenames: false

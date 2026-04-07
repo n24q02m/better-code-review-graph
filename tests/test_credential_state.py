@@ -171,7 +171,10 @@ class TestResolveCredentialState:
         """Step 2: saved config with cloud keys -> CONFIGURED + env injected."""
         with patch(
             "mcp_relay_core.storage.config_file.read_config",
-            return_value={"GEMINI_API_KEY": "from-config", "JINA_AI_API_KEY": "jina-cfg"},
+            return_value={
+                "GEMINI_API_KEY": "from-config",
+                "JINA_AI_API_KEY": "jina-cfg",
+            },
         ):
             with patch(
                 "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
