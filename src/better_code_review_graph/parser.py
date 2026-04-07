@@ -195,7 +195,7 @@ def _is_test_file(path: str) -> bool:
     return any(p.search(path) for p in _TEST_FILE_PATTERNS)
 
 
-def _is_test_function(name: str, file_path: str) -> bool:
+def _is_test_function(name: str) -> bool:
     """A function is a test only if its name matches test patterns.
     Being in a test file alone is not sufficient (test files contain helpers too).
     """
@@ -372,7 +372,7 @@ class CodeParser:
             if node_type in func_types:
                 name = self._get_name(child, language, "function")
                 if name:
-                    is_test = _is_test_function(name, file_path)
+                    is_test = _is_test_function(name)
                     kind = "Test" if is_test else "Function"
                     qualified = self._qualify(name, file_path, enclosing_class)
                     params = self._get_params(child, language, source)
