@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import sqlite3
@@ -28,6 +29,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -610,20 +613,24 @@ class EmbeddingStore:
             return 0
 
         # Encode in batches
-        texts = [t for _, t, _ in to_embed]
-        vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
+        try:
+            texts = [t for _, t, _ in to_embed]
+            vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
 
-        for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
-            blob = _encode_vector(vec)
-            self._conn.execute(
-                """INSERT OR REPLACE INTO embeddings
-                   (qualified_name, vector, text_hash, provider)
-                   VALUES (?, ?, ?, ?)""",
-                (node.qualified_name, blob, text_hash, provider_name),
-            )
+            for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
+                blob = _encode_vector(vec)
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO embeddings
+                       (qualified_name, vector, text_hash, provider)
+                       VALUES (?, ?, ?, ?)""",
+                    (node.qualified_name, blob, text_hash, provider_name),
+                )
 
-        self._conn.commit()
-        return len(to_embed)
+            self._conn.commit()
+            return len(to_embed)
+        except Exception as e:
+            logger.error(f"Failed to embed nodes: {e}")
+            return 0
 
     def search(self, query: str, limit: int = 20) -> list[tuple[str, float]]:
         """Search for nodes by semantic similarity.
