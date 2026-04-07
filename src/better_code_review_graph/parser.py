@@ -375,7 +375,7 @@ class CodeParser:
                     is_test = _is_test_function(name, file_path)
                     kind = "Test" if is_test else "Function"
                     qualified = self._qualify(name, file_path, enclosing_class)
-                    params = self._get_params(child, language, source)
+                    params = self._get_params(child, language)
                     ret_type = self._get_return_type(child, language, source)
 
                     node = NodeInfo(
@@ -888,7 +888,7 @@ class CodeParser:
                     return self._get_name(child, language, kind)
         return None
 
-    def _get_params(self, node, language: str, source: bytes) -> str | None:
+    def _get_params(self, node, language: str) -> str | None:
         """Extract parameter list as a string."""
         for child in node.children:
             if child.type in ("parameters", "formal_parameters", "parameter_list"):

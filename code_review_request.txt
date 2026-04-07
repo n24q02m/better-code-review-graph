@@ -1,0 +1,7 @@
+I have removed the unused 'source' argument from the '_get_params' method in 'src/better_code_review_graph/parser.py'.
+This involved:
+- Changing the method signature of '_get_params' to remove 'source: bytes'.
+- Updating the single call site in 'src/better_code_review_graph/parser.py' where 'self._get_params' is invoked.
+
+Tests in 'tests/test_parser.py' and 'tests/test_server.py' passed.
+Linting with 'ruff' also passed.
