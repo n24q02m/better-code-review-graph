@@ -281,6 +281,29 @@ class GraphStore:
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
+    def get_nodes_by_files(self, file_paths: list[str]) -> list[GraphNode]:
+        """Batch fetch nodes by their file paths to prevent N+1 queries.
+
+        Deduplicates input paths, fetches in batches to respect SQLite limits,
+        and returns all matching nodes.
+        """
+        if not file_paths:
+            return []
+
+        unique_paths = list(set(file_paths))
+        results: list[GraphNode] = []
+        batch_size = 450  # Stay well under SQLite's default limit
+
+        for i in range(0, len(unique_paths), batch_size):
+            batch = unique_paths[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_node(r) for r in rows)
+
+        return results
+
     def get_nodes_by_qualified_names(
         self, qualified_names: list[str]
     ) -> list[GraphNode]:
@@ -400,11 +423,8 @@ class GraphStore:
         nxg = self._build_networkx_graph()
 
         # Seed: all qualified names in changed files
-        seeds = set()
-        for f in changed_files:
-            nodes = self.get_nodes_by_file(f)
-            for n in nodes:
-                seeds.add(n.qualified_name)
+        changed_nodes = self.get_nodes_by_files(changed_files)
+        seeds = {n.qualified_name for n in changed_nodes}
 
         # BFS outward through all edge types
         visited: set[str] = set()
@@ -440,7 +460,6 @@ class GraphStore:
         total_impacted = len(impacted - seeds)
 
         # Resolve to full node info using batch fetch to prevent N+1 queries
-        changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
         impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
 
         impacted_files = list({n.file_path for n in impacted_nodes})
