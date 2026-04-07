@@ -10,6 +10,7 @@ from better_code_review_graph.parser import EdgeInfo, NodeInfo
 class TestTools:
     def setup_method(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()  # Close file handle before SQLite opens it (Windows compat)
         self.store = GraphStore(self.tmp.name)
         self._seed_data()
 

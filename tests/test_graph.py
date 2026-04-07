@@ -11,6 +11,7 @@ from tests.conftest import _make_edge, _make_node
 class TestGraphStore:
     def setup_method(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmp.close()  # Close file handle before SQLite opens it (Windows compat)
         self.store = GraphStore(self.tmp.name)
 
     def teardown_method(self):
