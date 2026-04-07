@@ -376,7 +376,7 @@ class CodeParser:
                     kind = "Test" if is_test else "Function"
                     qualified = self._qualify(name, file_path, enclosing_class)
                     params = self._get_params(child, language, source)
-                    ret_type = self._get_return_type(child, language, source)
+                    ret_type = self._get_return_type(child, language)
 
                     node = NodeInfo(
                         kind=kind,
@@ -904,7 +904,7 @@ class CodeParser:
                 return f"({', '.join(params)})"
         return None
 
-    def _get_return_type(self, node, language: str, source: bytes) -> str | None:
+    def _get_return_type(self, node, language: str) -> str | None:
         """Extract return type annotation if present."""
         for child in node.children:
             if child.type in (
