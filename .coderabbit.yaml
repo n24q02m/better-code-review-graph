@@ -1,0 +1,23 @@
+language: "en-US"
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_usernames:
+      - "n24q02m"
+      - "dependabot[bot]"
+      - "renovate[bot]"
+      - "github-actions[bot]"
+      - "devin-ai-integration[bot]"
+      - "google-labs-jules[bot]"
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_incremental_review: true
+issue_enrichment:
+  auto_enrich:
+    enabled: true
+  planning:
+    enabled: true
+chat:
+  auto_reply: false

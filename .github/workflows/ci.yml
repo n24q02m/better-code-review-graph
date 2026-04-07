@@ -9,8 +9,6 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  issue_comment:
-    types: [created, edited]
   issues:
     types:
       - opened
@@ -117,60 +115,6 @@ jobs:
           fail-on-severity: moderate
           comment-summary-in-pr: always
 
-  ai_pr_review:
-    name: Qodo AI Code Review
-    if: >-
-      (
-        github.event_name == 'issue_comment'
-        && github.event.sender.type != 'Bot'
-      ) || (
-        github.event_name == 'pull_request_target'
-        && github.event.sender.type != 'Bot'
-        && github.event.pull_request.user.login != 'n24q02m'
-      )
-    runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
-      contents: read
-      id-token: write
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Load custom instructions
-        run: |
-          if [ -f ".github/best_practices.md" ]; then
-            INSTRUCTIONS=$(cat .github/best_practices.md)
-            RANDOM_EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-            echo "CUSTOM_INSTRUCTIONS<<$RANDOM_EOF" >> "$GITHUB_ENV"
-            echo "$INSTRUCTIONS" >> "$GITHUB_ENV"
-            echo "$RANDOM_EOF" >> "$GITHUB_ENV"
-          fi
-
-      - name: Authenticate to GCP (Vertex AI)
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ vars.VERTEX_WIF_PROVIDER }}
-          service_account: ${{ vars.VERTEX_SERVICE_ACCOUNT }}
-
-      - name: PR Agent action step
-        uses: qodo-ai/pr-agent@d82f7d3e696cd00822694aaa3096265d3889f3f1 # main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERTEXAI_PROJECT: ${{ vars.VERTEX_PROJECT }}
-          VERTEXAI_LOCATION: global
-          PR_REVIEWER__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          PR_CODE_SUGGESTIONS__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          PR_DESCRIPTION__EXTRA_INSTRUCTIONS: ${{ env.CUSTOM_INSTRUCTIONS }}
-          GITHUB_ACTION_CONFIG__AUTO_REVIEW: "true"
-          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "true"
-          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "true"
-          GITHUB_ACTION_CONFIG__HANDLE_PR_ACTIONS: '["opened", "reopened", "ready_for_review", "synchronize"]'
-
-  # ============================================================================
-  # Email Notification (External Contributors)
-  # ============================================================================
   email-notify:
     name: Email Notification
     if: >-
