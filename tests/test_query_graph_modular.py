@@ -1,9 +1,10 @@
 import tempfile
 from pathlib import Path
-import pytest
+
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import query_graph, _get_store
+from better_code_review_graph.tools import query_graph
+
 
 class TestQueryGraphModular:
     def setup_method(self):
@@ -15,11 +16,16 @@ class TestQueryGraphModular:
 
         # Monkeypatch _get_store to return our test store
         import better_code_review_graph.tools
+
         self.original_get_store = better_code_review_graph.tools._get_store
-        better_code_review_graph.tools._get_store = lambda root=None: (GraphStore(str(self.db_path)), self.root)
+        better_code_review_graph.tools._get_store = lambda root=None: (
+            GraphStore(str(self.db_path)),
+            self.root,
+        )
 
     def teardown_method(self):
         import better_code_review_graph.tools
+
         better_code_review_graph.tools._get_store = self.original_get_store
         self.store.close()
         self.tmp_dir.cleanup()
@@ -33,16 +39,89 @@ class TestQueryGraphModular:
         Path(f2).touch()
         Path(f3).touch()
 
-        self.store.upsert_node(NodeInfo(kind="File", name="a.py", file_path=f1, line_start=1, line_end=10, language="python"))
-        self.store.upsert_node(NodeInfo(kind="File", name="b.py", file_path=f2, line_start=1, line_end=10, language="python"))
-        self.store.upsert_node(NodeInfo(kind="File", name="test_a.py", file_path=f3, line_start=1, line_end=10, language="python"))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="File",
+                name="a.py",
+                file_path=f1,
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="File",
+                name="b.py",
+                file_path=f2,
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="File",
+                name="test_a.py",
+                file_path=f3,
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
+        )
 
         # Nodes
-        self.store.upsert_node(NodeInfo(kind="Function", name="func_a", file_path=f1, line_start=2, line_end=5, language="python"))
-        self.store.upsert_node(NodeInfo(kind="Function", name="func_b", file_path=f2, line_start=2, line_end=5, language="python"))
-        self.store.upsert_node(NodeInfo(kind="Class", name="Base", file_path=f1, line_start=6, line_end=8, language="python"))
-        self.store.upsert_node(NodeInfo(kind="Class", name="Sub", file_path=f2, line_start=6, line_end=8, language="python"))
-        self.store.upsert_node(NodeInfo(kind="Test", name="test_func_a", file_path=f3, line_start=2, line_end=5, language="python", is_test=True))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="func_a",
+                file_path=f1,
+                line_start=2,
+                line_end=5,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="func_b",
+                file_path=f2,
+                line_start=2,
+                line_end=5,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Class",
+                name="Base",
+                file_path=f1,
+                line_start=6,
+                line_end=8,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Class",
+                name="Sub",
+                file_path=f2,
+                line_start=6,
+                line_end=8,
+                language="python",
+            )
+        )
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Test",
+                name="test_func_a",
+                file_path=f3,
+                line_start=2,
+                line_end=5,
+                language="python",
+                is_test=True,
+            )
+        )
 
         # Edges
         qn_a = f"{f1}::func_a"
@@ -51,11 +130,21 @@ class TestQueryGraphModular:
         qn_sub = f"{f2}::Sub"
         qn_test = f"{f3}::test_func_a"
 
-        self.store.upsert_edge(EdgeInfo(kind="CALLS", source=qn_b, target=qn_a, file_path=f2, line=3))
-        self.store.upsert_edge(EdgeInfo(kind="IMPORTS_FROM", source=f2, target=f1, file_path=f2))
-        self.store.upsert_edge(EdgeInfo(kind="CONTAINS", source=f1, target=qn_a, file_path=f1))
-        self.store.upsert_edge(EdgeInfo(kind="TESTED_BY", source=qn_test, target=qn_a, file_path=f3))
-        self.store.upsert_edge(EdgeInfo(kind="INHERITS", source=qn_sub, target=qn_base, file_path=f2))
+        self.store.upsert_edge(
+            EdgeInfo(kind="CALLS", source=qn_b, target=qn_a, file_path=f2, line=3)
+        )
+        self.store.upsert_edge(
+            EdgeInfo(kind="IMPORTS_FROM", source=f2, target=f1, file_path=f2)
+        )
+        self.store.upsert_edge(
+            EdgeInfo(kind="CONTAINS", source=f1, target=qn_a, file_path=f1)
+        )
+        self.store.upsert_edge(
+            EdgeInfo(kind="TESTED_BY", source=qn_test, target=qn_a, file_path=f3)
+        )
+        self.store.upsert_edge(
+            EdgeInfo(kind="INHERITS", source=qn_sub, target=qn_base, file_path=f2)
+        )
 
         self.store.commit()
 
@@ -135,7 +224,16 @@ class TestQueryGraphModular:
 
         f4 = str(self.root / "d.py")
         Path(f4).touch()
-        self.store.upsert_node(NodeInfo(kind="Function", name="func_a", file_path=f4, line_start=1, line_end=5, language="python"))
+        self.store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="func_a",
+                file_path=f4,
+                line_start=1,
+                line_end=5,
+                language="python",
+            )
+        )
         self.store.commit()
 
         res = query_graph("callers_of", "func_a", repo_root=str(self.root))
