@@ -1345,6 +1345,20 @@ class TestQueryGraphEdgeCases:
         finally:
             os.chmod(str(unreadable), 0o644)
 
+    def test_review_context_unicode_decode_error(self, repo_with_graph):
+        """Source snippet handling for files with invalid UTF-8 bytes."""
+        # Create a file with invalid UTF-8 bytes
+        invalid_file = repo_with_graph / "invalid_utf8.py"
+        invalid_file.write_bytes(b"\xff\xfe\xfd")
+
+        result = get_review_context(
+            changed_files=["invalid_utf8.py"], repo_root=str(repo_with_graph)
+        )
+        assert result["status"] == "ok"
+        ctx = result["context"]
+        assert "source_snippets" in ctx
+        assert ctx["source_snippets"]["invalid_utf8.py"] == "(could not read file)"
+
     def test_incremental_update_with_changes_summary(self, repo_with_graph):
         """build_or_update_graph incremental with actual changes should show summary."""
         # Create a new file to be detected as changed
