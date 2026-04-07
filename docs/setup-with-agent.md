@@ -107,9 +107,9 @@ All environment variables are **optional**. The server works with local ONNX emb
 
 ## Authentication
 
-### Zero-Config Relay (BETA, Optional)
+### Zero-Config Relay
 
-> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Environment Variables** above. The relay blocks server startup on first run and may time out in some MCP clients.
+> **Recommended.** The relay is the primary setup method. Credentials are encrypted end-to-end and stored locally. Environment variables are supported for backward compatibility.
 
 On first run without any API keys in environment:
 

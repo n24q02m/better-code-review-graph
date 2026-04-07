@@ -132,9 +132,9 @@ When environment variables are set, the relay is skipped entirely.
 | `EMBEDDING_MODEL` | auto-detect | Cloud embedding model name |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
-### Option B: Zero-Config Relay (BETA)
+### Zero-Config Relay
 
-> **Note**: Relay is a **BETA** credential provisioning flow. For stable production use, prefer **Option A: Environment Variables**. The relay currently blocks MCP server startup on first run and may time out in some MCP clients -- see [upcoming redesign](https://github.com/n24q02m/claude-plugins/issues).
+> **Recommended for new users.** The relay is the primary setup method -- no environment variables needed. Credentials are encrypted end-to-end and stored locally.
 
 No manual configuration needed. On first start:
 
