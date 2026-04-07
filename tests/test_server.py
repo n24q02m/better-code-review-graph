@@ -351,9 +351,16 @@ class TestConfigTool:
 
 
 class TestHelpTool:
-    def test_invalid_topic(self):
-        result = json.loads(help.fn(topic="nonexistent"))
+    def test_invalid_topic_with_suggestion(self):
+        result = json.loads(help.fn(topic="graphh"))
         assert "error" in result
+        assert "Did you mean 'graph'?" in result["error"]
+        assert "valid_topics" in result
+
+    def test_invalid_topic_without_suggestion(self):
+        result = json.loads(help.fn(topic="xyzabc"))
+        assert "error" in result
+        assert "Did you mean" not in result["error"]
         assert "valid_topics" in result
 
     def test_graph_topic(self):
@@ -417,3 +424,35 @@ class TestServeMain:
         serve_main(repo_root=None)
         assert server_module._default_repo_root is None
         mock_mcp.run.assert_called_once_with(transport="stdio")
+
+    def test_help_file_not_found(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        # topic that is NOT graph or query to hit line 664
+        mock_files = MagicMock()
+        mock_files.side_effect = FileNotFoundError("Mocked file not found")
+        monkeypatch.setattr("better_code_review_graph.server.files", mock_files)
+
+        # topic that is NOT graph or query to hit the return _json at 664
+        result_str = help.fn(topic="review")
+        result = json.loads(result_str)
+        assert "error" in result
+        assert "Documentation not found for topic: review" in result["error"]
+
+        # topic that IS graph to hit the get_docs_section branch, then return _json at 664 if it fails
+        monkeypatch.setattr(
+            "better_code_review_graph.server.get_docs_section",
+            lambda **kwargs: {"status": "error"},
+        )
+        result_str = help.fn(topic="graph")
+        result = json.loads(result_str)
+        assert "error" in result
+        assert "Documentation not found for topic: graph" in result["error"]
+
+        # topic that IS graph and get_docs_section SUCCEEDS to hit line 663
+        monkeypatch.setattr(
+            "better_code_review_graph.server.get_docs_section",
+            lambda **kwargs: {"status": "ok", "content": "mocked content"},
+        )
+        result = help.fn(topic="graph")
+        assert result == "mocked content"

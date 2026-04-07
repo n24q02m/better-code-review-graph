@@ -646,35 +646,36 @@ def help(topic: str = "graph") -> str:
         "review": "review.md",
         "config": "config.md",
     }
-    filename = valid_topics.get(topic)
-    if not filename:
-        import difflib
+    match topic:
+        case t if t in valid_topics:
+            filename = valid_topics[t]
+            try:
+                doc_file = files("better_code_review_graph.docs").joinpath(filename)
+                return doc_file.read_text()
+            except (FileNotFoundError, ModuleNotFoundError):
+                if t in ("graph", "query"):
+                    result = get_docs_section(
+                        section_name="commands", repo_root=_default_repo_root
+                    )
+                    if result.get("status") == "ok":
+                        return result["content"]
+                return _json(
+                    {
+                        "error": f"Documentation not found for topic: {t}",
+                        "valid_topics": sorted(valid_topics),
+                    }
+                )
+        case _:
+            import difflib
 
-        closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
-        suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-        return _json(
-            {
-                "error": f"Unknown topic '{topic}'.{suggestion}",
-                "valid_topics": sorted(valid_topics),
-            }
-        )
-
-    try:
-        doc_file = files("better_code_review_graph.docs").joinpath(filename)
-        return doc_file.read_text()
-    except (FileNotFoundError, ModuleNotFoundError):
-        if topic in ("graph", "query"):
-            result = get_docs_section(
-                section_name="commands", repo_root=_default_repo_root
+            closest = difflib.get_close_matches(topic, list(valid_topics.keys()), n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
+            return _json(
+                {
+                    "error": f"Unknown topic '{topic}'.{suggestion}",
+                    "valid_topics": sorted(valid_topics),
+                }
             )
-            if result.get("status") == "ok":
-                return result["content"]
-        return _json(
-            {
-                "error": f"Documentation not found for topic: {topic}",
-                "valid_topics": sorted(valid_topics),
-            }
-        )
 
 
 # ---------------------------------------------------------------------------
