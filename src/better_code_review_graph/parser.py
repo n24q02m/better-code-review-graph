@@ -460,7 +460,7 @@ class CodeParser:
 
             # --- Calls ---
             if node_type in call_types:
-                call_name = self._get_call_name(child, language, source)
+                call_name = self._get_call_name(child, language)
                 if call_name and enclosing_func:
                     caller = self._qualify(enclosing_func, file_path, enclosing_class)
                     target = self._resolve_call_target(
@@ -1091,7 +1091,7 @@ class CodeParser:
                 imports.append(match.group(1))
         return imports
 
-    def _get_call_name(self, node, language: str, source: bytes) -> str | None:
+    def _get_call_name(self, node, language: str) -> str | None:
         """Extract the function/method name being called."""
         if not node.children:
             return None
