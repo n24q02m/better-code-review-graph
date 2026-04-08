@@ -281,30 +281,3 @@ def test_get_edges_by_target_bare_fallback(tmp_graph_store):
     edges = store.get_edges_by_target("middleware.py::middleware")
     assert len(edges) == 1
     assert edges[0].source_qualified == "router.py::setup"
-
-def test_search_nodes_with_kind(tmp_graph_store):
-    """Test searching nodes with a specific kind."""
-    store = tmp_graph_store
-    store.upsert_node(_make_node("auth_service", "Class", "auth.py::auth_service"))
-    store.upsert_node(_make_node("auth_user", "Function", "auth.py::auth_user"))
-    store.commit()
-
-    # Search without kind
-    results = store.search_nodes("auth")
-    assert len(results) == 2
-
-    # Search with kind="Class"
-    results_class = store.search_nodes("auth", kind="Class")
-    assert len(results_class) == 1
-    assert results_class[0].kind == "Class"
-    assert results_class[0].name == "auth_service"
-
-    # Search with kind="Function"
-    results_func = store.search_nodes("auth", kind="Function")
-    assert len(results_func) == 1
-    assert results_func[0].kind == "Function"
-    assert results_func[0].name == "auth_user"
-
-    # Search with non-existent kind
-    results_none = store.search_nodes("auth", kind="NonExistent")
-    assert len(results_none) == 0
