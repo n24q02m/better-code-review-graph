@@ -114,7 +114,7 @@ class TestSetupStatus:
         cs._state = CredentialState.CONFIGURED
         cs._setup_url = None
 
-        result = json.loads(await setup.fn(action="status"))
+        result = json.loads(await setup(action="status"))
         assert result["state"] == "configured"
         assert "cloud_keys_in_env" in result
 
@@ -126,7 +126,7 @@ class TestSetupStatus:
         cs._state = CredentialState.SETUP_IN_PROGRESS
         cs._setup_url = "https://relay.example.com/setup"
 
-        result = json.loads(await setup.fn(action="status"))
+        result = json.loads(await setup(action="status"))
         assert result["state"] == "setup_in_progress"
         assert result["setup_url"] == "https://relay.example.com/setup"
 
@@ -144,7 +144,7 @@ class TestSetupStart:
 
         cs._state = CredentialState.CONFIGURED
 
-        result = json.loads(await setup.fn(action="start"))
+        result = json.loads(await setup(action="start"))
         assert result["status"] == "already_configured"
         assert "force=true" in result["message"]
 
@@ -160,7 +160,7 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value="https://relay.example.com/setup#k=abc",
         ):
-            result = json.loads(await setup.fn(action="start"))
+            result = json.loads(await setup(action="start"))
             assert result["status"] == "setup_started"
             assert result["setup_url"] == "https://relay.example.com/setup#k=abc"
 
@@ -176,7 +176,7 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value=None,
         ):
-            result = json.loads(await setup.fn(action="start"))
+            result = json.loads(await setup(action="start"))
             assert result["status"] == "error"
             assert "Failed" in result["message"]
 
@@ -192,7 +192,7 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value="https://relay.example.com/new-session",
         ):
-            result = json.loads(await setup.fn(action="start", force=True))
+            result = json.loads(await setup(action="start", force=True))
             assert result["status"] == "setup_started"
 
 
@@ -207,7 +207,7 @@ class TestSetupSkip:
         from better_code_review_graph.server import setup
 
         with patch("mcp_relay_core.set_local_mode") as mock_local:
-            result = json.loads(await setup.fn(action="skip"))
+            result = json.loads(await setup(action="skip"))
             assert result["status"] == "ok"
             assert "Local mode" in result["message"]
             mock_local.assert_called_once()
@@ -230,7 +230,7 @@ class TestSetupReset:
             patch("mcp_relay_core.clear_mode"),
             patch("mcp_relay_core.storage.config_file.delete_config"),
         ):
-            result = json.loads(await setup.fn(action="reset"))
+            result = json.loads(await setup(action="reset"))
             assert result["status"] == "ok"
             assert cs._state == CredentialState.AWAITING_SETUP
 
@@ -249,7 +249,7 @@ class TestSetupComplete:
         cs._state = CredentialState.AWAITING_SETUP
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
-        result = json.loads(await setup.fn(action="complete"))
+        result = json.loads(await setup(action="complete"))
         assert result["status"] == "ok"
         assert result["state"] == "configured"
 
@@ -264,7 +264,7 @@ class TestSetupUnknownAction:
         """Unknown action returns error with valid actions."""
         from better_code_review_graph.server import setup
 
-        result = json.loads(await setup.fn(action="nonexistent"))
+        result = json.loads(await setup(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
 
@@ -272,6 +272,6 @@ class TestSetupUnknownAction:
         """Typo in action returns a suggestion."""
         from better_code_review_graph.server import setup
 
-        result = json.loads(await setup.fn(action="statu"))
+        result = json.loads(await setup(action="statu"))
         assert "error" in result
         assert "status" in result["error"]

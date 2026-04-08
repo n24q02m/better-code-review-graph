@@ -53,9 +53,7 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.build_or_update_graph")
     def test_build_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "full"}
-        result = json.loads(
-            graph.fn(action="build", full_rebuild=True, repo_root="/test")
-        )
+        result = json.loads(graph(action="build", full_rebuild=True, repo_root="/test"))
         mock_fn.assert_called_once_with(
             full_rebuild=True, repo_root="/test", base="HEAD~1"
         )
@@ -64,7 +62,7 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.build_or_update_graph")
     def test_update_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "incremental"}
-        result = json.loads(graph.fn(action="update", repo_root="/test"))
+        result = json.loads(graph(action="update", repo_root="/test"))
         mock_fn.assert_called_once_with(
             full_rebuild=False, repo_root="/test", base="HEAD~1"
         )
@@ -73,19 +71,19 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.list_graph_stats")
     def test_stats_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "total_nodes": 42}
-        result = json.loads(graph.fn(action="stats", repo_root="/test"))
+        result = json.loads(graph(action="stats", repo_root="/test"))
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result["status"] == "ok"
 
     @patch("better_code_review_graph.server.embed_graph")
     def test_embed_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "newly_embedded": 10}
-        result = json.loads(graph.fn(action="embed", repo_root="/test"))
+        result = json.loads(graph(action="embed", repo_root="/test"))
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result["status"] == "ok"
 
     def test_unknown_action(self):
-        result = json.loads(graph.fn(action="nonexistent"))
+        result = json.loads(graph(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
 
@@ -100,9 +98,7 @@ class TestQueryTool:
     def test_query_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = json.loads(
-            query.fn(
-                action="query", pattern="callers_of", target="foo", repo_root="/test"
-            )
+            query(action="query", pattern="callers_of", target="foo", repo_root="/test")
         )
         mock_fn.assert_called_once_with(
             pattern="callers_of", target="foo", repo_root="/test"
@@ -110,12 +106,12 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_query_missing_pattern(self):
-        result = json.loads(query.fn(action="query", target="foo"))
+        result = json.loads(query(action="query", target="foo"))
         assert "error" in result
         assert "pattern" in result["error"]
 
     def test_query_missing_target(self):
-        result = json.loads(query.fn(action="query", pattern="callers_of"))
+        result = json.loads(query(action="query", pattern="callers_of"))
         assert "error" in result
         assert "target" in result["error"]
 
@@ -123,7 +119,7 @@ class TestQueryTool:
     def test_search_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = json.loads(
-            query.fn(
+            query(
                 action="search",
                 search_query="auth",
                 kind="Class",
@@ -137,7 +133,7 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_search_missing_query(self):
-        result = json.loads(query.fn(action="search"))
+        result = json.loads(query(action="search"))
         assert "error" in result
         assert "search_query" in result["error"]
 
@@ -145,7 +141,7 @@ class TestQueryTool:
     def test_impact_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
         result = json.loads(
-            query.fn(
+            query(
                 action="impact",
                 changed_files=["a.py"],
                 max_depth=3,
@@ -167,7 +163,7 @@ class TestQueryTool:
     def test_large_functions_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = json.loads(
-            query.fn(
+            query(
                 action="large_functions",
                 min_lines=100,
                 kind="Function",
@@ -186,7 +182,7 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_unknown_action(self):
-        result = json.loads(query.fn(action="nonexistent"))
+        result = json.loads(query(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
 
@@ -201,7 +197,7 @@ class TestReviewTool:
     def test_review(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
         result = json.loads(
-            review.fn(
+            review(
                 changed_files=["b.py"],
                 max_depth=1,
                 include_source=False,
@@ -223,7 +219,7 @@ class TestReviewTool:
     @patch("better_code_review_graph.server.get_review_context")
     def test_review_defaults(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = json.loads(review.fn())
+        result = json.loads(review())
         mock_fn.assert_called_once_with(
             changed_files=None,
             max_depth=2,
@@ -278,40 +274,40 @@ def _make_mini_repo(tmp_path):
 
 class TestConfigTool:
     def test_unknown_action(self):
-        result = json.loads(config.fn(action="nonexistent"))
+        result = json.loads(config(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
 
     def test_set_missing_key(self):
-        result = json.loads(config.fn(action="set"))
+        result = json.loads(config(action="set"))
         assert "error" in result
 
     def test_set_missing_value(self):
-        result = json.loads(config.fn(action="set", key="log_level"))
+        result = json.loads(config(action="set", key="log_level"))
         assert "error" in result
 
     def test_set_invalid_key(self):
-        result = json.loads(config.fn(action="set", key="invalid_key", value="x"))
+        result = json.loads(config(action="set", key="invalid_key", value="x"))
         assert "error" in result
         assert "valid_keys" in result
 
     def test_set_log_level(self):
-        result = json.loads(config.fn(action="set", key="log_level", value="DEBUG"))
+        result = json.loads(config(action="set", key="log_level", value="DEBUG"))
         assert result["status"] == "updated"
         assert result["value"] == "DEBUG"
 
     def test_set_invalid_log_level(self):
-        result = json.loads(config.fn(action="set", key="log_level", value="INVALID"))
+        result = json.loads(config(action="set", key="log_level", value="INVALID"))
         assert "error" in result
 
     def test_status_no_graph(self):
-        result = json.loads(config.fn(action="status"))
+        result = json.loads(config(action="status"))
         assert result["status"] == "ok"
         assert "version" in result
 
     def test_status_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(config.fn(action="status", repo_root=str(repo)))
+        result = json.loads(config(action="status", repo_root=str(repo)))
         assert result["status"] == "ok"
         assert result["total_nodes"] > 0
         assert "embedding_backend" in result
@@ -321,13 +317,13 @@ class TestConfigTool:
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No graph found"),
         ):
-            result = json.loads(config.fn(action="status"))
+            result = json.loads(config(action="status"))
             assert result["status"] == "ok"
             assert result["graph_path"] is None
             assert "No graph found" in result["message"]
 
     def test_cache_clear_no_graph(self):
-        result = json.loads(config.fn(action="cache_clear"))
+        result = json.loads(config(action="cache_clear"))
         assert result["status"] == "cache cleared"
 
     def test_cache_clear_error_handling(self):
@@ -335,13 +331,13 @@ class TestConfigTool:
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No repo found"),
         ):
-            result = json.loads(config.fn(action="cache_clear"))
+            result = json.loads(config(action="cache_clear"))
             assert result["status"] == "cache cleared"
             assert result["embeddings_removed"] == 0
 
     def test_cache_clear_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(config.fn(action="cache_clear", repo_root=str(repo)))
+        result = json.loads(config(action="cache_clear", repo_root=str(repo)))
         assert result["status"] == "cache cleared"
 
 
@@ -352,12 +348,12 @@ class TestConfigTool:
 
 class TestHelpTool:
     def test_invalid_topic(self):
-        result = json.loads(help.fn(topic="nonexistent"))
+        result = json.loads(help(topic="nonexistent"))
         assert "error" in result
         assert "valid_topics" in result
 
     def test_graph_topic(self):
-        result = help.fn(topic="graph")
+        result = help(topic="graph")
         if result.startswith("{"):
             data = json.loads(result)
             assert "content" in data or "error" in data
@@ -365,7 +361,7 @@ class TestHelpTool:
             assert "# graph Tool Documentation" in result
 
     def test_query_topic(self):
-        result = help.fn(topic="query")
+        result = help(topic="query")
         if result.startswith("{"):
             data = json.loads(result)
             assert "content" in data or "error" in data
@@ -373,7 +369,7 @@ class TestHelpTool:
             assert "# query Tool Documentation" in result
 
     def test_review_topic(self):
-        result = help.fn(topic="review")
+        result = help(topic="review")
         if result.startswith("{"):
             data = json.loads(result)
             assert "content" in data or "error" in data
@@ -381,7 +377,7 @@ class TestHelpTool:
             assert "# review Tool Documentation" in result
 
     def test_config_topic(self):
-        result = help.fn(topic="config")
+        result = help(topic="config")
         if result.startswith("{"):
             data = json.loads(result)
             assert "content" in data or "error" in data
@@ -391,7 +387,7 @@ class TestHelpTool:
     @patch("better_code_review_graph.server.files")
     def test_fallback_to_llm_ref(self, mock_files):
         mock_files.side_effect = FileNotFoundError("no docs")
-        result = help.fn(topic="graph")
+        result = help(topic="graph")
         assert isinstance(result, str)
         assert len(result) > 0
 

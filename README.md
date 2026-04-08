@@ -32,7 +32,7 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
 | Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
-| Tool design | 9 individual tools | 5 tools: graph + query + review + config + help |
+| Tool design | 9 individual tools | 6 tools: graph + query + review + config + setup + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 ## Setup
@@ -81,6 +81,18 @@ Actions: `status` | `set` | `cache_clear`
 | `status` | Server info: version, graph path, node/edge counts, embedding backend. |
 | `set` | Update runtime settings (e.g., `log_level`). |
 | `cache_clear` | Remove all computed embeddings. |
+
+### `setup` -- Credential setup
+
+Actions: `status` | `start` | `skip` | `reset` | `complete`
+
+| Action | Description |
+|:-------|:------------|
+| `status` | Show current credential state and setup URL. |
+| `start` | Start relay setup to configure API keys via browser. |
+| `skip` | Set local mode (skip relay permanently, use ONNX only). |
+| `reset` | Clear credentials and reset state. |
+| `complete` | Re-resolve credentials from environment variables. |
 
 ### `help` -- Full documentation
 

@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.26.0,<2",
-    "fastmcp>=2.14.5,<3",
+    "fastmcp>=3.2.0,<4",
     "tree-sitter>=0.25.2,<1",
     "tree-sitter-language-pack>=0.13.0,<1",
     "networkx>=3.6.1,<4",
@@ -31,6 +31,7 @@ dependencies = [
     "httpx",
     "pydantic-settings",
     "mcp-relay-core>=1.4.0",
+    "Pygments>=2.20.0",
 ]
 
 [project.scripts]

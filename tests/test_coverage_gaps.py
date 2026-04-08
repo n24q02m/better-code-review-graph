@@ -334,7 +334,7 @@ class TestConfigStatusVersionFallback:
 
         with patch("better_code_review_graph.server._config_status") as mock_status:
             mock_status.return_value = json.dumps({"status": "ok", "version": "dev"})
-            result = json.loads(config.fn(action="status"))
+            result = json.loads(config(action="status"))
             assert result["version"] == "dev"
 
     def test_version_fallback_direct(self):
@@ -365,7 +365,7 @@ class TestHelpFallbackContent:
                     "status": "ok",
                     "content": "Full documentation content here.",
                 }
-                result = help.fn(topic="graph")
+                result = help(topic="graph")
                 assert result == "Full documentation content here."
 
     def test_help_non_graph_query_fallback(self):
@@ -375,7 +375,7 @@ class TestHelpFallbackContent:
         with patch("better_code_review_graph.server.files") as mock_files:
             mock_files.side_effect = FileNotFoundError("no docs")
             # For 'review' topic, it should NOT try get_docs_section
-            result = help.fn(topic="review")
+            result = help(topic="review")
             data = json.loads(result)
             assert "error" in data
             assert "valid_topics" in data
@@ -671,7 +671,7 @@ class TestConfigCacheClearFallback:
 
         # Use a nonexistent path that will trigger RuntimeError
         result = json.loads(
-            config.fn(action="cache_clear", repo_root="/nonexistent/path/xyz")
+            config(action="cache_clear", repo_root="/nonexistent/path/xyz")
         )
         assert result["status"] == "cache cleared"
         assert result["embeddings_removed"] == 0
@@ -687,9 +687,7 @@ class TestConfigStatusFallback:
         """Cover lines 381-382: _config_status handles RuntimeError."""
         from better_code_review_graph.server import config
 
-        result = json.loads(
-            config.fn(action="status", repo_root="/nonexistent/path/xyz")
-        )
+        result = json.loads(config(action="status", repo_root="/nonexistent/path/xyz"))
         # Should return ok with 0 nodes (no graph found)
         assert result["status"] == "ok"
         assert result.get("total_nodes", 0) == 0
