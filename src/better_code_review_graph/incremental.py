@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import logging
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -134,9 +135,13 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
     if base.startswith("-"):
         raise ValueError(f"Invalid git ref: {base}")
 
+    git_bin = shutil.which("git")
+    if not git_bin:
+        raise RuntimeError("git executable not found")
+
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", base],
+            [git_bin, "diff", "--name-only", base],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
@@ -145,7 +150,7 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
         if result.returncode != 0:
             # Fallback: try diff against empty tree (initial commit)
             result = subprocess.run(
-                ["git", "diff", "--name-only", "--cached"],
+                [git_bin, "diff", "--name-only", "--cached"],
                 capture_output=True,
                 text=True,
                 cwd=str(repo_root),
@@ -159,9 +164,13 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
 
 def get_staged_and_unstaged(repo_root: Path) -> list[str]:
     """Get all modified files (staged + unstaged + untracked)."""
+    git_bin = shutil.which("git")
+    if not git_bin:
+        raise RuntimeError("git executable not found")
+
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
+            [git_bin, "status", "--porcelain"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
@@ -182,9 +191,13 @@ def get_staged_and_unstaged(repo_root: Path) -> list[str]:
 
 def get_all_tracked_files(repo_root: Path) -> list[str]:
     """Get all files tracked by git."""
+    git_bin = shutil.which("git")
+    if not git_bin:
+        raise RuntimeError("git executable not found")
+
     try:
         result = subprocess.run(
-            ["git", "ls-files"],
+            [git_bin, "ls-files"],
             capture_output=True,
             text=True,
             cwd=str(repo_root),
