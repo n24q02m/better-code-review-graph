@@ -1,9 +1,9 @@
 import time
 from unittest.mock import patch
 
-from src.better_code_review_graph.graph import GraphStore
-from src.better_code_review_graph.parser import EdgeInfo, NodeInfo
-from src.better_code_review_graph.tools import query_graph
+from better_code_review_graph.graph import GraphStore
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from better_code_review_graph.tools import query_graph
 
 
 def test_query_graph_n1_performance(tmp_path):
@@ -42,7 +42,7 @@ def test_query_graph_n1_performance(tmp_path):
 
         store.commit()
 
-    with patch("src.better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
         store = GraphStore(db_path)
         mock_get_store.return_value = (store, tmp_path)
 
