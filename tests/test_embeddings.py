@@ -487,6 +487,31 @@ class TestCloudEmbeddingBackend:
 
 
 class TestEmbeddingStore:
+    def test_migration_operational_error_triggers_alter(self, tmp_path):
+        """Test that migration logic handles sqlite3.OperationalError by altering table."""
+        db_path = tmp_path / "test_mock.db"
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = MagicMock()
+            mock_connect.return_value = mock_conn
+
+            def execute_side_effect(sql, *args, **kwargs):
+                if "SELECT provider FROM embeddings" in sql:
+                    raise sqlite3.OperationalError("no such column: provider")
+                return MagicMock()
+
+            mock_conn.execute.side_effect = execute_side_effect
+
+            # Initialize store
+            EmbeddingStore(db_path)
+
+            # Verify ALTER TABLE was called
+            calls = [call.args[0] for call in mock_conn.execute.call_args_list]
+            assert any(
+                "ALTER TABLE embeddings ADD COLUMN provider" in sql for sql in calls
+            )
+            # Connection should be committed
+            assert mock_conn.commit.called
+
     def test_migration_adds_provider_column(self, tmp_path):
         """Test that provider column is added if missing (schema migration)."""
         db_path = tmp_path / "migration.db"
