@@ -706,7 +706,7 @@ def get_review_context(
                     continue
                 if full_path.is_file():
                     try:
-                        lines = full_path.read_text().splitlines()
+                        lines = full_path.read_text(errors="replace").splitlines()
                         if len(lines) > max_lines_per_file:
                             # Include only the relevant functions/classes
                             relevant_lines = _extract_relevant_lines(
