@@ -3,14 +3,14 @@ from unittest.mock import MagicMock
 from better_code_review_graph.graph import GraphNode, GraphStore
 
 
-def test_get_nodes_by_files_batching():
+def test_get_nodes_by_files_batching() -> None:
     # Setup mock connection
     mock_conn = MagicMock()
     store = GraphStore(":memory:")
     store._conn = mock_conn
 
     # Mock row to node conversion
-    store._row_to_node = MagicMock(
+    store._row_to_node = MagicMock(  # type: ignore
         side_effect=lambda r: GraphNode(
             id=r["id"],
             kind="Function",
@@ -59,10 +59,10 @@ def test_get_nodes_by_files_batching():
     assert len(results) == 2
 
 
-def test_get_impact_radius_uses_batch_fetch():
+def test_get_impact_radius_uses_batch_fetch() -> None:
     store = GraphStore(":memory:")
-    store.get_nodes_by_files = MagicMock(return_value=[])
-    store._build_networkx_graph = MagicMock()
+    store.get_nodes_by_files = MagicMock(return_value=[])  # type: ignore
+    store._build_networkx_graph = MagicMock()  # type: ignore
 
     store.get_impact_radius(["f1.py", "f2.py"])
 
