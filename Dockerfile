@@ -6,7 +6,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 COPY src/ src/
 
-FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
+FROM python:3.13-slim-bookworm@sha256:f13a6b7565175da40695e8109f64cbc4d2e65f4c9ef2e3b321c3a44fa3c06fe7
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/better-code-review-graph"
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 WORKDIR /app
