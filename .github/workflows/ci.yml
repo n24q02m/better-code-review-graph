@@ -20,12 +20,17 @@ permissions:
 
 jobs:
   lint-and-test:
-    name: Lint & Test
+    name: Lint & Test (${{ matrix.os }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Harden Runner
+        if: matrix.os == 'ubuntu-latest'
         uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2
         with:
           egress-policy: audit
@@ -55,15 +60,10 @@ jobs:
         run: uv run ty check
 
       - name: Run tests with coverage
-        run: |
-          if [ -d "tests" ] && [ "$(ls -A tests/*.py 2>/dev/null)" ]; then
-            uv run pytest --cov --cov-report=xml
-          else
-            echo "No tests found, skipping..."
-          fi
+        run: uv run pytest --cov --cov-report=xml
 
       - name: Upload coverage to Codecov
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6
         with:
           files: coverage.xml
