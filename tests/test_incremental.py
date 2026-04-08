@@ -146,7 +146,8 @@ class TestGitOperations:
         assert call_args[1].get("timeout") == 30
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_changed_files_fallback(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_changed_files_fallback(self, mock_which, mock_run, tmp_path):
         # First call fails, second succeeds
         mock_run.side_effect = [
             MagicMock(returncode=1, stdout=""),
@@ -157,13 +158,15 @@ class TestGitOperations:
         assert mock_run.call_count == 2
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_changed_files_timeout(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_changed_files_timeout(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_changed_files(tmp_path)
         assert result == []
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_staged_and_unstaged(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_staged_and_unstaged(self, mock_which, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout=" M src/a.py\n?? new.py\nR  old.py -> new_name.py\n",
@@ -176,7 +179,8 @@ class TestGitOperations:
         assert "old.py" not in result
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_all_tracked_files(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_all_tracked_files(self, mock_which, mock_run, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="a.py\nb.py\nc.go\n",

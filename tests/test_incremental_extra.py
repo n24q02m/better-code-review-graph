@@ -344,37 +344,58 @@ class TestIncrementalUpdateExtra:
 
 class TestGitOperationsExtra:
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_changed_files_file_not_found(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_changed_files_file_not_found(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_changed_files(tmp_path)
         assert result == []
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_staged_timeout(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_staged_timeout(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_staged_and_unstaged(tmp_path)
         assert result == []
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_staged_file_not_found(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_staged_file_not_found(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_staged_and_unstaged(tmp_path)
         assert result == []
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_all_tracked_timeout(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_all_tracked_timeout(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_all_tracked_files(tmp_path)
         assert result == []
 
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_all_tracked_file_not_found(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_all_tracked_file_not_found(self, mock_which, mock_run, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_all_tracked_files(tmp_path)
         assert result == []
 
+    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    def test_get_changed_files_no_git(self, mock_which, tmp_path):
+        result = get_changed_files(tmp_path)
+        assert result == []
+
+    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    def test_get_staged_no_git(self, mock_which, tmp_path):
+        result = get_staged_and_unstaged(tmp_path)
+        assert result == []
+
+    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    def test_get_all_tracked_no_git(self, mock_which, tmp_path):
+        result = get_all_tracked_files(tmp_path)
+        assert result == []
+
     @patch("better_code_review_graph.incremental.subprocess.run")
-    def test_get_staged_short_lines_skipped(self, mock_run, tmp_path):
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_staged_short_lines_skipped(self, mock_which, mock_run, tmp_path):
         """Lines shorter than 4 chars should be skipped."""
         mock_run.return_value = MagicMock(returncode=0, stdout="AB\n M file.py\n")
         result = get_staged_and_unstaged(tmp_path)
