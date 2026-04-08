@@ -246,8 +246,10 @@ def find_dependents(store: GraphStore, file_path: str) -> list[str]:
 
     # Also check for DEPENDS_ON edges
     nodes = store.get_nodes_by_file(file_path)
-    for node in nodes:
-        for e in store.get_edges_by_target(node.qualified_name):
+    qns = [n.qualified_name for n in nodes]
+    if qns:
+        batch_edges = store.get_edges_by_targets(qns)
+        for e in batch_edges:
             if e.kind in ("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS"):
                 dependents.add(e.file_path)
 
