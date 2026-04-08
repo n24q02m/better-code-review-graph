@@ -324,6 +324,41 @@ class GraphStore:
             ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
+    def get_edges_by_targets(self, qualified_names: list[str]) -> list[GraphEdge]:
+        """Batch fetch edges by a list of target qualified names to prevent N+1 queries.
+
+        Deduplicates input names, fetches in batches to respect SQLite limits.
+        """
+        if not qualified_names:
+            return []
+
+        unique_qns = list(set(qualified_names))
+        results: list[GraphEdge] = []
+        batch_size = 450
+
+        for i in range(0, len(unique_qns), batch_size):
+            batch = unique_qns[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_edge(r) for r in rows)
+
+            # Replicate fallback logic for targets not found
+            found_targets = {r["target_qualified"] for r in rows}
+            missing_targets = [
+                qn for qn in batch if qn not in found_targets and "::" in qn
+            ]
+            if missing_targets:
+                bare_names = [qn.rsplit("::", 1)[-1] for qn in missing_targets]
+                fallback_rows = self._conn.execute(
+                    "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
+                    (json.dumps(bare_names),),
+                ).fetchall()
+                results.extend(self._row_to_edge(r) for r in fallback_rows)
+
+        return results
+
     def search_edges_by_target_name(
         self, name: str, kind: str = "CALLS"
     ) -> list[GraphEdge]:
