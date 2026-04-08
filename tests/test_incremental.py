@@ -121,13 +121,18 @@ class TestIsBinary:
     def test_is_binary_permission_error(self, tmp_path):
         f = tmp_path / "protected.txt"
         f.write_text("secret")
-        with patch("better_code_review_graph.incremental.Path.read_bytes", side_effect=PermissionError):
+        with patch(
+            "better_code_review_graph.incremental.Path.read_bytes",
+            side_effect=PermissionError,
+        ):
             assert _is_binary(f)
 
     def test_is_binary_os_error(self, tmp_path):
         f = tmp_path / "broken.txt"
         f.write_text("data")
-        with patch("better_code_review_graph.incremental.Path.read_bytes", side_effect=OSError):
+        with patch(
+            "better_code_review_graph.incremental.Path.read_bytes", side_effect=OSError
+        ):
             assert _is_binary(f)
 
 
