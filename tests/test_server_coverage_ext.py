@@ -154,7 +154,10 @@ class TestServerHintsCoverage:
         result = {}
         _maybe_include_setup_hint(result)
         assert "_setup_hint" in result
-        assert "http://setup.url" in result["_setup_hint"]
+        assert (
+            result["_setup_hint"]
+            == "Cloud embeddings available. Configure API keys: http://setup.url"
+        )
 
     @patch("better_code_review_graph.credential_state.get_state")
     @patch("better_code_review_graph.credential_state.get_setup_url")
