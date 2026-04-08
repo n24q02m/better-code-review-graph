@@ -35,7 +35,7 @@ class CredentialState(Enum):
 
 
 # Module-level state
-_state = CredentialState.AWAITING_SETUP
+_state: CredentialState = CredentialState.AWAITING_SETUP
 _setup_url: str | None = None
 
 

@@ -1094,8 +1094,8 @@ class TestQueryGraphEdgeCases:
                 kind="Function",
                 name="no_lines",
                 file_path=abs_auth,
-                line_start=None,
-                line_end=None,
+                line_start=None,  # type: ignore[arg-type]  # type: ignore
+                line_end=None,  # type: ignore[arg-type]  # type: ignore
                 language="python",
             )
         )

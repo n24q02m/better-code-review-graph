@@ -1,25 +1,32 @@
 import json
 from unittest.mock import patch
+from typing import Any
 
 import pytest
 
 from better_code_review_graph.server import (
     _config_status,
     _maybe_include_setup_hint,
-    help,
-    setup,
+    help as help_tool,
+    setup as setup_tool,
 )
 
 
 class TestHelpCoverageExt:
     def test_help_unknown_topic_no_suggestion(self):
-        result = json.loads(help.fn(topic="zzzzzzzz"))
+        h: Any = help_tool
+        fn = getattr(h, "fn", h)
+        # type: ignore[call-non-callable]
+        result = json.loads(fn(topic="zzzzzzzz"))
         assert "Unknown topic 'zzzzzzzz'." in result["error"]
         assert "Did you mean" not in result["error"]
         assert result["valid_topics"] == ["config", "graph", "query", "review"]
 
     def test_help_unknown_topic_with_suggestion(self):
-        result = json.loads(help.fn(topic="graphi"))
+        h: Any = help_tool
+        fn = getattr(h, "fn", h)
+        # type: ignore[call-non-callable]
+        result = json.loads(fn(topic="graphi"))
         assert "Unknown topic 'graphi'. Did you mean 'graph'?" in result["error"]
         assert result["valid_topics"] == ["config", "graph", "query", "review"]
 
@@ -32,7 +39,10 @@ class TestHelpCoverageExt:
 
         with patch("better_code_review_graph.server.get_docs_section") as mock_get_docs:
             mock_get_docs.return_value = {"status": "ok", "content": "Fallback content"}
-            result = help.fn(topic="graph")
+            h: Any = help_tool
+            fn = getattr(h, "fn", h)
+            # type: ignore[call-non-callable]
+            result = fn(topic="graph")
             assert result == "Fallback content"
             mock_get_docs.assert_called_once()
 
@@ -44,7 +54,10 @@ class TestHelpCoverageExt:
 
         with patch("better_code_review_graph.server.get_docs_section") as mock_get_docs:
             mock_get_docs.return_value = {"status": "error"}
-            result = json.loads(help.fn(topic="graph"))
+            h: Any = help_tool
+            fn = getattr(h, "fn", h)
+            # type: ignore[call-non-callable]
+            result = json.loads(fn(topic="graph"))
             assert "Documentation not found for topic: graph" in result["error"]
 
 
@@ -58,11 +71,14 @@ class TestSetupCoverageExt:
         try:
             val = CredentialState.AWAITING_SETUP
         except AttributeError:
-            val = CredentialState.awaiting_setup
+            val = getattr(CredentialState, "awaiting_setup")
         mock_get_state.return_value = val
         mock_url.return_value = "http://setup.url"
 
-        result = json.loads(await setup.fn(action="status"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="status"))
         assert result["state"] == val.value
         assert result["setup_url"] == "http://setup.url"
 
@@ -73,7 +89,10 @@ class TestSetupCoverageExt:
 
         mock_get_state.return_value = CredentialState.CONFIGURED
 
-        result = json.loads(await setup.fn(action="start"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="start"))
         assert result["status"] == "already_configured"
 
     @pytest.mark.asyncio
@@ -85,7 +104,10 @@ class TestSetupCoverageExt:
         mock_get_state.return_value = CredentialState.AWAITING_SETUP
         mock_trigger.return_value = "http://setup.url"
 
-        result = json.loads(await setup.fn(action="start"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="start"))
         assert result["status"] == "setup_started"
         assert result["setup_url"] == "http://setup.url"
 
@@ -98,14 +120,20 @@ class TestSetupCoverageExt:
         mock_get_state.return_value = CredentialState.AWAITING_SETUP
         mock_trigger.return_value = None
 
-        result = json.loads(await setup.fn(action="start"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="start"))
         assert result["status"] == "error"
 
     @pytest.mark.asyncio
     @patch("mcp_relay_core.set_local_mode")
     @patch("better_code_review_graph.credential_state.set_state")
     async def test_setup_skip(self, mock_set_state, mock_set_local):
-        result = json.loads(await setup.fn(action="skip"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="skip"))
         assert result["status"] == "ok"
         mock_set_local.assert_called_once()
         mock_set_state.assert_called_once()
@@ -113,7 +141,10 @@ class TestSetupCoverageExt:
     @pytest.mark.asyncio
     @patch("better_code_review_graph.credential_state.reset_state")
     async def test_setup_reset(self, mock_reset):
-        result = json.loads(await setup.fn(action="reset"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="reset"))
         assert result["status"] == "ok"
         mock_reset.assert_called_once()
 
@@ -125,19 +156,28 @@ class TestSetupCoverageExt:
 
         mock_get_state.return_value = CredentialState.CONFIGURED
 
-        result = json.loads(await setup.fn(action="complete"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="complete"))
         assert result["status"] == "ok"
         assert result["state"] == "configured"
         mock_resolve.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_setup_unknown_action_suggestion(self):
-        result = json.loads(await setup.fn(action="statu"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="statu"))
         assert "Unknown action 'statu'. Did you mean 'status'?" in result["error"]
 
     @pytest.mark.asyncio
     async def test_setup_unknown_action_no_suggestion(self):
-        result = json.loads(await setup.fn(action="zzzzzzzz"))
+        s: Any = setup_tool
+        fn = getattr(s, "fn", s)
+        # type: ignore[call-non-callable]
+        result = json.loads(await fn(action="zzzzzzzz"))
         assert "Unknown action 'zzzzzzzz'." in result["error"]
         assert "Did you mean" not in result["error"]
 
@@ -198,5 +238,8 @@ class TestServerStatusCoverage:
             mock_files.return_value.joinpath.return_value.read_text.side_effect = (
                 FileNotFoundError("docs not found")
             )
-            result = json.loads(help.fn(topic="review"))
+            h: Any = help_tool
+            fn = getattr(h, "fn", h)
+            # type: ignore[call-non-callable]
+            result = json.loads(fn(topic="review"))
             assert "Documentation not found for topic: review" in result["error"]

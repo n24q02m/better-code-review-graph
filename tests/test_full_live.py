@@ -112,7 +112,8 @@ export { Circle, Rectangle, totalArea };
 """
 
 
-def _parse_result_text(result) -> dict | str:
+from typing import Any
+def _parse_result_text(result) -> Any:
     """Extract text from MCP call_tool result and try to parse as JSON."""
     text = result.content[0].text
     try:
