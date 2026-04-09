@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import sqlite3
@@ -584,19 +585,35 @@ class EmbeddingStore:
 
         provider_name = self._get_backend_name()
 
+        # Pre-fetch existing embeddings metadata to prevent N+1 queries
+        valid_nodes = [n for n in nodes if n.kind != "File"]
+        qualified_names = [n.qualified_name for n in valid_nodes]
+
+        existing_metadata = {}
+        for i in range(0, len(qualified_names), batch_size):
+            batch = qualified_names[i : i + batch_size]
+            rows = self._conn.execute(
+                """
+                SELECT qualified_name, text_hash, provider
+                FROM embeddings
+                WHERE qualified_name IN (SELECT value FROM json_each(?))
+                """,
+                (json.dumps(batch),),
+            ).fetchall()
+            for r in rows:
+                existing_metadata[r["qualified_name"]] = {
+                    "text_hash": r["text_hash"],
+                    "provider": r["provider"],
+                }
+
         # Filter to nodes that need embedding
         to_embed: list[tuple[GraphNode, str, str]] = []
 
-        for node in nodes:
-            if node.kind == "File":
-                continue
+        for node in valid_nodes:
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
+            existing = existing_metadata.get(node.qualified_name)
 
             if (
                 existing
