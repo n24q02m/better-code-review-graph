@@ -324,6 +324,25 @@ class GraphStore:
             ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
+    def get_edges_by_targets(self, qualified_names: list[str]) -> list[GraphEdge]:
+        """Batch fetch edges by their target qualified names to prevent N+1 queries."""
+        if not qualified_names:
+            return []
+
+        unique_qns = list(set(qualified_names))
+        results: list[GraphEdge] = []
+        batch_size = 450  # Stay well under SQLite's default limit
+
+        for i in range(0, len(unique_qns), batch_size):
+            batch = unique_qns[i : i + batch_size]
+            rows = self._conn.execute(
+                "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch),),
+            ).fetchall()
+            results.extend(self._row_to_edge(r) for r in rows)
+
+        return results
+
     def search_edges_by_target_name(
         self, name: str, kind: str = "CALLS"
     ) -> list[GraphEdge]:
