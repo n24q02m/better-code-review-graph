@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import sqlite3
@@ -583,28 +584,43 @@ class EmbeddingStore:
             return 0
 
         provider_name = self._get_backend_name()
-
-        # Filter to nodes that need embedding
         to_embed: list[tuple[GraphNode, str, str]] = []
 
-        for node in nodes:
-            if node.kind == "File":
-                continue
-            text = _node_to_text(node)
-            text_hash = hashlib.sha256(text.encode()).hexdigest()
+        # Process in chunks to avoid N+1 queries for existing metadata
+        for i in range(0, len(nodes), batch_size):
+            chunk = nodes[i : i + batch_size]
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
+            # Map qualified names to (node, text, text_hash) for this chunk
+            chunk_data: dict[str, tuple[GraphNode, str, str]] = {}
+            for node in chunk:
+                if node.kind == "File":
+                    continue
+                text = _node_to_text(node)
+                text_hash = hashlib.sha256(text.encode()).hexdigest()
+                chunk_data[node.qualified_name] = (node, text, text_hash)
 
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+            if not chunk_data:
                 continue
-            to_embed.append((node, text, text_hash))
+
+            # Batch fetch existing metadata using json_each
+            qns = list(chunk_data.keys())
+            rows = self._conn.execute(
+                """SELECT qualified_name, text_hash, provider FROM embeddings
+                   WHERE qualified_name IN (SELECT value FROM json_each(?))""",
+                (json.dumps(qns),),
+            ).fetchall()
+
+            existing_map = {row["qualified_name"]: row for row in rows}
+
+            for qn, (node, text, text_hash) in chunk_data.items():
+                existing = existing_map.get(qn)
+                if (
+                    existing
+                    and existing["text_hash"] == text_hash
+                    and existing["provider"] == provider_name
+                ):
+                    continue
+                to_embed.append((node, text, text_hash))
 
         if not to_embed:
             return 0
