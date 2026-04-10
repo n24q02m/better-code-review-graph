@@ -689,7 +689,7 @@ class CodeParser:
 
             # Collect import mappings: imported_name → module_path
             if node_type in import_types:
-                self._collect_import_names(child, language, source, import_map)
+                self._collect_import_names(child, language, import_map)
 
         return import_map, defined_names
 
@@ -697,7 +697,6 @@ class CodeParser:
         self,
         node,
         language: str,
-        source: bytes,
         import_map: dict[str, str],
     ) -> None:
         """Extract imported names and their source modules into import_map."""
