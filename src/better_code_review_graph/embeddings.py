@@ -19,6 +19,8 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import math
 import os
 import sqlite3
@@ -29,6 +31,7 @@ from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
 
+logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -585,45 +588,60 @@ class EmbeddingStore:
         provider_name = self._get_backend_name()
 
         # Filter to nodes that need embedding
-        to_embed: list[tuple[GraphNode, str, str]] = []
+        # Use batch metadata fetching to avoid N+1 queries
+        non_file_nodes = [n for n in nodes if n.kind != "File"]
+        if not non_file_nodes:
+            return 0
 
-        for node in nodes:
-            if node.kind == "File":
-                continue
+        qualified_names = [n.qualified_name for n in non_file_nodes]
+        existing_metadata = {}
+
+        # Chunk metadata lookups to respect SQLite limits
+        chunk_size = 450
+        for i in range(0, len(qualified_names), chunk_size):
+            chunk = qualified_names[i : i + chunk_size]
+            rows = self._conn.execute(
+                "SELECT qualified_name, text_hash, provider FROM embeddings WHERE qualified_name IN (SELECT value FROM json_each(?))",
+                (json.dumps(chunk),),
+            ).fetchall()
+            for row in rows:
+                existing_metadata[row["qualified_name"]] = (
+                    row["text_hash"],
+                    row["provider"],
+                )
+
+        to_embed: list[tuple[GraphNode, str, str]] = []
+        for node in non_file_nodes:
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
-
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+            existing = existing_metadata.get(node.qualified_name)
+            if existing and existing[0] == text_hash and existing[1] == provider_name:
                 continue
             to_embed.append((node, text, text_hash))
 
         if not to_embed:
             return 0
 
-        # Encode in batches
-        texts = [t for _, t, _ in to_embed]
-        vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
+        try:
+            # Encode in batches
+            texts = [t for _, t, _ in to_embed]
+            vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
 
-        for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
-            blob = _encode_vector(vec)
-            self._conn.execute(
-                """INSERT OR REPLACE INTO embeddings
-                   (qualified_name, vector, text_hash, provider)
-                   VALUES (?, ?, ?, ?)""",
-                (node.qualified_name, blob, text_hash, provider_name),
-            )
+            for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
+                blob = _encode_vector(vec)
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO embeddings
+                       (qualified_name, vector, text_hash, provider)
+                       VALUES (?, ?, ?, ?)""",
+                    (node.qualified_name, blob, text_hash, provider_name),
+                )
 
-        self._conn.commit()
-        return len(to_embed)
+            self._conn.commit()
+            return len(to_embed)
+        except Exception as e:
+            logger.error(f"Failed to embed nodes: {e}")
+            return 0
 
     def search(self, query: str, limit: int = 20) -> list[tuple[str, float]]:
         """Search for nodes by semantic similarity.
