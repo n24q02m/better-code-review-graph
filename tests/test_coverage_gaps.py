@@ -691,3 +691,82 @@ class TestConfigStatusFallback:
         # Should return ok with 0 nodes (no graph found)
         assert result["status"] == "ok"
         assert result.get("total_nodes", 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# tools.py: get_review_context UnicodeDecodeError/OSError fallback (line 720)
+# ---------------------------------------------------------------------------
+
+
+class TestGetReviewContextErrorFallback:
+    def test_get_review_context_unicode_error(self, tmp_path):
+        """Cover line 720: UnicodeDecodeError in get_review_context."""
+        from better_code_review_graph.graph import GraphStore
+        from better_code_review_graph.tools import get_review_context
+
+        repo = tmp_path / "repo_unicode"
+        repo.mkdir()
+
+        # Create a dummy file with invalid UTF-8
+        bad_file = repo / "bad.py"
+        bad_file.write_bytes(b"\xff\xfe\xfd")
+
+        # We need a graph store mock
+        mock_store = MagicMock(spec=GraphStore)
+        mock_store.get_impact_radius.return_value = {
+            "impacted_files": [],
+            "changed_nodes": [],
+            "impacted_nodes": [],
+            "edges": [],
+        }
+
+        with patch(
+            "better_code_review_graph.tools._get_store", return_value=(mock_store, repo)
+        ):
+            result = get_review_context(
+                repo_root=str(repo), changed_files=["bad.py"], include_source=True
+            )
+
+            assert "source_snippets" in result["context"]
+            assert (
+                result["context"]["source_snippets"]["bad.py"]
+                == "(could not read file)"
+            )
+
+    def test_get_review_context_os_error(self, tmp_path):
+        """Cover line 720: OSError in get_review_context."""
+        from better_code_review_graph.graph import GraphStore
+        from better_code_review_graph.tools import get_review_context
+
+        repo = tmp_path / "repo_os"
+        repo.mkdir()
+
+        # Create a dummy file
+        bad_file = repo / "bad.py"
+        bad_file.write_text("dummy")
+
+        # We need a graph store mock
+        mock_store = MagicMock(spec=GraphStore)
+        mock_store.get_impact_radius.return_value = {
+            "impacted_files": [],
+            "changed_nodes": [],
+            "impacted_nodes": [],
+            "edges": [],
+        }
+
+        with patch(
+            "better_code_review_graph.tools._get_store", return_value=(mock_store, repo)
+        ):
+            # Mock read_text to raise OSError
+            with patch(
+                "pathlib.Path.read_text", side_effect=OSError("permission denied")
+            ):
+                result = get_review_context(
+                    repo_root=str(repo), changed_files=["bad.py"], include_source=True
+                )
+
+            assert "source_snippets" in result["context"]
+            assert (
+                result["context"]["source_snippets"]["bad.py"]
+                == "(could not read file)"
+            )
