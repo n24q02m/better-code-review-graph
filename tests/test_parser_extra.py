@@ -19,8 +19,8 @@ class TestParserUtils:
         assert _is_test_file("src/main.py") is False
 
     def test_is_test_function(self):
-        assert _is_test_function("test_login", "test_auth.py") is True
-        assert _is_test_function("login", "auth.py") is False
+        assert _is_test_function("test_login") is True
+        assert _is_test_function("login") is False
 
     def test_file_hash(self, tmp_path):
         f = tmp_path / "test.py"
