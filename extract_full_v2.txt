@@ -1,0 +1,841 @@
+   295	    def _extract_from_tree(
+   296	        self,
+   297	        root,
+   298	        source: bytes,
+   299	        language: str,
+   300	        file_path: str,
+   301	        nodes: list[NodeInfo],
+   302	        edges: list[EdgeInfo],
+   303	        enclosing_class: str | None = None,
+   304	        enclosing_func: str | None = None,
+   305	        import_map: dict[str, str] | None = None,
+   306	        defined_names: set[str] | None = None,
+   307	    ) -> None:
+   308	        """Recursively walk the AST and extract nodes/edges."""
+   309	        class_types = set(_CLASS_TYPES.get(language, []))
+   310	        func_types = set(_FUNCTION_TYPES.get(language, []))
+   311	        import_types = set(_IMPORT_TYPES.get(language, []))
+   312	        call_types = set(_CALL_TYPES.get(language, []))
+   313
+   314	        for child in root.children:
+   315	            # Classes
+   316	            if self._handle_class_node(
+   317	                child,
+   318	                source,
+   319	                language,
+   320	                file_path,
+   321	                nodes,
+   322	                edges,
+   323	                enclosing_class,
+   324	                import_map,
+   325	                defined_names,
+   326	                class_types,
+   327	            ):
+   328	                continue
+   329
+   330	            # Functions
+   331	            if self._handle_function_node(
+   332	                child,
+   333	                source,
+   334	                language,
+   335	                file_path,
+   336	                nodes,
+   337	                edges,
+   338	                enclosing_class,
+   339	                import_map,
+   340	                defined_names,
+   341	                func_types,
+   342	            ):
+   343	                continue
+   344
+   345	            # Imports
+   346	            if self._handle_import_node(
+   347	                child, source, language, file_path, edges, import_types
+   348	            ):
+   349	                continue
+   350
+   351	            # Calls
+   352	            if self._handle_call_node(
+   353	                child,
+   354	                source,
+   355	                language,
+   356	                file_path,
+   357	                edges,
+   358	                enclosing_class,
+   359	                enclosing_func,
+   360	                import_map,
+   361	                defined_names,
+   362	                call_types,
+   363	            ):
+   364	                continue
+   365
+   366	            # Solidity-specific
+   367	            if self._handle_solidity_node(
+   368	                child,
+   369	                language,
+   370	                file_path,
+   371	                nodes,
+   372	                edges,
+   373	                enclosing_class,
+   374	                enclosing_func,
+   375	            ):
+   376	                continue
+   377
+   378	            # Default recursion
+   379	            self._extract_from_tree(
+   380	                child,
+   381	                source,
+   382	                language,
+   383	                file_path,
+   384	                nodes,
+   385	                edges,
+   386	                enclosing_class=enclosing_class,
+   387	                enclosing_func=enclosing_func,
+   388	                import_map=import_map,
+   389	                defined_names=defined_names,
+   390	            )
+   391
+   392	    def _handle_class_node(
+   393	        self,
+   394	        child,
+   395	        source: bytes,
+   396	        language: str,
+   397	        file_path: str,
+   398	        nodes: list[NodeInfo],
+   399	        edges: list[EdgeInfo],
+   400	        enclosing_class: str | None,
+   401	        import_map: dict[str, str] | None,
+   402	        defined_names: set[str] | None,
+   403	        class_types: set[str],
+   404	    ) -> bool:
+   405	        if child.type not in class_types:
+   406	            return False
+   407	        name = self._get_name(child, language, "class")
+   408	        if name:
+   409	            node = NodeInfo(
+   410	                kind="Class",
+   411	                name=name,
+   412	                file_path=file_path,
+   413	                line_start=child.start_point[0] + 1,
+   414	                line_end=child.end_point[0] + 1,
+   415	                language=language,
+   416	                parent_name=enclosing_class,
+   417	            )
+   418	            nodes.append(node)
+   419
+   420	            # CONTAINS edge
+   421	            edges.append(
+   422	                EdgeInfo(
+   423	                    kind="CONTAINS",
+   424	                    source=file_path,
+   425	                    target=self._qualify(name, file_path, enclosing_class),
+   426	                    file_path=file_path,
+   427	                    line=child.start_point[0] + 1,
+   428	                )
+   429	            )
+   430
+   431	            # Inheritance edges
+   432	            bases = self._get_bases(child, language, source)
+   433	            for base in bases:
+   434	                edges.append(
+   435	                    EdgeInfo(
+   436	                        kind="INHERITS",
+   437	                        source=self._qualify(name, file_path, enclosing_class),
+   438	                        target=base,
+   439	                        file_path=file_path,
+   440	                        line=child.start_point[0] + 1,
+   441	                    )
+   442	                )
+   443
+   444	            # Recurse into class body
+   445	            self._extract_from_tree(
+   446	                child,
+   447	                source,
+   448	                language,
+   449	                file_path,
+   450	                nodes,
+   451	                edges,
+   452	                enclosing_class=name,
+   453	                enclosing_func=None,
+   454	                import_map=import_map,
+   455	                defined_names=defined_names,
+   456	            )
+   457	        return True
+   458
+   459	    def _handle_function_node(
+   460	        self,
+   461	        child,
+   462	        source: bytes,
+   463	        language: str,
+   464	        file_path: str,
+   465	        nodes: list[NodeInfo],
+   466	        edges: list[EdgeInfo],
+   467	        enclosing_class: str | None,
+   468	        import_map: dict[str, str] | None,
+   469	        defined_names: set[str] | None,
+   470	        func_types: set[str],
+   471	    ) -> bool:
+   472	        if child.type not in func_types:
+   473	            return False
+   474	        name = self._get_name(child, language, "function")
+   475	        if name:
+   476	            is_test = _is_test_function(name, file_path)
+   477	            kind = "Test" if is_test else "Function"
+   478	            qualified = self._qualify(name, file_path, enclosing_class)
+   479	            params = self._get_params(child, language, source)
+   480	            ret_type = self._get_return_type(child, language, source)
+   481
+   482	            node = NodeInfo(
+   483	                kind=kind,
+   484	                name=name,
+   485	                file_path=file_path,
+   486	                line_start=child.start_point[0] + 1,
+   487	                line_end=child.end_point[0] + 1,
+   488	                language=language,
+   489	                parent_name=enclosing_class,
+   490	                params=params,
+   491	                return_type=ret_type,
+   492	                is_test=is_test,
+   493	            )
+   494	            nodes.append(node)
+   495
+   496	            # CONTAINS edge
+   497	            container = (
+   498	                self._qualify(enclosing_class, file_path, None)
+   499	                if enclosing_class
+   500	                else file_path
+   501	            )
+   502	            edges.append(
+   503	                EdgeInfo(
+   504	                    kind="CONTAINS",
+   505	                    source=container,
+   506	                    target=qualified,
+   507	                    file_path=file_path,
+   508	                    line=child.start_point[0] + 1,
+   509	                )
+   510	            )
+   511
+   512	            # Solidity-specific: modifier invocations (CALLS)
+   513	            if language == "solidity":
+   514	                for sub in child.children:
+   515	                    if sub.type == "modifier_invocation":
+   516	                        for ident in sub.children:
+   517	                            if ident.type == "identifier":
+   518	                                caller = self._qualify(
+   519	                                    name,
+   520	                                    file_path,
+   521	                                    enclosing_class,
+   522	                                )
+   523	                                edges.append(
+   524	                                    EdgeInfo(
+   525	                                        kind="CALLS",
+   526	                                        source=caller,
+   527	                                        target=ident.text.decode(
+   528	                                            "utf-8",
+   529	                                            errors="replace",
+   530	                                        ),
+   531	                                        file_path=file_path,
+   532	                                        line=sub.start_point[0] + 1,
+   533	                                    )
+   534	                                )
+   535	                                break
+   536
+   537	            # Recurse to find calls inside the function
+   538	            self._extract_from_tree(
+   539	                child,
+   540	                source,
+   541	                language,
+   542	                file_path,
+   543	                nodes,
+   544	                edges,
+   545	                enclosing_class=enclosing_class,
+   546	                enclosing_func=name,
+   547	                import_map=import_map,
+   548	                defined_names=defined_names,
+   549	            )
+   550	        return True
+   551
+   552	    def _handle_import_node(
+   553	        self,
+   554	        child,
+   555	        source: bytes,
+   556	        language: str,
+   557	        file_path: str,
+   558	        edges: list[EdgeInfo],
+   559	        import_types: set[str],
+   560	    ) -> bool:
+   561	        if child.type not in import_types:
+   562	            return False
+   563	        imports = self._extract_import(child, language, source)
+   564	        for imp_target in imports:
+   565	            edges.append(
+   566	                EdgeInfo(
+   567	                    kind="IMPORTS_FROM",
+   568	                    source=file_path,
+   569	                    target=imp_target,
+   570	                    file_path=file_path,
+   571	                    line=child.start_point[0] + 1,
+   572	                )
+   573	            )
+   574	        return True
+   575
+   576	    def _handle_call_node(
+   577	        self,
+   578	        child,
+   579	        source: bytes,
+   580	        language: str,
+   581	        file_path: str,
+   582	        edges: list[EdgeInfo],
+   583	        enclosing_class: str | None,
+   584	        enclosing_func: str | None,
+   585	        import_map: dict[str, str] | None,
+   586	        defined_names: set[str] | None,
+   587	        call_types: set[str],
+   588	    ) -> bool:
+   589	        if child.type not in call_types:
+   590	            return False
+   591	        call_name = self._get_call_name(child, language, source)
+   592	        if call_name and enclosing_func:
+   593	            caller = self._qualify(enclosing_func, file_path, enclosing_class)
+   594	            target = self._resolve_call_target(
+   595	                call_name,
+   596	                file_path,
+   597	                language,
+   598	                import_map or {},
+   599	                defined_names or set(),
+   600	            )
+   601	            edges.append(
+   602	                EdgeInfo(
+   603	                    kind="CALLS",
+   604	                    source=caller,
+   605	                    target=target,
+   606	                    file_path=file_path,
+   607	                    line=child.start_point[0] + 1,
+   608	                )
+   609	            )
+   610	        return False
+   611
+   612	    def _handle_solidity_node(
+   613	        self,
+   614	        child,
+   615	        language: str,
+   616	        file_path: str,
+   617	        nodes: list[NodeInfo],
+   618	        edges: list[EdgeInfo],
+   619	        enclosing_class: str | None,
+   620	        enclosing_func: str | None,
+   621	    ) -> bool:
+   622	        if language != "solidity":
+   623	            return False
+   624
+   625	        node_type = child.type
+   626	        # Emit statements: emit EventName(...) → CALLS edge
+   627	        if node_type == "emit_statement" and enclosing_func:
+   628	            for sub in child.children:
+   629	                if sub.type == "expression":
+   630	                    for ident in sub.children:
+   631	                        if ident.type == "identifier":
+   632	                            caller = self._qualify(
+   633	                                enclosing_func,
+   634	                                file_path,
+   635	                                enclosing_class,
+   636	                            )
+   637	                            edges.append(
+   638	                                EdgeInfo(
+   639	                                    kind="CALLS",
+   640	                                    source=caller,
+   641	                                    target=ident.text.decode("utf-8", errors="replace"),
+   642	                                    file_path=file_path,
+   643	                                    line=child.start_point[0] + 1,
+   644	                                )
+   645	                            )
+   646	            return False
+   647
+   648	        # State variable declarations
+   649	        if node_type == "state_variable_declaration" and enclosing_class:
+   650	            var_name = None
+   651	            var_visibility = None
+   652	            var_mutability = None
+   653	            var_type = None
+   654	            for sub in child.children:
+   655	                if sub.type == "identifier":
+   656	                    var_name = sub.text.decode("utf-8", errors="replace")
+   657	                elif sub.type == "visibility":
+   658	                    var_visibility = sub.text.decode("utf-8", errors="replace")
+   659	                elif sub.type == "type_name":
+   660	                    var_type = sub.text.decode("utf-8", errors="replace")
+   661	                elif sub.type in ("constant", "immutable"):
+   662	                    var_mutability = sub.type
+   663	            if var_name:
+   664	                qualified = self._qualify(var_name, file_path, enclosing_class)
+   665	                nodes.append(
+   666	                    NodeInfo(
+   667	                        kind="Function",
+   668	                        name=var_name,
+   669	                        file_path=file_path,
+   670	                        line_start=child.start_point[0] + 1,
+   671	                        line_end=child.end_point[0] + 1,
+   672	                        language=language,
+   673	                        parent_name=enclosing_class,
+   674	                        return_type=var_type,
+   675	                        modifiers=var_visibility,
+   676	                        extra={
+   677	                            "solidity_kind": "state_variable",
+   678	                            "mutability": var_mutability,
+   679	                        },
+   680	                    )
+   681	                )
+   682	                edges.append(
+   683	                    EdgeInfo(
+   684	                        kind="CONTAINS",
+   685	                        source=self._qualify(
+   686	                            enclosing_class,
+   687	                            file_path,
+   688	                            None,
+   689	                        ),
+   690	                        target=qualified,
+   691	                        file_path=file_path,
+   692	                        line=child.start_point[0] + 1,
+   693	                    )
+   694	                )
+   695	            return True
+   696
+   697	        # File-level and contract-level constant declarations
+   698	        if node_type == "constant_variable_declaration":
+   699	            var_name = None
+   700	            var_type = None
+   701	            for sub in child.children:
+   702	                if sub.type == "identifier":
+   703	                    var_name = sub.text.decode("utf-8", errors="replace")
+   704	                elif sub.type == "type_name":
+   705	                    var_type = sub.text.decode("utf-8", errors="replace")
+   706	            if var_name:
+   707	                qualified = self._qualify(
+   708	                    var_name,
+   709	                    file_path,
+   710	                    enclosing_class,
+   711	                )
+   712	                nodes.append(
+   713	                    NodeInfo(
+   714	                        kind="Function",
+   715	                        name=var_name,
+   716	                        file_path=file_path,
+   717	                        line_start=child.start_point[0] + 1,
+   718	                        line_end=child.end_point[0] + 1,
+   719	                        language=language,
+   720	                        parent_name=enclosing_class,
+   721	                        return_type=var_type,
+   722	                        extra={"solidity_kind": "constant"},
+   723	                    )
+   724	                )
+   725	                container = (
+   726	                    self._qualify(enclosing_class, file_path, None)
+   727	                    if enclosing_class
+   728	                    else file_path
+   729	                )
+   730	                edges.append(
+   731	                    EdgeInfo(
+   732	                        kind="CONTAINS",
+   733	                        source=container,
+   734	                        target=qualified,
+   735	                        file_path=file_path,
+   736	                        line=child.start_point[0] + 1,
+   737	                    )
+   738	                )
+   739	            return True
+   740
+   741	        # Using directives
+   742	        if node_type == "using_directive":
+   743	            lib_name = None
+   744	            for sub in child.children:
+   745	                if sub.type == "type_alias":
+   746	                    for ident in sub.children:
+   747	                        if ident.type == "identifier":
+   748	                            lib_name = ident.text.decode(
+   749	                                "utf-8",
+   750	                                errors="replace",
+   751	                            )
+   752	            if lib_name:
+   753	                source_name = (
+   754	                    self._qualify(enclosing_class, file_path, None)
+   755	                    if enclosing_class
+   756	                    else file_path
+   757	                )
+   758	                edges.append(
+   759	                    EdgeInfo(
+   760	                        kind="DEPENDS_ON",
+   761	                        source=source_name,
+   762	                        target=lib_name,
+   763	                        file_path=file_path,
+   764	                        line=child.start_point[0] + 1,
+   765	                    )
+   766	                )
+   767	            return True
+   768
+   769	        return False
+   770
+   771	    def _collect_file_scope(
+   772	        self,
+   773	        root,
+   774	        language: str,
+   775	        source: bytes,
+   776	    ) -> tuple[dict[str, str], set[str]]:
+   777	        """Pre-scan top-level AST to collect import mappings and defined names.
+   778
+   779	        Returns:
+   780	            (import_map, defined_names) where import_map maps imported names
+   781	            to their source module/path, and defined_names is the set of
+   782	            function/class names defined at file scope.
+   783	        """
+   784	        import_map: dict[str, str] = {}
+   785	        defined_names: set[str] = set()
+   786
+   787	        class_types = set(_CLASS_TYPES.get(language, []))
+   788	        func_types = set(_FUNCTION_TYPES.get(language, []))
+   789	        import_types = set(_IMPORT_TYPES.get(language, []))
+   790
+   791	        # Node types that wrap a class/function with decorators/annotations
+   792	        decorator_wrappers = {"decorated_definition", "decorator"}
+   793
+   794	        for child in root.children:
+   795	            node_type = child.type
+   796
+   797	            # Unwrap decorator wrappers to reach the inner definition
+   798	            target = child
+   799	            if node_type in decorator_wrappers:
+   800	                for inner in child.children:
+   801	                    if inner.type in func_types or inner.type in class_types:
+   802	                        target = inner
+   803	                        break
+   804
+   805	            target_type = target.type
+   806
+   807	            # Collect defined function/class names
+   808	            if target_type in func_types or target_type in class_types:
+   809	                name = self._get_name(
+   810	                    target,
+   811	                    language,
+   812	                    "class" if target_type in class_types else "function",
+   813	                )
+   814	                if name:
+   815	                    defined_names.add(name)
+   816
+   817	            # Collect import mappings: imported_name → module_path
+   818	            if node_type in import_types:
+   819	                self._collect_import_names(child, language, source, import_map)
+   820
+   821	        return import_map, defined_names
+   822
+   823	    def _collect_import_names(
+   824	        self,
+   825	        node,
+   826	        language: str,
+   827	        source: bytes,
+   828	        import_map: dict[str, str],
+   829	    ) -> None:
+   830	        """Extract imported names and their source modules into import_map."""
+   831	        if language == "python":
+   832	            if node.type == "import_from_statement":
+   833	                # from X.Y import A, B → {A: X.Y, B: X.Y}
+   834	                module = None
+   835	                seen_import_keyword = False
+   836	                for child in node.children:
+   837	                    if child.type == "dotted_name" and not seen_import_keyword:
+   838	                        module = child.text.decode("utf-8", errors="replace")
+   839	                    elif child.type == "import":
+   840	                        seen_import_keyword = True
+   841	                    elif seen_import_keyword and module:
+   842	                        if child.type in ("identifier", "dotted_name"):
+   843	                            name = child.text.decode("utf-8", errors="replace")
+   844	                            import_map[name] = module
+   845	                        elif child.type == "aliased_import":
+   846	                            # from X import A as B → {B: X}
+   847	                            names = [
+   848	                                sub.text.decode("utf-8", errors="replace")
+   849	                                for sub in child.children
+   850	                                if sub.type in ("identifier", "dotted_name")
+   851	                            ]
+   852	                            # Last name is the alias (local name)
+   853	                            if names:
+   854	                                import_map[names[-1]] = module
+   855
+   856	        elif language in ("javascript", "typescript", "tsx"):
+   857	            # import { A, B } from './path' → {A: ./path, B: ./path}
+   858	            module = None
+   859	            for child in node.children:
+   860	                if child.type == "string":
+   861	                    module = child.text.decode("utf-8", errors="replace").strip("'\"")
+   862	            if module:
+   863	                for child in node.children:
+   864	                    if child.type == "import_clause":
+   865	                        self._collect_js_import_names(child, module, import_map)
+   866
+   867	    def _collect_js_import_names(
+   868	        self,
+   869	        clause_node,
+   870	        module: str,
+   871	        import_map: dict[str, str],
+   872	    ) -> None:
+   873	        """Walk JS/TS import_clause to extract named and default imports."""
+   874	        for child in clause_node.children:
+   875	            if child.type == "identifier":
+   876	                # Default import
+   877	                import_map[child.text.decode("utf-8", errors="replace")] = module
+   878	            elif child.type == "named_imports":
+   879	                for spec in child.children:
+   880	                    if spec.type == "import_specifier":
+   881	                        # Could be: name or name as alias
+   882	                        names = [
+   883	                            s.text.decode("utf-8", errors="replace")
+   884	                            for s in spec.children
+   885	                            if s.type in ("identifier", "property_identifier")
+   886	                        ]
+   887	                        # Last identifier is the local name
+   888	                        if names:
+   889	                            import_map[names[-1]] = module
+   890
+   891	    def _resolve_module_to_file(
+   892	        self,
+   893	        module: str,
+   894	        file_path: str,
+   895	        language: str,
+   896	    ) -> str | None:
+   897	        """Resolve a module/import path to an absolute file path.
+   898
+   899	        Uses self._module_file_cache to avoid repeated filesystem lookups.
+   900	        """
+   901	        caller_dir = str(Path(file_path).parent)
+   902	        cache_key = f"{language}:{caller_dir}:{module}"
+   903	        if cache_key in self._module_file_cache:
+   904	            return self._module_file_cache[cache_key]
+   905
+   906	        resolved = self._do_resolve_module(module, file_path, language)
+   907	        self._module_file_cache[cache_key] = resolved
+   908	        return resolved
+   909
+   910	    def _do_resolve_module(
+   911	        self,
+   912	        module: str,
+   913	        file_path: str,
+   914	        language: str,
+   915	    ) -> str | None:
+   916	        """Language-aware module-to-file resolution."""
+   917	        caller_dir = Path(file_path).parent
+   918
+   919	        if language == "python":
+   920	            rel_path = module.replace(".", "/")
+   921	            candidates = [rel_path + ".py", rel_path + "/__init__.py"]
+   922	            # Walk up from caller's directory to find the module file
+   923	            current = caller_dir
+   924	            while True:
+   925	                for candidate in candidates:
+   926	                    target = current / candidate
+   927	                    if target.is_file():
+   928	                        return str(target.resolve())
+   929	                if current == current.parent:
+   930	                    break
+   931	                current = current.parent
+   932
+   933	        elif language in ("javascript", "typescript", "tsx"):
+   934	            if module.startswith("."):
+   935	                # Relative import — resolve from caller's directory
+   936	                base = caller_dir / module
+   937	                extensions = [".ts", ".tsx", ".js", ".jsx"]
+   938	                # Try exact path first (might already have extension)
+   939	                if base.is_file():
+   940	                    return str(base.resolve())
+   941	                # Try with extensions
+   942	                for ext in extensions:
+   943	                    target = base.with_suffix(ext)
+   944	                    if target.is_file():
+   945	                        return str(target.resolve())
+   946	                # Try index file in directory
+   947	                if base.is_dir():
+   948	                    for ext in extensions:
+   949	                        target = base / f"index{ext}"
+   950	                        if target.is_file():
+   951	                            return str(target.resolve())
+   952
+   953	        return None
+   954
+   955	    def _resolve_call_target(
+   956	        self,
+   957	        call_name: str,
+   958	        file_path: str,
+   959	        language: str,
+   960	        import_map: dict[str, str],
+   961	        defined_names: set[str],
+   962	    ) -> str:
+   963	        """Resolve a bare call name to a qualified target, with fallback."""
+   964	        if call_name in defined_names:
+   965	            return self._qualify(call_name, file_path, None)
+   966	        if call_name in import_map:
+   967	            resolved = self._resolve_module_to_file(
+   968	                import_map[call_name],
+   969	                file_path,
+   970	                language,
+   971	            )
+   972	            if resolved:
+   973	                return self._qualify(call_name, resolved, None)
+   974	        return call_name
+   975
+   976	    def _qualify(self, name: str, file_path: str, enclosing_class: str | None) -> str:
+   977	        """Create a qualified name: file_path::ClassName.name or file_path::name."""
+   978	        if enclosing_class:
+   979	            return f"{file_path}::{enclosing_class}.{name}"
+   980	        return f"{file_path}::{name}"
+   981
+   982	    def _get_name(self, node, language: str, kind: str) -> str | None:
+   983	        """Extract the name from a class/function definition node."""
+   984	        # Solidity: constructor and receive/fallback have no identifier child
+   985	        if language == "solidity":
+   986	            if node.type == "constructor_definition":
+   987	                return "constructor"
+   988	            if node.type == "fallback_receive_definition":
+   989	                for child in node.children:
+   990	                    if child.type in ("receive", "fallback"):
+   991	                        return child.text.decode("utf-8", errors="replace")
+   992	        # For C/C++: function names are inside function_declarator/pointer_declarator
+   993	        # Check these first to avoid matching the return type_identifier
+   994	        if language in ("c", "cpp") and kind == "function":
+   995	            for child in node.children:
+   996	                if child.type in ("function_declarator", "pointer_declarator"):
+   997	                    result = self._get_name(child, language, kind)
+   998	                    if result:
+   999	                        return result
+  1000	        # Most languages use a 'name' child
+  1001	        for child in node.children:
+  1002	            if child.type in (
+  1003	                "identifier",
+  1004	                "name",
+  1005	                "type_identifier",
+  1006	                "property_identifier",
+  1007	                "simple_identifier",
+  1008	                "constant",
+  1009	            ):
+  1010	                return child.text.decode("utf-8", errors="replace")
+  1011	        # For Go type declarations, look for type_spec
+  1012	        if language == "go" and node.type == "type_declaration":
+  1013	            for child in node.children:
+  1014	                if child.type == "type_spec":
+  1015	                    return self._get_name(child, language, kind)
+  1016	        return None
+  1017
+  1018	    def _get_params(self, node, language: str, source: bytes) -> str | None:
+  1019	        """Extract parameter list as a string."""
+  1020	        for child in node.children:
+  1021	            if child.type in ("parameters", "formal_parameters", "parameter_list"):
+  1022	                return child.text.decode("utf-8", errors="replace")
+  1023	        # Solidity: parameters are direct children between ( and )
+  1024	        if language == "solidity":
+  1025	            params = [
+  1026	                c.text.decode("utf-8", errors="replace")
+  1027	                for c in node.children
+  1028	                if c.type == "parameter"
+  1029	            ]
+  1030	            if params:
+  1031	                return f"({', '.join(params)})"
+  1032	        return None
+  1033
+  1034	    def _get_return_type(self, node, language: str, source: bytes) -> str | None:
+  1035	        """Extract return type annotation if present."""
+  1036	        for child in node.children:
+  1037	            if child.type in (
+  1038	                "type",
+  1039	                "return_type",
+  1040	                "type_annotation",
+  1041	                "return_type_definition",
+  1042	            ):
+  1043	                return child.text.decode("utf-8", errors="replace")
+  1044	        # Python: look for -> annotation
+  1045	        if language == "python":
+  1046	            for i, child in enumerate(node.children):
+  1047	                if child.type == "->" and i + 1 < len(node.children):
+  1048	                    return node.children[i + 1].text.decode("utf-8", errors="replace")
+  1049	        return None
+  1050
+  1051	    def _get_bases(self, node, language: str, source: bytes) -> list[str]:
+  1052	        """Extract base classes / implemented interfaces."""
+  1053	        bases = []
+  1054	        if language == "python":
+  1055	            for child in node.children:
+  1056	                if child.type == "argument_list":
+  1057	                    for arg in child.children:
+  1058	                        if arg.type in ("identifier", "attribute"):
+  1059	                            bases.append(arg.text.decode("utf-8", errors="replace"))
+  1060	        elif language in ("java", "csharp", "kotlin"):
+  1061	            # Look for superclass/interfaces in extends/implements clauses
+  1062	            for child in node.children:
+  1063	                if child.type in (
+  1064	                    "superclass",
+  1065	                    "super_interfaces",
+  1066	                    "extends_type",
+  1067	                    "implements_type",
+  1068	                    "type_identifier",
+  1069	                    "supertype",
+  1070	                    "delegation_specifier",
+  1071	                ):
+  1072	                    text = child.text.decode("utf-8", errors="replace")
+  1073	                    bases.append(text)
+  1074	        elif language == "cpp":
+  1075	            # C++: base_class_clause contains type_identifiers
+  1076	            for child in node.children:
+  1077	                if child.type == "base_class_clause":
+  1078	                    for sub in child.children:
+  1079	                        if sub.type == "type_identifier":
+  1080	                            bases.append(sub.text.decode("utf-8", errors="replace"))
+  1081	        elif language in ("typescript", "javascript", "tsx"):
+  1082	            # extends clause
+  1083	            for child in node.children:
+  1084	                if child.type in ("extends_clause", "implements_clause"):
+  1085	                    for sub in child.children:
+  1086	                        if sub.type in (
+  1087	                            "identifier",
+  1088	                            "type_identifier",
+  1089	                            "nested_identifier",
+  1090	                        ):
+  1091	                            bases.append(sub.text.decode("utf-8", errors="replace"))
+  1092	        elif language == "solidity":
+  1093	            # contract Foo is Bar, Baz { ... }
+  1094	            for child in node.children:
+  1095	                if child.type == "inheritance_specifier":
+  1096	                    for sub in child.children:
+  1097	                        if sub.type == "user_defined_type":
+  1098	                            for ident in sub.children:
+  1099	                                if ident.type == "identifier":
+  1100	                                    bases.append(
+  1101	                                        ident.text.decode("utf-8", errors="replace")
+  1102	                                    )
+  1103	        elif language == "go":
+  1104	            # Embedded structs / interface composition
+  1105	            for child in node.children:
+  1106	                if child.type == "type_spec":
+  1107	                    for sub in child.children:
+  1108	                        if sub.type in ("struct_type", "interface_type"):
+  1109	                            for field_node in sub.children:
+  1110	                                if field_node.type == "field_declaration_list":
+  1111	                                    for f in field_node.children:
+  1112	                                        if f.type == "type_identifier":
+  1113	                                            bases.append(
+  1114	                                                f.text.decode("utf-8", errors="replace")
+  1115	                                            )
+  1116	        return bases
+  1117
+  1118	    def _extract_import(self, node, language: str, source: bytes) -> list[str]:
+  1119	        """Extract import targets as module/path strings."""
+  1120	        text = node.text.decode("utf-8", errors="replace").strip()
+  1121
+  1122	        if language == "python":
+  1123	            return self._extract_import_python(node)
+  1124	        elif language in ("javascript", "typescript", "tsx"):
+  1125	            return self._extract_import_javascript(node)
+  1126	        elif language == "go":
+  1127	            return self._extract_import_go(node)
+  1128	        elif language == "rust":
+  1129	            return self._extract_import_rust(text)
+  1130	        elif language in ("c", "cpp"):
+  1131	            return self._extract_import_c(node)
+  1132	        elif language in ("java", "csharp"):
+  1133	            return self._extract_import_java(text)
+  1134	        elif language == "solidity":
+  1135	            return self._extract_import_solidity(node)
