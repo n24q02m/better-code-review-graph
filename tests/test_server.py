@@ -280,10 +280,13 @@ class TestConfigTool:
 
     def test_set_missing_key(self):
         result = json.loads(config(action="set"))
+        assert result["error"] == "key is required for set action"
+        assert result["valid_keys"] == ["log_level"]
         assert "error" in result
 
     def test_set_missing_value(self):
         result = json.loads(config(action="set", key="log_level"))
+        assert result["error"] == "value is required for set action"
         assert "error" in result
 
     def test_set_invalid_key(self):
