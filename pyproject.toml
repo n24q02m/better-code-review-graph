@@ -86,6 +86,9 @@ fail_under = 95
 show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
+[tool.uv.sources]
+n24q02m-mcp-core = { path = "../mcp-core/packages/core-py", editable = true }
+
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 version_variables = [".claude-plugin/plugin.json:version", "server.json:version"]
