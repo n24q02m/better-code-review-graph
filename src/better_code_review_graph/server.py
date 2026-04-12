@@ -689,8 +689,27 @@ SERVER_NAME = "better-code-review-graph"
 # ---------------------------------------------------------------------------
 
 
+async def run_http(port: int = 0) -> None:
+    """Run as HTTP server with local OAuth 2.1 AS."""
+    from mcp_core.transport.local_server import run_local_server
+
+    from .credential_state import save_credentials
+    from .relay_schema import RELAY_SCHEMA
+
+    await run_local_server(
+        mcp,
+        server_name="better-code-review-graph",
+        relay_schema=RELAY_SCHEMA,
+        port=port,
+        on_credentials_saved=save_credentials,
+    )
+
+
 def serve_main(repo_root: str | None = None) -> None:
-    """Run the MCP server via stdio."""
+    """Run the MCP server. Defaults to HTTP, --stdio for backward compat."""
+    import asyncio
+    import sys
+
     global _default_repo_root
     _default_repo_root = repo_root
 
@@ -699,7 +718,10 @@ def serve_main(repo_root: str | None = None) -> None:
 
     resolve_credential_state()
 
-    mcp.run(transport="stdio")
+    if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        asyncio.run(run_http())
 
 
 if __name__ == "__main__":

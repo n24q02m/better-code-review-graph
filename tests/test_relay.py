@@ -243,6 +243,7 @@ class TestCLIIntegration:
                 "better_code_review_graph.credential_state.resolve_credential_state",
             ) as mock_resolve,
             patch("better_code_review_graph.server.mcp") as mock_mcp,
+            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
             from better_code_review_graph.cli import main
 
@@ -257,15 +258,10 @@ class TestCLIIntegration:
                 side_effect=Exception("relay broken"),
             ),
             patch("better_code_review_graph.server.mcp"),
+            patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
             from better_code_review_graph.cli import main
 
-            # serve_main does not catch exceptions from resolve_credential_state
-            # because it's non-blocking; the exception propagates. But let's test
-            # the actual behavior: if resolve_credential_state raises, serve_main
-            # would crash. However the real code paths (config file read, etc.)
-            # never raise -- they catch internally.
-            # Test that mcp.run is NOT called when resolve_credential_state crashes
             try:
                 main()
             except Exception:

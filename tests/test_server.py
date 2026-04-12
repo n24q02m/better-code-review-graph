@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from unittest.mock import patch
 
@@ -399,6 +400,7 @@ class TestHelpTool:
 
 class TestServeMain:
     @patch("better_code_review_graph.server.mcp")
+    @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_sets_repo_root(self, mock_mcp):
         import better_code_review_graph.server as server_module
 
@@ -407,6 +409,7 @@ class TestServeMain:
         mock_mcp.run.assert_called_once_with(transport="stdio")
 
     @patch("better_code_review_graph.server.mcp")
+    @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_none_repo_root(self, mock_mcp):
         import better_code_review_graph.server as server_module
 
