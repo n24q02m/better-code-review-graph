@@ -85,9 +85,9 @@ class TestEnsureConfigEnvVar:
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("GEMINI_API_KEY", "")
 
-        with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
             with patch(
-                "mcp_relay_core.relay.client.create_session",
+                "mcp_core.relay.client.create_session",
                 side_effect=Exception("no relay"),
             ):
                 result = await ensure_config()
@@ -100,7 +100,7 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={"GEMINI_API_KEY": "from-file"},
         ) as mock_read:
             result = await ensure_config()
@@ -113,7 +113,7 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={"GEMINI_API_KEY": "injected-key"},
         ):
             await ensure_config()
@@ -125,11 +125,11 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={"UNKNOWN_KEY": "value"},
         ):
             with patch(
-                "mcp_relay_core.relay.client.create_session",
+                "mcp_core.relay.client.create_session",
                 side_effect=Exception("no relay"),
             ):
                 result = await ensure_config()
@@ -141,22 +141,22 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
             with (
                 patch(
-                    "mcp_relay_core.relay.client.create_session",
+                    "mcp_core.relay.client.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ) as mock_create,
                 patch(
-                    "mcp_relay_core.relay.client.poll_for_result",
+                    "mcp_core.relay.client.poll_for_result",
                     new_callable=AsyncMock,
                     return_value={"JINA_AI_API_KEY": "from-relay"},
                 ) as mock_poll,
-                patch("mcp_relay_core.storage.config_file.write_config") as mock_write,
+                patch("mcp_core.storage.config_file.write_config") as mock_write,
                 patch("httpx.AsyncClient") as _mock_http,
             ):
                 result = await ensure_config()
@@ -174,9 +174,9 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
             with patch(
-                "mcp_relay_core.relay.client.create_session",
+                "mcp_core.relay.client.create_session",
                 new_callable=AsyncMock,
                 side_effect=ConnectionError("unreachable"),
             ):
@@ -187,18 +187,18 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
             with (
                 patch(
-                    "mcp_relay_core.relay.client.create_session",
+                    "mcp_core.relay.client.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_relay_core.relay.client.poll_for_result",
+                    "mcp_core.relay.client.poll_for_result",
                     new_callable=AsyncMock,
                     side_effect=RuntimeError("timed out"),
                 ),
@@ -210,18 +210,18 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
             with (
                 patch(
-                    "mcp_relay_core.relay.client.create_session",
+                    "mcp_core.relay.client.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_relay_core.relay.client.poll_for_result",
+                    "mcp_core.relay.client.poll_for_result",
                     new_callable=AsyncMock,
                     side_effect=RuntimeError("RELAY_SKIPPED"),
                 ),

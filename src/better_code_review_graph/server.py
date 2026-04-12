@@ -550,7 +550,7 @@ async def setup(
             )
 
         case "skip":
-            from mcp_relay_core import set_local_mode
+            from mcp_core import set_local_mode
 
             from .credential_state import CredentialState, set_state
 

@@ -108,8 +108,8 @@ class TestStateAccessors:
         cs._setup_url = "https://example.com/setup"
 
         with (
-            patch("mcp_relay_core.clear_mode") as mock_clear,
-            patch("mcp_relay_core.storage.config_file.delete_config") as mock_delete,
+            patch("mcp_core.clear_mode") as mock_clear,
+            patch("mcp_core.storage.config_file.delete_config") as mock_delete,
         ):
             reset_state()
             assert get_state() == CredentialState.AWAITING_SETUP
@@ -125,7 +125,7 @@ class TestStateAccessors:
         cs._setup_url = "https://example.com/setup"
 
         with patch(
-            "mcp_relay_core.clear_mode",
+            "mcp_core.clear_mode",
             side_effect=ImportError("no relay core"),
         ):
             reset_state()
@@ -160,17 +160,17 @@ class TestResolveCredentialState:
         """Empty string env vars are falsy, don't count as configured."""
         monkeypatch.setenv("GEMINI_API_KEY", "")
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value=None,
         ):
-            with patch("mcp_relay_core.get_mode", return_value=None):
+            with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_sets_configured(self, monkeypatch, _clean_env):
         """Step 2: saved config with cloud keys -> CONFIGURED + env injected."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={
                 "GEMINI_API_KEY": "from-config",
                 "JINA_AI_API_KEY": "jina-cfg",
@@ -187,7 +187,7 @@ class TestResolveCredentialState:
     def test_config_file_injects_env(self, monkeypatch, _clean_env):
         """Config values are injected into environment."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={"GEMINI_API_KEY": "injected-from-config"},
         ):
             with patch(
@@ -201,41 +201,41 @@ class TestResolveCredentialState:
     def test_config_file_no_cloud_keys(self, monkeypatch, _clean_env):
         """Config file with no cloud keys -> falls through."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value={"UNKNOWN_KEY": "value"},
         ):
-            with patch("mcp_relay_core.get_mode", return_value=None):
+            with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_read_exception(self, monkeypatch, _clean_env):
         """Config file read failure -> falls through silently."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             side_effect=ImportError("no relay core"),
         ):
-            with patch("mcp_relay_core.get_mode", return_value=None):
+            with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_local_mode_marker(self, monkeypatch, _clean_env):
         """Step 3: local mode marker -> LOCAL."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value=None,
         ):
-            with patch("mcp_relay_core.get_mode", return_value="local"):
+            with patch("mcp_core.get_mode", return_value="local"):
                 result = resolve_credential_state()
                 assert result == CredentialState.LOCAL
 
     def test_local_mode_marker_exception(self, monkeypatch, _clean_env):
         """get_mode exception -> falls through to AWAITING_SETUP."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value=None,
         ):
             with patch(
-                "mcp_relay_core.get_mode",
+                "mcp_core.get_mode",
                 side_effect=ImportError("no relay"),
             ):
                 result = resolve_credential_state()
@@ -244,10 +244,10 @@ class TestResolveCredentialState:
     def test_nothing_found_awaiting_setup(self, monkeypatch, _clean_env):
         """Step 4: nothing found -> AWAITING_SETUP."""
         with patch(
-            "mcp_relay_core.storage.config_file.read_config",
+            "mcp_core.storage.config_file.read_config",
             return_value=None,
         ):
-            with patch("mcp_relay_core.get_mode", return_value=None):
+            with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
@@ -261,7 +261,7 @@ class TestShareCloudKeysToPeers:
     def test_shares_to_wet_and_mnemo(self):
         """Writes shared cloud keys to wet-mcp and mnemo-mcp."""
         config = {"GEMINI_API_KEY": "test-key", "JINA_AI_API_KEY": "jina-key"}
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
             assert mock_write.call_count == 2
             calls = mock_write.call_args_list
@@ -271,14 +271,14 @@ class TestShareCloudKeysToPeers:
     def test_empty_config_skips_sharing(self):
         """No cloud keys in config -> no writes."""
         config = {"UNKNOWN_KEY": "value"}
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
             mock_write.assert_not_called()
 
     def test_empty_values_filtered(self):
         """Empty-string values are filtered out."""
         config = {"GEMINI_API_KEY": "", "JINA_AI_API_KEY": ""}
-        with patch("mcp_relay_core.storage.config_file.write_config") as mock_write:
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             _share_cloud_keys_to_peers(config)
             mock_write.assert_not_called()
 
@@ -286,7 +286,7 @@ class TestShareCloudKeysToPeers:
         """Individual peer write failure doesn't crash."""
         config = {"GEMINI_API_KEY": "test-key"}
         with patch(
-            "mcp_relay_core.storage.config_file.write_config",
+            "mcp_core.storage.config_file.write_config",
             side_effect=OSError("disk full"),
         ):
             # Should not raise
@@ -296,7 +296,7 @@ class TestShareCloudKeysToPeers:
         """Import error for write_config doesn't crash."""
         config = {"GEMINI_API_KEY": "test-key"}
         with patch(
-            "mcp_relay_core.storage.config_file.write_config",
+            "mcp_core.storage.config_file.write_config",
             side_effect=ImportError("no module"),
         ):
             _share_cloud_keys_to_peers(config)
@@ -328,7 +328,7 @@ class TestTriggerRelaySetup:
         mock_session_info.relay_url = "https://existing-session.example.com"
 
         with patch(
-            "mcp_relay_core.acquire_session_lock",
+            "mcp_core.acquire_session_lock",
             new_callable=AsyncMock,
             return_value=mock_session_info,
         ):
@@ -344,7 +344,7 @@ class TestTriggerRelaySetup:
         mock_session_info.relay_url = "https://existing.example.com/setup"
 
         with patch(
-            "mcp_relay_core.acquire_session_lock",
+            "mcp_core.acquire_session_lock",
             new_callable=AsyncMock,
             return_value=mock_session_info,
         ):
@@ -362,20 +362,20 @@ class TestTriggerRelaySetup:
 
         with (
             patch(
-                "mcp_relay_core.acquire_session_lock",
+                "mcp_core.acquire_session_lock",
                 new_callable=AsyncMock,
                 return_value=None,
             ),
             patch(
-                "mcp_relay_core.relay.client.create_session",
+                "mcp_core.relay.client.create_session",
                 new_callable=AsyncMock,
                 return_value=mock_session,
             ),
             patch(
-                "mcp_relay_core.write_session_lock",
+                "mcp_core.write_session_lock",
                 new_callable=AsyncMock,
             ) as mock_write_lock,
-            patch("mcp_relay_core.try_open_browser") as mock_browser,
+            patch("mcp_core.try_open_browser") as mock_browser,
             patch("asyncio.create_task") as mock_task,
         ):
             url = await trigger_relay_setup()
@@ -390,7 +390,7 @@ class TestTriggerRelaySetup:
         set_state(CredentialState.AWAITING_SETUP)
 
         with patch(
-            "mcp_relay_core.acquire_session_lock",
+            "mcp_core.acquire_session_lock",
             new_callable=AsyncMock,
             side_effect=ConnectionError("cannot connect"),
         ):
@@ -418,17 +418,17 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value=config_data,
             ),
-            patch("mcp_relay_core.storage.config_file.write_config") as mock_write,
+            patch("mcp_core.storage.config_file.write_config") as mock_write,
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ) as mock_send,
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ) as mock_release,
             patch(
@@ -453,17 +453,17 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "test"},
             ) as mock_poll,
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
             patch(
@@ -488,18 +488,18 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "test"},
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
                 side_effect=ConnectionError("send failed"),
             ),
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
             patch(
@@ -523,17 +523,17 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "test"},
             ),
-            patch("mcp_relay_core.storage.config_file.write_config"),
+            patch("mcp_core.storage.config_file.write_config"),
             patch(
-                "mcp_relay_core.relay.client.send_message",
+                "mcp_core.relay.client.send_message",
                 new_callable=AsyncMock,
             ) as mock_send,
             patch(
-                "mcp_relay_core.release_session_lock",
+                "mcp_core.release_session_lock",
                 new_callable=AsyncMock,
             ),
             patch(
@@ -556,11 +556,11 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("RELAY_SKIPPED"),
             ),
-            patch("mcp_relay_core.set_local_mode") as mock_local,
+            patch("mcp_core.set_local_mode") as mock_local,
         ):
             await _poll_relay_background(
                 "https://relay.example.com", mock_session, timeout=10.0
@@ -578,12 +578,12 @@ class TestPollRelayBackground:
 
         with (
             patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("RELAY_SKIPPED"),
             ),
             patch(
-                "mcp_relay_core.set_local_mode",
+                "mcp_core.set_local_mode",
                 side_effect=ImportError("no module"),
             ),
         ):
@@ -601,7 +601,7 @@ class TestPollRelayBackground:
         mock_session = MagicMock()
 
         with patch(
-            "mcp_relay_core.relay.client.poll_for_result",
+            "mcp_core.relay.client.poll_for_result",
             new_callable=AsyncMock,
             side_effect=RuntimeError("timed out"),
         ):
@@ -619,7 +619,7 @@ class TestPollRelayBackground:
         mock_session = MagicMock()
 
         with patch(
-            "mcp_relay_core.relay.client.poll_for_result",
+            "mcp_core.relay.client.poll_for_result",
             new_callable=AsyncMock,
             side_effect=ConnectionError("network error"),
         ):

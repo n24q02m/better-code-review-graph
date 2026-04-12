@@ -70,7 +70,7 @@ def resolve_credential_state() -> CredentialState:
 
     # 2. Check config file
     try:
-        from mcp_relay_core.storage.config_file import read_config
+        from mcp_core.storage.config_file import read_config
 
         saved = read_config(SERVER_NAME)
         if saved and any(saved.get(k) for k in CLOUD_KEYS):
@@ -88,7 +88,7 @@ def resolve_credential_state() -> CredentialState:
 
     # 3. Check local mode marker
     try:
-        from mcp_relay_core import get_mode
+        from mcp_core import get_mode
 
         mode = get_mode(SERVER_NAME)
         if mode == "local":
@@ -122,7 +122,7 @@ async def trigger_relay_setup(
 
     try:
         # Check for existing session via lock
-        from mcp_relay_core import acquire_session_lock
+        from mcp_core import acquire_session_lock
 
         existing = await acquire_session_lock(SERVER_NAME)
         if existing:
@@ -131,7 +131,7 @@ async def trigger_relay_setup(
             return _setup_url
 
         # Create new session
-        from mcp_relay_core.relay.client import create_session
+        from mcp_core.relay.client import create_session
 
         from better_code_review_graph.relay_schema import RELAY_SCHEMA
 
@@ -141,7 +141,7 @@ async def trigger_relay_setup(
         # Save session lock for parallel processes
         import time
 
-        from mcp_relay_core import SessionInfo, write_session_lock
+        from mcp_core import SessionInfo, write_session_lock
 
         await write_session_lock(
             SERVER_NAME,
@@ -155,7 +155,7 @@ async def trigger_relay_setup(
         _setup_url = session.relay_url
 
         # Try to open browser (best-effort)
-        from mcp_relay_core import try_open_browser
+        from mcp_core import try_open_browser
 
         try_open_browser(session.relay_url)
 
@@ -180,8 +180,8 @@ async def _poll_relay_background(
     """Background task that polls relay and applies config when user submits."""
     global _state
     try:
-        from mcp_relay_core.relay.client import poll_for_result
-        from mcp_relay_core.storage.config_file import write_config
+        from mcp_core.relay.client import poll_for_result
+        from mcp_core.storage.config_file import write_config
 
         poll_timeout = timeout if timeout is not None else 300.0
         config = await poll_for_result(relay_base, session, timeout_s=poll_timeout)  # ty: ignore[invalid-argument-type]
@@ -204,7 +204,7 @@ async def _poll_relay_background(
         session_id = getattr(session, "session_id", None)
         if session_id:
             try:
-                from mcp_relay_core.relay.client import send_message
+                from mcp_core.relay.client import send_message
 
                 await send_message(
                     relay_base,
@@ -218,7 +218,7 @@ async def _poll_relay_background(
                 pass
 
         # Release session lock
-        from mcp_relay_core import release_session_lock
+        from mcp_core import release_session_lock
 
         await release_session_lock(SERVER_NAME)
 
@@ -226,7 +226,7 @@ async def _poll_relay_background(
         if "RELAY_SKIPPED" in str(e):
             _state = CredentialState.LOCAL
             try:
-                from mcp_relay_core import set_local_mode
+                from mcp_core import set_local_mode
 
                 set_local_mode(SERVER_NAME)
             except Exception:
@@ -240,7 +240,7 @@ async def _poll_relay_background(
 def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
     """Write shared cloud API keys to wet-mcp and mnemo-mcp config files."""
     try:
-        from mcp_relay_core.storage.config_file import write_config
+        from mcp_core.storage.config_file import write_config
 
         shared = {k: v for k, v in config.items() if k in CLOUD_KEYS and v}
         if not shared:
@@ -267,8 +267,8 @@ def reset_state() -> None:
     _state = CredentialState.AWAITING_SETUP
     _setup_url = None
     try:
-        from mcp_relay_core import clear_mode
-        from mcp_relay_core.storage.config_file import delete_config
+        from mcp_core import clear_mode
+        from mcp_core.storage.config_file import delete_config
 
         clear_mode(SERVER_NAME)
         delete_config(SERVER_NAME)

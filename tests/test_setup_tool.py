@@ -206,7 +206,7 @@ class TestSetupSkip:
         """Skip sets LOCAL mode and calls set_local_mode."""
         from better_code_review_graph.server import setup
 
-        with patch("mcp_relay_core.set_local_mode") as mock_local:
+        with patch("mcp_core.set_local_mode") as mock_local:
             result = json.loads(await setup(action="skip"))
             assert result["status"] == "ok"
             assert "Local mode" in result["message"]
@@ -227,8 +227,8 @@ class TestSetupReset:
         cs._state = CredentialState.CONFIGURED
 
         with (
-            patch("mcp_relay_core.clear_mode"),
-            patch("mcp_relay_core.storage.config_file.delete_config"),
+            patch("mcp_core.clear_mode"),
+            patch("mcp_core.storage.config_file.delete_config"),
         ):
             result = json.loads(await setup(action="reset"))
             assert result["status"] == "ok"
