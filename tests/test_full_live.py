@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from mcp import StdioServerParameters
@@ -112,13 +113,19 @@ export { Circle, Rectangle, totalArea };
 """
 
 
-def _parse_result_text(result) -> dict | str:
-    """Extract text from MCP call_tool result and try to parse as JSON."""
+def _parse_result_text(result) -> dict[str, Any]:
+    """Extract text from MCP call_tool result and parse as JSON.
+
+    All tools in better-code-review-graph return JSON-encoded dicts; a
+    non-dict payload indicates a test setup bug, so we fail loudly here.
+    """
     text = result.content[0].text
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return text
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise TypeError(
+            f"Expected JSON object from MCP tool, got {type(payload).__name__}: {text!r}"
+        )
+    return payload
 
 
 def _server_params() -> StdioServerParameters:
@@ -200,7 +207,7 @@ def mixed_lang_repo(tmp_path: Path) -> Path:
     return repo
 
 
-async def _build_graph(session: ClientSession, repo: Path) -> dict:
+async def _build_graph(session: ClientSession, repo: Path) -> dict[str, Any]:
     """Helper: full build on a repo, returns parsed result."""
     result = await session.call_tool(
         "graph",
