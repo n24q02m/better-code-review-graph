@@ -1,4 +1,12 @@
-"""Config schema for relay page setup."""
+"""Config schema for relay page setup.
+
+The literal `dict[str, Any]` type is intentional: this schema includes
+`description` and `capabilityInfo` fields that the relay page renders at
+runtime, but older wheels of `n24q02m-mcp-core` ship a stricter
+`RelayConfigSchema` TypedDict that does not declare those keys. Using
+`dict[str, Any]` keeps the schema forward-compatible while the installed
+mcp-core catches up; see tracker: see docs/migration-from-mcp-relay-core.md.
+"""
 
 from __future__ import annotations
 

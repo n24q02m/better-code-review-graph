@@ -76,8 +76,9 @@ class GraphNode:
     name: str
     qualified_name: str
     file_path: str
-    line_start: int
-    line_end: int
+    # Mirrors NodeInfo — nullable to match the SQLite schema.
+    line_start: int | None
+    line_end: int | None
     language: str
     parent_name: str | None
     params: str | None

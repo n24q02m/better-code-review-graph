@@ -380,7 +380,11 @@ class CloudEmbeddingBackend:
                 else:
                     break
 
-        raise last_exc  # type: ignore[misc]
+        # Loop always sets last_exc before breaking (range is non-empty for
+        # _MAX_RETRIES >= 1); fall back to a RuntimeError defensively.
+        if last_exc is None:
+            raise RuntimeError("embed batch failed without capturing an exception")
+        raise last_exc
 
     def embed_texts(
         self,
@@ -640,8 +644,9 @@ class EmbeddingStore:
             return []
 
         # Embed query -- use query-specific method if available
-        if hasattr(self.backend, "embed_single_query"):
-            query_vec = self.backend.embed_single_query(query, dimensions=_DEFAULT_DIMS)
+        query_method = getattr(self.backend, "embed_single_query", None)
+        if callable(query_method):
+            query_vec = query_method(query, dimensions=_DEFAULT_DIMS)
         else:
             query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
 

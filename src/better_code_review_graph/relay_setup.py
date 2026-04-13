@@ -79,7 +79,9 @@ async def ensure_config() -> dict[str, str] | None:
     try:
         from mcp_core.relay.client import create_session
 
-        session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)
+        # RELAY_SCHEMA is dict[str, Any] for forward-compat with newer
+        # relay UI keys — see relay_schema.py for details.
+        session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)  # ty: ignore[invalid-argument-type]
     except Exception:
         logger.debug("Cannot reach relay server at %s. Using local mode.", relay_url)
         return None

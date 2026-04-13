@@ -11,8 +11,12 @@ from __future__ import annotations
 
 import os
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from mcp_core.relay.client import RelaySession
 
 SERVER_NAME = "better-code-review-graph"
 DEFAULT_RELAY_URL = "https://better-code-review-graph.n24q02m.com"
@@ -136,6 +140,8 @@ async def trigger_relay_setup(
         from better_code_review_graph.relay_schema import RELAY_SCHEMA
 
         relay_base = os.environ.get("MCP_RELAY_URL", DEFAULT_RELAY_URL)
+        # RELAY_SCHEMA intentionally typed `dict[str, Any]` — see
+        # relay_schema.py for the backward-compat rationale.
         session = await create_session(relay_base, SERVER_NAME, RELAY_SCHEMA)  # ty: ignore[invalid-argument-type]
 
         # Save session lock for parallel processes
@@ -175,7 +181,7 @@ async def trigger_relay_setup(
 
 
 async def _poll_relay_background(
-    relay_base: str, session: object, timeout: float | None
+    relay_base: str, session: RelaySession, timeout: float | None
 ) -> None:
     """Background task that polls relay and applies config when user submits."""
     global _state
@@ -184,7 +190,7 @@ async def _poll_relay_background(
         from mcp_core.storage.config_file import write_config
 
         poll_timeout = timeout if timeout is not None else 300.0
-        config = await poll_for_result(relay_base, session, timeout_s=poll_timeout)  # ty: ignore[invalid-argument-type]
+        config = await poll_for_result(relay_base, session, timeout_s=poll_timeout)
 
         # Save config
         write_config(SERVER_NAME, config)

@@ -11,8 +11,12 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import tree_sitter_language_pack as tslp
+
+if TYPE_CHECKING:
+    from tree_sitter_language_pack import SupportedLanguage
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +30,11 @@ class NodeInfo:
     kind: str  # File, Class, Function, Type, Test
     name: str
     file_path: str
-    line_start: int
-    line_end: int
+    # Line numbers may be None for nodes discovered without positional info
+    # (e.g. placeholders inserted from qualified-name references). The SQLite
+    # schema stores these columns as nullable INTEGERs.
+    line_start: int | None
+    line_end: int | None
     language: str = ""
     parent_name: str | None = None  # enclosing class/module
     params: str | None = None
@@ -219,10 +226,16 @@ class CodeParser:
         self._parsers: dict[str, object] = {}
         self._module_file_cache: dict[str, str | None] = {}
 
-    def _get_parser(self, language: str):  # type: ignore[arg-type]
+    def _get_parser(self, language: str):
         if language not in self._parsers:
             try:
-                self._parsers[language] = tslp.get_parser(language)  # type: ignore[arg-type]
+                # tslp.get_parser expects SupportedLanguage (a large Literal
+                # union). We validate against EXTENSION_TO_LANGUAGE upstream
+                # and fall back on ValueError/KeyError via the generic except
+                # below, so narrowing through cast is safe here.
+                self._parsers[language] = tslp.get_parser(
+                    cast("SupportedLanguage", language)
+                )
             except Exception:
                 return None
         return self._parsers[language]
