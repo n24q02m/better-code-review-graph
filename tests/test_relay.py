@@ -10,6 +10,7 @@ from better_code_review_graph.relay_setup import (
     CLOUD_KEYS,
     DEFAULT_RELAY_URL,
     SERVER_NAME,
+    apply_config,
     ensure_config,
 )
 
@@ -233,6 +234,111 @@ class TestEnsureConfigRelay:
 # ---------------------------------------------------------------------------
 # CLI integration -- tests serve_main calls resolve_credential_state
 # ---------------------------------------------------------------------------
+
+
+class TestApplyConfig:
+    def test_apply_config_sets_env(self, monkeypatch):
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        apply_config({"GEMINI_API_KEY": "applied"})
+        assert os.environ.get("GEMINI_API_KEY") == "applied"
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def test_apply_config_skips_empty_and_existing(self, monkeypatch):
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("JINA_AI_API_KEY", "preexisting")
+        apply_config({"JINA_AI_API_KEY": "new-value", "OPENAI_API_KEY": ""})
+        # existing env var should NOT be overwritten
+        assert os.environ.get("JINA_AI_API_KEY") == "preexisting"
+        # empty value should NOT be applied
+        assert os.environ.get("OPENAI_API_KEY") is None
+
+
+class TestEnsureConfigFileReadException:
+    async def test_read_config_exception_falls_through(self, monkeypatch):
+        """read_config raising triggers the silent `except Exception: pass`."""
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+
+        with patch(
+            "mcp_core.storage.config_file.read_config",
+            side_effect=OSError("corrupt file"),
+        ):
+            with patch(
+                "mcp_core.relay.client.create_session",
+                side_effect=Exception("no relay"),
+            ):
+                result = await ensure_config()
+                assert result is None
+
+
+class TestEnsureConfigRelayNotifyFailure:
+    async def test_relay_success_notify_complete_failure_non_fatal(self, monkeypatch):
+        """httpx notify failure after poll success must not break the flow."""
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+
+        mock_session = MagicMock()
+        mock_session.relay_url = "https://relay.example.com/setup#k=abc"
+        mock_session.session_id = "sess-notify-fail"
+
+        class _FailingClient:
+            def __init__(self, *a, **kw):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **kw):
+                raise ConnectionError("notify failed")
+
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+            with (
+                patch(
+                    "mcp_core.relay.client.create_session",
+                    new_callable=AsyncMock,
+                    return_value=mock_session,
+                ),
+                patch(
+                    "mcp_core.relay.client.poll_for_result",
+                    new_callable=AsyncMock,
+                    return_value={"GEMINI_API_KEY": "k"},
+                ),
+                patch("mcp_core.storage.config_file.write_config"),
+                patch("httpx.AsyncClient", _FailingClient),
+            ):
+                result = await ensure_config()
+                assert result is not None
+                assert result["GEMINI_API_KEY"] == "k"
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    async def test_relay_generic_runtime_error_other_message(self, monkeypatch):
+        """RuntimeError with neither RELAY_SKIPPED nor 'timed out' -> else branch."""
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+
+        mock_session = MagicMock()
+        mock_session.relay_url = "https://relay.example.com/setup#k=abc"
+
+        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+            with (
+                patch(
+                    "mcp_core.relay.client.create_session",
+                    new_callable=AsyncMock,
+                    return_value=mock_session,
+                ),
+                patch(
+                    "mcp_core.relay.client.poll_for_result",
+                    new_callable=AsyncMock,
+                    side_effect=RuntimeError("some other issue"),
+                ),
+            ):
+                result = await ensure_config()
+                assert result is None
 
 
 class TestCLIIntegration:

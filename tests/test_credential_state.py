@@ -627,3 +627,82 @@ class TestPollRelayBackground:
                 "https://relay.example.com", mock_session, timeout=10.0
             )
             assert get_state() == CredentialState.AWAITING_SETUP
+
+    async def test_poll_success_injects_env_vars(self, monkeypatch, _clean_env):
+        """Successful poll injects config values into os.environ."""
+        from better_code_review_graph.credential_state import _poll_relay_background
+
+        set_state(CredentialState.SETUP_IN_PROGRESS)
+
+        mock_session = MagicMock()
+        mock_session.session_id = "sess-env-inject"
+        config_data = {"GEMINI_API_KEY": "injected-gem", "JINA_AI_API_KEY": ""}
+
+        with (
+            patch(
+                "mcp_core.relay.client.poll_for_result",
+                new_callable=AsyncMock,
+                return_value=config_data,
+            ),
+            patch("mcp_core.storage.config_file.write_config"),
+            patch(
+                "mcp_core.relay.client.send_message",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "mcp_core.release_session_lock",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
+            ),
+        ):
+            await _poll_relay_background(
+                "https://relay.example.com", mock_session, timeout=5.0
+            )
+            import os as _os
+
+            assert _os.environ.get("GEMINI_API_KEY") == "injected-gem"
+            monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+
+class TestShareCloudKeysOuterException:
+    def test_outer_import_error_non_fatal(self):
+        """Outer import of write_config failing is non-fatal."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "mcp_core.storage.config_file":
+                raise ImportError("no mcp_core")
+            return real_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=fake_import):
+            # Should not raise
+            _share_cloud_keys_to_peers({"GEMINI_API_KEY": "key"})
+
+
+class TestSaveCredentials:
+    def test_save_credentials_writes_config_and_applies_env(
+        self, monkeypatch, _clean_env
+    ):
+        """save_credentials writes config, applies env, sets CONFIGURED, shares."""
+        from better_code_review_graph.credential_state import save_credentials
+
+        config = {"GEMINI_API_KEY": "save-test-key"}
+        with (
+            patch("mcp_core.storage.config_file.write_config") as mock_write,
+            patch(
+                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
+            ) as mock_share,
+        ):
+            result = save_credentials(config)
+            assert result is None
+            mock_write.assert_called_once_with(SERVER_NAME, config)
+            mock_share.assert_called_once_with(config)
+            assert get_state() == CredentialState.CONFIGURED
+            import os as _os
+
+            assert _os.environ.get("GEMINI_API_KEY") == "save-test-key"
+            monkeypatch.delenv("GEMINI_API_KEY", raising=False)
