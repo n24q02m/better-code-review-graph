@@ -389,10 +389,15 @@ class GraphStore:
                 WHERE LOWER(nodes.name) LIKE '%' || LOWER(value) || '%'
                    OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
-            AND (? IS NULL OR kind = ?)
-            ORDER BY name LIMIT ?
         """
-        params: list[Any] = [json.dumps(words), json.dumps(words), kind, kind, limit]
+        params: list[Any] = [json.dumps(words), json.dumps(words)]
+
+        if kind:
+            sql += " AND kind = ?"
+            params.append(kind)
+
+        sql += " ORDER BY name LIMIT ?"
+        params.append(limit)
 
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_node(r) for r in rows]

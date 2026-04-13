@@ -16,12 +16,12 @@ async def test_read_config_exception(monkeypatch):
 
     # Line 64-65: read_config raises Exception
     with patch(
-        "mcp_relay_core.storage.config_file.read_config",
+        "mcp_core.storage.config_file.read_config",
         side_effect=Exception("Disk error"),
     ):
         # To avoid going into relay setup, we also mock create_session to fail
         with patch(
-            "mcp_relay_core.relay.client.create_session",
+            "mcp_core.relay.client.create_session",
             side_effect=Exception("no relay"),
         ):
             result = await ensure_config()
@@ -33,23 +33,23 @@ async def test_httpx_post_exception(monkeypatch):
     for key in CLOUD_KEYS:
         monkeypatch.delenv(key, raising=False)
 
-    with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+    with patch("mcp_core.storage.config_file.read_config", return_value=None):
         mock_session = MagicMock()
         mock_session.relay_url = "https://relay.example.com/setup"
         mock_session.session_id = "test-session"
 
         # Mock create_session and poll_for_result to succeed
         with patch(
-            "mcp_relay_core.relay.client.create_session",
+            "mcp_core.relay.client.create_session",
             new_callable=AsyncMock,
             return_value=mock_session,
         ):
             with patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "new-key"},
             ):
-                with patch("mcp_relay_core.storage.config_file.write_config"):
+                with patch("mcp_core.storage.config_file.write_config"):
                     # Line 111-112: httpx post raises Exception
                     with patch("httpx.AsyncClient") as mock_client_class:
                         mock_client = MagicMock()
@@ -70,18 +70,18 @@ async def test_poll_for_result_runtime_error_unexpected(monkeypatch):
     for key in CLOUD_KEYS:
         monkeypatch.delenv(key, raising=False)
 
-    with patch("mcp_relay_core.storage.config_file.read_config", return_value=None):
+    with patch("mcp_core.storage.config_file.read_config", return_value=None):
         mock_session = MagicMock()
         mock_session.relay_url = "https://relay.example.com/setup"
 
         with patch(
-            "mcp_relay_core.relay.client.create_session",
+            "mcp_core.relay.client.create_session",
             new_callable=AsyncMock,
             return_value=mock_session,
         ):
             # Line 126: RuntimeError with unexpected message
             with patch(
-                "mcp_relay_core.relay.client.poll_for_result",
+                "mcp_core.relay.client.poll_for_result",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("something went wrong"),
             ):
