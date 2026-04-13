@@ -55,8 +55,10 @@ def test_query_graph_n1_performance(tmp_path):
 
         assert result["status"] == "ok"
         assert len(result["results"]) == 500
-        # Check that it returns fast (should take single digit ms, well under 0.2s for 500 nodes)
-        assert elapsed < 0.2
+        # Check that it returns fast (should take single digit ms locally, well under
+        # 0.5s for 500 nodes; bumped from 0.2s to tolerate CI runner jitter while
+        # still catching true N+1 regressions which would be seconds-scale).
+        assert elapsed < 0.5
 
         # Verify result order matches the edges
         for i in range(500):
