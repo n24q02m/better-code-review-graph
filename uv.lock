@@ -108,7 +108,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cohere", specifier = ">=5.21.1" },
+    { name = "cohere", specifier = ">=6.1.0" },
     { name = "fastmcp", specifier = ">=3.2.2,<4" },
     { name = "google-genai", specifier = ">=1.71.0" },
     { name = "httpx" },
@@ -228,7 +228,7 @@ wheels = [
 
 [[package]]
 name = "cohere"
-version = "5.21.1"
+version = "6.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastavro" },
@@ -240,9 +240,9 @@ dependencies = [
     { name = "types-requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/75/4c346f6e2322e545f8452692304bd4eca15a2a0209ab9af6a0d1a7810b67/cohere-5.21.1.tar.gz", hash = "sha256:e5ade4423b928b01ff2038980e1b62b2a5bb412c8ab83e30882753b810a5509f", size = 191272, upload-time = "2026-03-26T15:09:27.857Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/67/7aff8a870889ee931aa19e1deb138691e3cc909ee61e1daea86f3475a818/cohere-6.1.0.tar.gz", hash = "sha256:6a52bb459b71b5e79735412ee1a8e87028c5b3afba050c39815fe03c083249b3", size = 207302, upload-time = "2026-04-10T19:44:43.103Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0a/50/5538f02ec6d10fbb84f29c1b18c68ff2a03d7877926a80275efdf8755a9f/cohere-5.21.1-py3-none-any.whl", hash = "sha256:f15592ec60d8cf12f01563db94ec28c388c61269d9617f23c2d6d910e505344e", size = 334262, upload-time = "2026-03-26T15:09:26.284Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/b4/00c2f9f8387a2e77faf8410210466c46d55dd30a0388de41c54441b148fb/cohere-6.1.0-py3-none-any.whl", hash = "sha256:ad286b3af2583c75ba93624e6f680603d3578a3d73704f997430260b87537ac7", size = 350543, upload-time = "2026-04-10T19:44:41.805Z" },
 ]
 
 [[package]]
