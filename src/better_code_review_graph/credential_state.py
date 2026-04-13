@@ -255,6 +255,27 @@ def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
         logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
 
 
+def save_credentials(config: dict[str, str]) -> dict | None:
+    """Save credentials from OAuth form to config.enc and apply to environment.
+
+    Called by the local OAuth AS when the user submits API keys via the
+    browser form. Returns optional dict with next_step info.
+    """
+    global _state
+
+    from mcp_core.storage.config_file import write_config
+
+    from better_code_review_graph.relay_setup import apply_config
+
+    write_config(SERVER_NAME, config)
+    apply_config(config)
+    _state = CredentialState.CONFIGURED
+    logger.info("Credentials saved via local OAuth form")
+
+    _share_cloud_keys_to_peers(config)
+    return None
+
+
 def set_state(state: CredentialState) -> None:
     """For testing and setup tool actions."""
     global _state

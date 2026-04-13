@@ -37,6 +37,14 @@ CLOUD_KEYS = [
 RELAY_TIMEOUT_S = 120.0
 
 
+def apply_config(config: dict[str, str]) -> None:
+    """Apply config dict to environment variables."""
+    for key, value in config.items():
+        if value and key not in os.environ:
+            os.environ[key] = value
+            logger.debug("Applied relay config: %s", key)
+
+
 async def ensure_config() -> dict[str, str] | None:
     """Resolve config: env vars -> config file -> relay setup -> local fallback.
 
