@@ -39,7 +39,7 @@ better-code-review-graph = "better_code_review_graph.cli:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2,<9",
+    "pytest>=8.4.2,<10",
     "pytest-asyncio>=1.3.0",
     "pytest-cov",
     "pytest-timeout",
