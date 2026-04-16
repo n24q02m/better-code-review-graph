@@ -1,0 +1,5 @@
+{
+  "title": "[FIX] N+1 Query in compute_embeddings",
+  "description": "Optimized `embed_nodes` in `src/better_code_review_graph/embeddings.py` by eliminating an N+1 query. The method now batch-fetches existing `text_hash` and `provider` from the `embeddings` table using SQLite's `json_each` function, following the same pattern used in other performance-critical parts of the codebase. Added `import json` to support the batch query.",
+  "files": ["src/better_code_review_graph/embeddings.py"]
+}

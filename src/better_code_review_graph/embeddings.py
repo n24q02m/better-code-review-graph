@@ -19,6 +19,7 @@ Switching backend does NOT invalidate existing vectors.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
 import sqlite3
@@ -588,25 +589,43 @@ class EmbeddingStore:
 
         provider_name = self._get_backend_name()
 
-        # Filter to nodes that need embedding
-        to_embed: list[tuple[GraphNode, str, str]] = []
-
+        # Step 1: Pre-calculate hashes and filter out File nodes
+        candidates: list[tuple[GraphNode, str, str]] = []
         for node in nodes:
             if node.kind == "File":
                 continue
             text = _node_to_text(node)
             text_hash = hashlib.sha256(text.encode()).hexdigest()
+            candidates.append((node, text, text_hash))
 
-            existing = self._conn.execute(
-                "SELECT text_hash, provider FROM embeddings WHERE qualified_name = ?",
-                (node.qualified_name,),
-            ).fetchone()
+        if not candidates:
+            return 0
 
-            if (
-                existing
-                and existing["text_hash"] == text_hash
-                and existing["provider"] == provider_name
-            ):
+        # Step 2: Batch fetch existing hashes to avoid N+1 queries
+        qns = [c[0].qualified_name for c in candidates]
+        existing_map: dict[str, tuple[str, str]] = {}
+        # Stay under SQLite's default limit for variables
+        db_batch_size = 450
+
+        for i in range(0, len(qns), db_batch_size):
+            batch = qns[i : i + db_batch_size]
+            rows = self._conn.execute(
+                """SELECT qualified_name, text_hash, provider
+                   FROM embeddings
+                   WHERE qualified_name IN (SELECT value FROM json_each(?))""",
+                (json.dumps(batch),),
+            ).fetchall()
+            for row in rows:
+                existing_map[row["qualified_name"]] = (
+                    row["text_hash"],
+                    row["provider"],
+                )
+
+        # Step 3: Filter to nodes that actually need embedding
+        to_embed: list[tuple[GraphNode, str, str]] = []
+        for node, text, text_hash in candidates:
+            existing = existing_map.get(node.qualified_name)
+            if existing and existing[0] == text_hash and existing[1] == provider_name:
                 continue
             to_embed.append((node, text, text_hash))
 
