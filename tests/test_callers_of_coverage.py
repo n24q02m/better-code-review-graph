@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import pytest
+
 from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo, EdgeInfo
+from better_code_review_graph.parser import EdgeInfo, NodeInfo
 from better_code_review_graph.tools import query_graph
+
 
 @pytest.fixture
 def repo_with_graph(tmp_path):
@@ -122,6 +124,7 @@ def repo_with_graph(tmp_path):
 
     return tmp_path
 
+
 class TestCallersOfCoverage:
     def test_callers_of_qualified_match_and_filtering(self, repo_with_graph):
         """Test callers_of returns correct nodes and filters out non-CALLS edges."""
@@ -155,10 +158,36 @@ class TestCallersOfCoverage:
         store = GraphStore(str(db_path))
 
         # Add a node that is NOT called by its qualified name
-        store.upsert_node(NodeInfo(kind="Function", name="helper", file_path=abs_auth, line_start=10, line_end=11, language="python"))
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="helper",
+                file_path=abs_auth,
+                line_start=10,
+                line_end=11,
+                language="python",
+            )
+        )
         # Edge with unqualified target
-        store.upsert_edge(EdgeInfo(kind="CALLS", source=f"{abs_auth}::some_caller", target="helper", file_path=abs_auth, line=5))
-        store.upsert_node(NodeInfo(kind="Function", name="some_caller", file_path=abs_auth, line_start=5, line_end=6, language="python"))
+        store.upsert_edge(
+            EdgeInfo(
+                kind="CALLS",
+                source=f"{abs_auth}::some_caller",
+                target="helper",
+                file_path=abs_auth,
+                line=5,
+            )
+        )
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="some_caller",
+                file_path=abs_auth,
+                line_start=5,
+                line_end=6,
+                language="python",
+            )
+        )
 
         store.commit()
         store.close()
