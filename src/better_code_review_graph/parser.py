@@ -458,7 +458,7 @@ class CodeParser:
 
             # --- Imports ---
             if node_type in import_types:
-                imports = self._extract_import(child, language, source)
+                imports = self._extract_import(child, language)
                 for imp_target in imports:
                     edges.append(
                         EdgeInfo(
@@ -1001,28 +1001,29 @@ class CodeParser:
                                             )
         return bases
 
-    def _extract_import(self, node, language: str, source: bytes) -> list[str]:
+    def _extract_import(self, node, language: str) -> list[str]:
         """Extract import targets as module/path strings."""
         text = node.text.decode("utf-8", errors="replace").strip()
 
         if language == "python":
-            return self._extract_import_python(node)
+            res = self._extract_import_python(node)
         elif language in ("javascript", "typescript", "tsx"):
-            return self._extract_import_javascript(node)
+            res = self._extract_import_javascript(node)
         elif language == "go":
-            return self._extract_import_go(node)
+            res = self._extract_import_go(node)
         elif language == "rust":
-            return self._extract_import_rust(text)
+            res = self._extract_import_rust(text)
         elif language in ("c", "cpp"):
-            return self._extract_import_c(node)
+            res = self._extract_import_c(node)
         elif language in ("java", "csharp"):
-            return self._extract_import_java(text)
+            res = self._extract_import_java(text)
         elif language == "solidity":
-            return self._extract_import_solidity(node)
+            res = self._extract_import_solidity(node)
         elif language == "ruby":
-            return self._extract_import_ruby(text)
+            res = self._extract_import_ruby(text)
         else:
-            return [text]
+            res = [text]
+        return res
 
     def _extract_import_python(self, node) -> list[str]:
         imports = []
