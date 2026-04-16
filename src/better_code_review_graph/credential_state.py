@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -301,3 +301,63 @@ def reset_state() -> None:
         delete_config(SERVER_NAME)
     except Exception:
         pass
+
+
+def handle_status() -> dict[str, Any]:
+    """Action: status. Return current credential state."""
+    return {
+        "state": _state.value,
+        "setup_url": _setup_url,
+        "cloud_keys_in_env": [k for k in CLOUD_KEYS if os.environ.get(k)],
+    }
+
+
+async def handle_start(force: bool = False) -> dict[str, Any]:
+    """Action: start. Trigger relay setup."""
+    if _state == CredentialState.CONFIGURED and not force:
+        return {
+            "status": "already_configured",
+            "message": "Already configured. Use force=true to reconfigure.",
+        }
+    url = await trigger_relay_setup(force=True)
+    if url:
+        return {
+            "status": "setup_started",
+            "setup_url": url,
+            "message": "Open this URL to configure API keys.",
+        }
+    return {
+        "status": "error",
+        "message": "Failed to start relay session.",
+    }
+
+
+def handle_skip() -> dict[str, Any]:
+    """Action: skip. Set local mode."""
+    from mcp_core import set_local_mode
+
+    set_local_mode(SERVER_NAME)
+    set_state(CredentialState.LOCAL)
+    return {
+        "status": "ok",
+        "message": "Local mode set. Relay will not trigger on restart.",
+    }
+
+
+def handle_reset() -> dict[str, Any]:
+    """Action: reset. Clear credentials."""
+    reset_state()
+    return {
+        "status": "ok",
+        "message": "Credentials cleared. Next tool call will offer setup.",
+    }
+
+
+def handle_complete() -> dict[str, Any]:
+    """Action: complete. Re-resolve credentials from env vars."""
+    resolve_credential_state()
+    return {
+        "status": "ok",
+        "state": _state.value,
+        "message": "Credential state refreshed.",
+    }

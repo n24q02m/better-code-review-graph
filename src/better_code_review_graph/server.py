@@ -504,104 +504,23 @@ async def setup(
     - reset: Clear credentials and reset to awaiting_setup
     - complete: Re-resolve credentials from env vars (pick up manually set keys)
     """
+    from . import credential_state as _cs
+
     match action:
         case "status":
-            from . import credential_state as _cs
-
-            state = _cs.get_state()
-            return _json(
-                {
-                    "state": state.value,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": [
-                        k for k in _cs.CLOUD_KEYS if os.environ.get(k)
-                    ],
-                }
-            )
-
+            return _json(_cs.handle_status())
         case "start":
-            from .credential_state import (
-                CredentialState,
-                get_state,
-                trigger_relay_setup,
-            )
-
-            if get_state() == CredentialState.CONFIGURED and not force:
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use force=true to reconfigure.",
-                    }
-                )
-            url = await trigger_relay_setup(force=True)
-            if url:
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {
-                    "status": "error",
-                    "message": "Failed to start relay session.",
-                }
-            )
-
+            return _json(await _cs.handle_start(force=force))
         case "skip":
-            from mcp_core import set_local_mode
-
-            from .credential_state import CredentialState, set_state
-
-            set_local_mode(SERVER_NAME)
-            set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
-
+            return _json(_cs.handle_skip())
         case "reset":
-            from .credential_state import reset_state
-
-            reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
-
+            return _json(_cs.handle_reset())
         case "complete":
-            from .credential_state import (
-                get_state as _get_state,
-            )
-            from .credential_state import (
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = _get_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
-
+            return _json(_cs.handle_complete())
         case _:
             import difflib
 
-            valid_actions = [
-                "complete",
-                "reset",
-                "skip",
-                "start",
-                "status",
-            ]
+            valid_actions = ["complete", "reset", "skip", "start", "status"]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
