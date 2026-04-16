@@ -93,6 +93,7 @@ def test_search_nodes_security():
     # Verify table still intact
     assert store.get_stats().total_nodes == 1
 
+
 def test_get_nodes_by_size_security():
     store = GraphStore(":memory:")
     # Add node
