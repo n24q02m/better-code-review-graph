@@ -702,6 +702,77 @@ def query_graph(
 # ---------------------------------------------------------------------------
 
 
+def _filter_valid_paths(root: Path, changed_files: list[str]) -> list[str]:
+    """Resolve and filter paths for safety and validity."""
+    abs_files = []
+    root_resolved = root.resolve()
+    for f in changed_files:
+        full_path_raw = root / f
+        try:
+            full_path = full_path_raw.resolve()
+            if not full_path.is_relative_to(root_resolved):
+                continue
+            if full_path_raw.is_symlink() or full_path.is_symlink():
+                continue
+            abs_files.append(str(full_path))
+        except (OSError, ValueError):
+            continue
+    return abs_files
+
+
+def _get_source_snippets(
+    root: Path,
+    changed_files: list[str],
+    changed_nodes: list[Any],
+    max_lines_per_file: int,
+) -> dict[str, str]:
+    """Generate source snippets for changed files."""
+    snippets = {}
+    root_resolved = root.resolve()
+    for rel_path in changed_files:
+        full_path_raw = root / rel_path
+        try:
+            full_path = full_path_raw.resolve()
+            if not full_path.is_relative_to(root_resolved):
+                continue
+            if full_path_raw.is_symlink() or full_path.is_symlink():
+                continue
+            if full_path.is_file():
+                try:
+                    lines = full_path.read_text(errors="replace").splitlines()
+                    if len(lines) > max_lines_per_file:
+                        snippets[rel_path] = _extract_relevant_lines(
+                            lines, changed_nodes, str(full_path)
+                        )
+                    else:
+                        snippets[rel_path] = "\n".join(
+                            f"{i + 1}: {line}" for i, line in enumerate(lines)
+                        )
+                except (OSError, UnicodeDecodeError):
+                    snippets[rel_path] = "(could not read file)"
+        except (OSError, ValueError):
+            continue
+    return snippets
+
+
+def _build_review_summary_text(
+    changed_files_count: int,
+    impact: dict[str, Any],
+    guidance: str,
+) -> str:
+    """Construct the summary text for the review context."""
+    summary_parts = [
+        f"Review context for {changed_files_count} changed file(s):",
+        f"  - {len(impact['changed_nodes'])} directly changed nodes",
+        f"  - {len(impact['impacted_nodes'])} impacted nodes"
+        f" in {len(impact['impacted_files'])} files",
+        "",
+        "Review guidance:",
+        guidance,
+    ]
+    return "\n".join(summary_parts)
+
+
 def get_review_context(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
@@ -727,7 +798,6 @@ def get_review_context(
     """
     store, root = _get_store(repo_root)
     try:
-        # Get impact radius first
         if changed_files is None:
             changed_files = get_changed_files(root, base)
             if not changed_files:
@@ -740,20 +810,9 @@ def get_review_context(
                 "context": {},
             }
 
-        abs_files = []
-        root_resolved = root.resolve()
-        for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
-
+        abs_files = _filter_valid_paths(root, changed_files)
         impact = store.get_impact_radius(abs_files, max_depth=max_depth)
 
-        # Build review context
         context: dict[str, Any] = {
             "changed_files": changed_files,
             "impacted_files": impact["impacted_files"],
@@ -764,50 +823,17 @@ def get_review_context(
             },
         }
 
-        # Add source snippets for changed files
         if include_source:
-            snippets = {}
-            for rel_path in changed_files:
-                full_path_raw = root / rel_path
-                full_path = full_path_raw.resolve()
-                if not full_path.is_relative_to(root.resolve()):
-                    continue
-                if full_path_raw.is_symlink() or full_path.is_symlink():
-                    continue
-                if full_path.is_file():
-                    try:
-                        lines = full_path.read_text(errors="replace").splitlines()
-                        if len(lines) > max_lines_per_file:
-                            # Include only the relevant functions/classes
-                            relevant_lines = _extract_relevant_lines(
-                                lines, impact["changed_nodes"], str(full_path)
-                            )
-                            snippets[rel_path] = relevant_lines
-                        else:
-                            snippets[rel_path] = "\n".join(
-                                f"{i + 1}: {line}" for i, line in enumerate(lines)
-                            )
-                    except (OSError, UnicodeDecodeError):
-                        snippets[rel_path] = "(could not read file)"
-            context["source_snippets"] = snippets
+            context["source_snippets"] = _get_source_snippets(
+                root, changed_files, impact["changed_nodes"], max_lines_per_file
+            )
 
-        # Generate review guidance
         guidance = _generate_review_guidance(impact, changed_files)
         context["review_guidance"] = guidance
 
-        summary_parts = [
-            f"Review context for {len(changed_files)} changed file(s):",
-            f"  - {len(impact['changed_nodes'])} directly changed nodes",
-            f"  - {len(impact['impacted_nodes'])} impacted nodes"
-            f" in {len(impact['impacted_files'])} files",
-            "",
-            "Review guidance:",
-            guidance,
-        ]
-
         return {
             "status": "ok",
-            "summary": "\n".join(summary_parts),
+            "summary": _build_review_summary_text(len(changed_files), impact, guidance),
             "context": context,
         }
     finally:
