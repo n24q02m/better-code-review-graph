@@ -583,24 +583,22 @@ class GraphStore:
     def get_edges_among(self, qualified_names: set[str]) -> list[GraphEdge]:
         """Return edges where both source and target are in the given set.
 
-        Batches the source-side IN clause to stay under SQLite's default
-        SQLITE_MAX_VARIABLE_NUMBER limit, then filters targets in Python.
+        Batches the IN clauses to stay under SQLite's default
+        SQLITE_MAX_VARIABLE_NUMBER limit by using json_each.
         """
         if not qualified_names:
             return []
         qns = list(qualified_names)
         results: list[GraphEdge] = []
         batch_size = 450  # Stay well under SQLite's default 999 limit
+        qns_json = json.dumps(qns)
         for i in range(0, len(qns), batch_size):
             batch = qns[i : i + batch_size]
             rows = self._conn.execute(
-                "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
+                "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?)) AND target_qualified IN (SELECT value FROM json_each(?))",
+                (json.dumps(batch), qns_json),
             ).fetchall()
-            for r in rows:
-                edge = self._row_to_edge(r)
-                if edge.target_qualified in qualified_names:
-                    results.append(edge)
+            results.extend(self._row_to_edge(r) for r in rows)
         return results
 
     # --- Internal helpers ---
