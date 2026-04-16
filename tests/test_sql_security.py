@@ -92,3 +92,25 @@ def test_search_nodes_security():
 
     # Verify table still intact
     assert store.get_stats().total_nodes == 1
+
+def test_get_nodes_by_size_security():
+    store = GraphStore(":memory:")
+    # Add node
+    node = NodeInfo(
+        kind="Function",
+        name="large_function",
+        file_path="f.py",
+        line_start=1,
+        line_end=100,
+    )
+    store.upsert_node(node)
+
+    # Malicious kind
+    malicious_kind = "Function' OR 1=1 --"
+
+    # Should not return anything as 'Function\' OR 1=1 --' doesn't match literally
+    results = store.get_nodes_by_size(kind=malicious_kind)
+    assert len(results) == 0
+
+    # Verify table still intact
+    assert store.get_stats().total_nodes == 1
