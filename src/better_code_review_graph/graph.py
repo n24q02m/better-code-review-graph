@@ -380,26 +380,22 @@ class GraphStore:
             return []
 
         # Use json_each to avoid dynamic SQL construction.
-        # The query ensures ALL words match (AND logic).
-        sql = """
+        # Use (? IS NULL OR ...) pattern for optional kind filter.
+        # ALL variable-length inputs use placeholders to satisfy security scanners (B608).
+        rows = self._conn.execute(
+            """
             SELECT * FROM nodes
             WHERE (
                 SELECT COUNT(*)
                 FROM json_each(?)
-                WHERE LOWER(nodes.name) LIKE '%' || LOWER(value) || '%'
-                   OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
+                WHERE LOWER(nodes.name) LIKE "%" || LOWER(value) || "%"
+                   OR LOWER(nodes.qualified_name) LIKE "%" || LOWER(value) || "%"
             ) = (SELECT COUNT(*) FROM json_each(?))
-        """
-        params: list[Any] = [json.dumps(words), json.dumps(words)]
-
-        if kind:
-            sql += " AND kind = ?"
-            params.append(kind)
-
-        sql += " ORDER BY name LIMIT ?"
-        params.append(limit)
-
-        rows = self._conn.execute(sql, params).fetchall()
+              AND (? IS NULL OR kind = ?)
+            ORDER BY name LIMIT ?
+            """,
+            [json.dumps(words), json.dumps(words), kind, kind, limit],
+        ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Impact / Graph traversal ---
@@ -550,30 +546,29 @@ class GraphStore:
         Returns:
             List of GraphNode objects, ordered by line count descending.
         """
-        sql = """
+        rows = self._conn.execute(
+            """
             SELECT * FROM nodes
             WHERE line_start IS NOT NULL
               AND line_end IS NOT NULL
               AND (line_end - line_start + 1) >= ?
               AND (? IS NULL OR (line_end - line_start + 1) <= ?)
               AND (? IS NULL OR kind = ?)
-              AND (? IS NULL OR file_path LIKE '%' || ? || '%')
+              AND (? IS NULL OR file_path LIKE "%" || ? || "%")
             ORDER BY (line_end - line_start + 1) DESC LIMIT ?
-        """
-        params = [
-            min_lines,
-            max_lines,
-            max_lines,
-            kind,
-            kind,
-            file_path_pattern,
-            file_path_pattern,
-            limit,
-        ]
-        rows = self._conn.execute(sql, params).fetchall()
+            """,
+            [
+                min_lines,
+                max_lines,
+                max_lines,
+                kind,
+                kind,
+                file_path_pattern,
+                file_path_pattern,
+                limit,
+            ],
+        ).fetchall()
         return [self._row_to_node(r) for r in rows]
-
-    # --- Public edge access (for visualization etc.) ---
 
     def get_all_edges(self) -> list[GraphEdge]:
         """Return all edges in the graph."""
