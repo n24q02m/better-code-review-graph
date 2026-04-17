@@ -94,3 +94,17 @@ repos:
         entry: bash scripts/enforce-commit.sh
         language: system
         stages: [commit-msg]
+
+  # ============================================================================
+  # Content integrity: block ASCII rewriting of Vietnamese diacritics
+  # + Unicode punctuation (em-dash, ellipsis, arrows, smart quotes, emoji).
+  # See scripts/preserve-diacritics.py and feedback_vietnamese_diacritics rule.
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: preserve-diacritics
+        name: Preserve Vietnamese diacritics + Unicode punctuation
+        entry: python scripts/preserve-diacritics.py
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
