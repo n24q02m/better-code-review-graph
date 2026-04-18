@@ -291,6 +291,11 @@ def build_or_update_graph(
                 ),
                 **result,
             }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": f"Graph build/update failed: {e}",
+        }
     finally:
         store.close()
 
