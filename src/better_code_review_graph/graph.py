@@ -504,12 +504,10 @@ class GraphStore:
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
         node_list = self.get_nodes_by_qualified_names(qualified_names)
-        node_map = {n.qualified_name: n for n in node_list}
-        nodes = [node_map[qn] for qn in qualified_names if qn in node_map]
 
         edges = self.get_edges_among(set(qualified_names))
 
-        return {"nodes": nodes, "edges": edges}
+        return {"nodes": node_list, "edges": edges}
 
     def get_stats(self) -> GraphStats:
         """Return aggregate statistics about the graph."""
