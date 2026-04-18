@@ -410,6 +410,208 @@ _QUERY_PATTERNS = {
 }
 
 
+def _resolve_query_target(
+    store: Any,
+    root: Any,
+    target: str,
+    pattern: str,
+) -> tuple[Any | None, str, dict[str, Any] | None]:
+    """Resolve the query target to a node or path.
+
+    Returns:
+        tuple: (node, resolved_qn_or_path, error_response)
+    """
+    node = store.get_node(target)
+    if not node:
+        full_target_raw = root / target
+        try:
+            full_target = full_target_raw.resolve()
+            if (
+                full_target.is_relative_to(root.resolve())
+                and not full_target_raw.is_symlink()
+                and not full_target.is_symlink()
+            ):
+                abs_target = str(full_target)
+                node = store.get_node(abs_target)
+        except (OSError, ValueError):
+            pass
+
+    if not node:
+        # Search by name
+        candidates = store.search_nodes(target, limit=5)
+        if len(candidates) == 1:
+            node = candidates[0]
+            target = node.qualified_name
+        elif len(candidates) > 1:
+            return (
+                None,
+                target,
+                {
+                    "status": "ambiguous",
+                    "summary": f"Multiple matches for '{target}'. Please use a qualified name.",
+                    "candidates": [node_to_dict(c) for c in candidates],
+                },
+            )
+
+    if not node:
+        if pattern in ("file_summary", "importers_of"):
+            full_target_raw = root / target
+            try:
+                full_target = full_target_raw.resolve()
+                if (
+                    not full_target.is_relative_to(root.resolve())
+                    or full_target_raw.is_symlink()
+                    or full_target.is_symlink()
+                ):
+                    return (
+                        None,
+                        target,
+                        {
+                            "status": "error",
+                            "summary": "Invalid target path",
+                        },
+                    )
+                return None, str(full_target), None
+            except (OSError, ValueError):
+                return (
+                    None,
+                    target,
+                    {
+                        "status": "error",
+                        "summary": "Invalid target path",
+                    },
+                )
+        else:
+            return (
+                None,
+                target,
+                {
+                    "status": "not_found",
+                    "summary": f"No node found matching '{target}'.",
+                },
+            )
+
+    if pattern == "importers_of" and node:
+        return node, node.file_path, None
+
+    return node, node.qualified_name, None
+
+
+def _handle_callers_of(
+    store: Any, node: Any, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
+    qns = []
+    for e in store.get_edges_by_target(qn):
+        if e.kind == "CALLS":
+            qns.append(e.source_qualified)
+            edges_out.append(edge_to_dict(e))
+
+    # Fallback: CALLS edges store unqualified target names
+    if not qns and node:
+        for e in store.search_edges_by_target_name(node.name):
+            qns.append(e.source_qualified)
+            edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                results.append(node_to_dict(node_map[qn_src]))
+
+
+def _handle_callees_of(
+    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
+    qns = []
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "CALLS":
+            qns.append(e.target_qualified)
+            edges_out.append(edge_to_dict(e))
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                results.append(node_to_dict(node_map[qn_tgt]))
+
+
+def _handle_imports_of(
+    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "IMPORTS_FROM":
+            results.append({"import_target": e.target_qualified})
+            edges_out.append(edge_to_dict(e))
+
+
+def _handle_importers_of(
+    store: Any, abs_target: str, results: list[dict], edges_out: list[dict]
+) -> None:
+    for e in store.get_edges_by_target(abs_target):
+        if e.kind == "IMPORTS_FROM":
+            results.append({"importer": e.source_qualified, "file": e.file_path})
+            edges_out.append(edge_to_dict(e))
+
+
+def _handle_children_of(store: Any, qn: str, results: list[dict]) -> None:
+    qns = []
+    for e in store.get_edges_by_source(qn):
+        if e.kind == "CONTAINS":
+            qns.append(e.target_qualified)
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                results.append(node_to_dict(node_map[qn_tgt]))
+
+
+def _handle_tests_for(
+    store: Any, node: Any, target: str, qn: str, results: list[dict]
+) -> None:
+    qns = []
+    for e in store.get_edges_by_target(qn):
+        if e.kind == "TESTED_BY":
+            qns.append(e.source_qualified)
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                results.append(node_to_dict(node_map[qn_src]))
+    # Also search by naming convention
+    name = node.name if node else target
+    test_nodes = store.search_nodes(f"test_{name}", limit=10)
+    test_nodes += store.search_nodes(f"Test{name}", limit=10)
+    seen = {r.get("qualified_name") for r in results}
+    for t in test_nodes:
+        if t.qualified_name not in seen and t.is_test:
+            results.append(node_to_dict(t))
+
+
+def _handle_inheritors_of(
+    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+) -> None:
+    qns = []
+    for e in store.get_edges_by_target(qn):
+        if e.kind in ("INHERITS", "IMPLEMENTS"):
+            qns.append(e.source_qualified)
+            edges_out.append(edge_to_dict(e))
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                results.append(node_to_dict(node_map[qn_src]))
+
+
+def _handle_file_summary(store: Any, abs_path: str, results: list[dict]) -> None:
+    file_nodes = store.get_nodes_by_file(abs_path)
+    for n in file_nodes:
+        results.append(node_to_dict(n))
+
+
 def query_graph(
     pattern: str,
     target: str,
@@ -444,8 +646,6 @@ def query_graph(
         edges_out: list[dict] = []
 
         # For callers_of, skip common builtins early (bare names only)
-        # "Who calls .map()?" returns hundreds of useless hits.
-        # Qualified names (e.g. "utils.py::map") bypass this filter.
         if (
             pattern == "callers_of"
             and target in _BUILTIN_CALL_NAMES
@@ -461,163 +661,28 @@ def query_graph(
                 "edges": [],
             }
 
-        # Resolve target - try as-is, then as absolute path, then search
-        node = store.get_node(target)
-        if not node:
-            full_target_raw = root / target
-            full_target = full_target_raw.resolve()
-            if (
-                full_target.is_relative_to(root.resolve())
-                and not full_target_raw.is_symlink()
-                and not full_target.is_symlink()
-            ):
-                abs_target = str(full_target)
-                node = store.get_node(abs_target)
-        if not node:
-            # Search by name
-            candidates = store.search_nodes(target, limit=5)
-            if len(candidates) == 1:
-                node = candidates[0]
-                target = node.qualified_name
-            elif len(candidates) > 1:
-                return {
-                    "status": "ambiguous",
-                    "summary": f"Multiple matches for '{target}'. Please use a qualified name.",
-                    "candidates": [node_to_dict(c) for c in candidates],
-                }
-
-        if not node and pattern != "file_summary":
-            return {
-                "status": "not_found",
-                "summary": f"No node found matching '{target}'.",
-            }
-
-        qn = node.qualified_name if node else target
+        node, resolved_qn_or_path, error_resp = _resolve_query_target(
+            store, root, target, pattern
+        )
+        if error_resp:
+            return error_resp
 
         if pattern == "callers_of":
-            qns = []
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "CALLS":
-                    qns.append(e.source_qualified)
-                    edges_out.append(edge_to_dict(e))
-
-            # Fallback: CALLS edges store unqualified target names
-            if not qns and node:
-                for e in store.search_edges_by_target_name(node.name):
-                    qns.append(e.source_qualified)
-                    edges_out.append(edge_to_dict(e))
-
-            if qns:
-                nodes = store.get_nodes_by_qualified_names(qns)
-                node_map = {n.qualified_name: n for n in nodes}
-                for qn_src in qns:
-                    if qn_src in node_map:
-                        results.append(node_to_dict(node_map[qn_src]))
-
+            _handle_callers_of(store, node, resolved_qn_or_path, results, edges_out)
         elif pattern == "callees_of":
-            qns = []
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CALLS":
-                    qns.append(e.target_qualified)
-                    edges_out.append(edge_to_dict(e))
-            if qns:
-                nodes = store.get_nodes_by_qualified_names(qns)
-                node_map = {n.qualified_name: n for n in nodes}
-                for qn_tgt in qns:
-                    if qn_tgt in node_map:
-                        results.append(node_to_dict(node_map[qn_tgt]))
-
+            _handle_callees_of(store, resolved_qn_or_path, results, edges_out)
         elif pattern == "imports_of":
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "IMPORTS_FROM":
-                    results.append({"import_target": e.target_qualified})
-                    edges_out.append(edge_to_dict(e))
-
+            _handle_imports_of(store, resolved_qn_or_path, results, edges_out)
         elif pattern == "importers_of":
-            # Find edges where target matches this file
-            if node is not None:
-                abs_target = node.file_path
-            else:
-                full_target_raw = root / target
-                full_target = full_target_raw.resolve()
-                if (
-                    not full_target.is_relative_to(root.resolve())
-                    or full_target_raw.is_symlink()
-                    or full_target.is_symlink()
-                ):
-                    return {
-                        "status": "error",
-                        "summary": "Invalid target path",
-                    }
-                abs_target = str(full_target)
-            for e in store.get_edges_by_target(abs_target):
-                if e.kind == "IMPORTS_FROM":
-                    results.append(
-                        {"importer": e.source_qualified, "file": e.file_path}
-                    )
-                    edges_out.append(edge_to_dict(e))
-
+            _handle_importers_of(store, resolved_qn_or_path, results, edges_out)
         elif pattern == "children_of":
-            qns = []
-            for e in store.get_edges_by_source(qn):
-                if e.kind == "CONTAINS":
-                    qns.append(e.target_qualified)
-            if qns:
-                nodes = store.get_nodes_by_qualified_names(qns)
-                node_map = {n.qualified_name: n for n in nodes}
-                for qn_tgt in qns:
-                    if qn_tgt in node_map:
-                        results.append(node_to_dict(node_map[qn_tgt]))
-
+            _handle_children_of(store, resolved_qn_or_path, results)
         elif pattern == "tests_for":
-            qns = []
-            for e in store.get_edges_by_target(qn):
-                if e.kind == "TESTED_BY":
-                    qns.append(e.source_qualified)
-            if qns:
-                nodes = store.get_nodes_by_qualified_names(qns)
-                node_map = {n.qualified_name: n for n in nodes}
-                for qn_src in qns:
-                    if qn_src in node_map:
-                        results.append(node_to_dict(node_map[qn_src]))
-            # Also search by naming convention
-            name = node.name if node else target
-            test_nodes = store.search_nodes(f"test_{name}", limit=10)
-            test_nodes += store.search_nodes(f"Test{name}", limit=10)
-            seen = {r.get("qualified_name") for r in results}
-            for t in test_nodes:
-                if t.qualified_name not in seen and t.is_test:
-                    results.append(node_to_dict(t))
-
+            _handle_tests_for(store, node, target, resolved_qn_or_path, results)
         elif pattern == "inheritors_of":
-            qns = []
-            for e in store.get_edges_by_target(qn):
-                if e.kind in ("INHERITS", "IMPLEMENTS"):
-                    qns.append(e.source_qualified)
-                    edges_out.append(edge_to_dict(e))
-            if qns:
-                nodes = store.get_nodes_by_qualified_names(qns)
-                node_map = {n.qualified_name: n for n in nodes}
-                for qn_src in qns:
-                    if qn_src in node_map:
-                        results.append(node_to_dict(node_map[qn_src]))
-
+            _handle_inheritors_of(store, resolved_qn_or_path, results, edges_out)
         elif pattern == "file_summary":
-            full_target_raw = root / target
-            full_target = full_target_raw.resolve()
-            if (
-                not full_target.is_relative_to(root.resolve())
-                or full_target_raw.is_symlink()
-                or full_target.is_symlink()
-            ):
-                return {
-                    "status": "error",
-                    "summary": "Invalid target path",
-                }
-            abs_path = str(full_target)
-            file_nodes = store.get_nodes_by_file(abs_path)
-            for n in file_nodes:
-                results.append(node_to_dict(n))
+            _handle_file_summary(store, resolved_qn_or_path, results)
 
         return {
             "status": "ok",
