@@ -1,8 +1,8 @@
 # config Tool Documentation
 
-Server configuration, status, and cache management.
+Server configuration, status, cache management, and credential setup.
 
-## Actions
+## Config Actions
 
 ### status
 Show current server status including graph path, node/edge counts, embedding backend, and last update time.
@@ -67,4 +67,59 @@ Remove all computed embeddings from the graph database. After clearing, run `gra
   "status": "cache cleared",
   "embeddings_removed": 890
 }
+```
+
+---
+
+## Setup Actions
+
+### setup_status
+Show current credential state and relay setup URL (if any).
+
+**Example:**
+```json
+{"action": "setup_status"}
+```
+
+---
+
+### setup_start
+Start relay setup session to configure API keys via browser.
+
+**Parameters:**
+- `force`: If true, reconfigure even when already configured (default: false)
+
+**Example:**
+```json
+{"action": "setup_start"}
+```
+
+---
+
+### setup_skip
+Set local mode permanently — relay will not trigger on next restart.
+
+**Example:**
+```json
+{"action": "setup_skip"}
+```
+
+---
+
+### setup_reset
+Clear saved credentials and reset to awaiting_setup state.
+
+**Example:**
+```json
+{"action": "setup_reset"}
+```
+
+---
+
+### setup_complete
+Re-resolve credentials from current environment variables (picks up manually set API keys).
+
+**Example:**
+```json
+{"action": "setup_complete"}
 ```

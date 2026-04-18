@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from better_code_review_graph.server import (
     config,
@@ -34,7 +34,7 @@ class TestMCPServerSetup:
             assert "knowledge graph" in instructions.lower()
 
     def test_five_tools_registered(self):
-        """Server should expose 5 tools: graph, query, review, config, help."""
+        """Server should expose exactly 5 tools: graph, query, review, config, help."""
         tool_names = set()
         manager = getattr(mcp, "_tool_manager", None)
         if manager:
@@ -43,6 +43,7 @@ class TestMCPServerSetup:
         if not tool_names:
             tool_names = {"graph", "query", "review", "config", "help"}
         assert {"graph", "query", "review", "config", "help"}.issubset(tool_names)
+        assert "setup" not in tool_names
 
 
 # ---------------------------------------------------------------------------
@@ -274,75 +275,97 @@ def _make_mini_repo(tmp_path):
 
 
 class TestConfigTool:
-    def test_unknown_action(self):
-        result = json.loads(config(action="nonexistent"))
+    async def test_unknown_action(self):
+        result = json.loads(await config(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
 
-    def test_set_missing_key(self):
-        result = json.loads(config(action="set"))
+    async def test_set_missing_key(self):
+        result = json.loads(await config(action="set"))
         assert result["error"] == "key is required for set action"
         assert result["valid_keys"] == ["log_level"]
         assert "error" in result
 
-    def test_set_missing_value(self):
-        result = json.loads(config(action="set", key="log_level"))
+    async def test_set_missing_value(self):
+        result = json.loads(await config(action="set", key="log_level"))
         assert result["error"] == "value is required for set action"
         assert "error" in result
 
-    def test_set_invalid_key(self):
-        result = json.loads(config(action="set", key="invalid_key", value="x"))
+    async def test_set_invalid_key(self):
+        result = json.loads(await config(action="set", key="invalid_key", value="x"))
         assert "error" in result
         assert "valid_keys" in result
 
-    def test_set_log_level(self):
-        result = json.loads(config(action="set", key="log_level", value="DEBUG"))
+    async def test_set_log_level(self):
+        result = json.loads(await config(action="set", key="log_level", value="DEBUG"))
         assert result["status"] == "updated"
         assert result["value"] == "DEBUG"
 
-    def test_set_invalid_log_level(self):
-        result = json.loads(config(action="set", key="log_level", value="INVALID"))
+    async def test_set_invalid_log_level(self):
+        result = json.loads(
+            await config(action="set", key="log_level", value="INVALID")
+        )
         assert "error" in result
 
-    def test_status_no_graph(self):
-        result = json.loads(config(action="status"))
+    async def test_status_no_graph(self):
+        result = json.loads(await config(action="status"))
         assert result["status"] == "ok"
         assert "version" in result
 
-    def test_status_with_repo(self, tmp_path):
+    async def test_status_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(config(action="status", repo_root=str(repo)))
+        result = json.loads(await config(action="status", repo_root=str(repo)))
         assert result["status"] == "ok"
         assert result["total_nodes"] > 0
         assert "embedding_backend" in result
 
-    def test_status_error_handling(self):
+    async def test_status_error_handling(self):
         with patch(
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No graph found"),
         ):
-            result = json.loads(config(action="status"))
+            result = json.loads(await config(action="status"))
             assert result["status"] == "ok"
             assert result["graph_path"] is None
             assert "No graph found" in result["message"]
 
-    def test_cache_clear_no_graph(self):
-        result = json.loads(config(action="cache_clear"))
+    async def test_cache_clear_no_graph(self):
+        result = json.loads(await config(action="cache_clear"))
         assert result["status"] == "cache cleared"
 
-    def test_cache_clear_error_handling(self):
+    async def test_cache_clear_error_handling(self):
         with patch(
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No repo found"),
         ):
-            result = json.loads(config(action="cache_clear"))
+            result = json.loads(await config(action="cache_clear"))
             assert result["status"] == "cache cleared"
             assert result["embeddings_removed"] == 0
 
-    def test_cache_clear_with_repo(self, tmp_path):
+    async def test_cache_clear_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(config(action="cache_clear", repo_root=str(repo)))
+        result = json.loads(await config(action="cache_clear", repo_root=str(repo)))
         assert result["status"] == "cache cleared"
+
+    async def test_setup_status_action(self):
+        """config setup_status dispatches to credential state status."""
+        result = json.loads(await config(action="setup_status"))
+        assert "unknown action" not in str(result).lower()
+        assert "state" in result
+
+    async def test_setup_start_action(self):
+        """config setup_start dispatches to relay trigger."""
+        from better_code_review_graph import credential_state as cs
+
+        cs._state = cs.CredentialState.AWAITING_SETUP
+        with patch(
+            "better_code_review_graph.credential_state.trigger_relay_setup",
+            new_callable=AsyncMock,
+            return_value="https://relay.example.com/test",
+        ):
+            result = json.loads(await config(action="setup_start"))
+            assert "unknown action" not in str(result).lower()
+            assert result.get("status") == "setup_started"
 
 
 # ---------------------------------------------------------------------------

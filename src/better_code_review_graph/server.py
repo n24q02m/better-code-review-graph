@@ -1,6 +1,6 @@
 """MCP server entry point for Better Code Review Graph.
 
-5-tool architecture: graph + query + review (3 main) + config + setup + help.
+5-tool architecture: graph + query + review (3 main) + config + help.
 Run as: better-code-review-graph serve
 """
 
@@ -56,9 +56,9 @@ mcp = FastMCP(
     "better-code-review-graph",
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
-        "context-aware code reviews. 6 tools: graph (build/embed/stats), "
+        "context-aware code reviews. 5 tools: graph (build/embed/stats), "
         "query (search/impact/patterns), review (code review context), "
-        "config (status/set), setup (relay/credentials), help (full docs)."
+        "config (status/set/setup_*), help (full docs)."
     ),
 )
 
@@ -298,15 +298,18 @@ def review(
 
 
 # ---------------------------------------------------------------------------
-# Tool 4: config (status, set, cache_clear)
+# Tool 4: config (status, set, cache_clear, setup_*)
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool(
     description=(
-        "Server configuration and status. "
+        "Server configuration, status, and credential setup. "
         "Actions: status (show state), set (key, value -- keys: log_level), "
-        "cache_clear (wipe embeddings). "
+        "cache_clear (wipe embeddings), "
+        "setup_status (credential state), setup_start (relay browser setup), "
+        "setup_skip (local mode), setup_reset (clear credentials), "
+        "setup_complete (re-resolve from env). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -314,20 +317,29 @@ def review(
         readOnlyHint=False,
         destructiveHint=False,
         idempotentHint=True,
-        openWorldHint=False,
+        openWorldHint=True,
     ),
 )
-def config(
+async def config(
     action: str,
     key: str | None = None,
     value: str | None = None,
     repo_root: str | None = None,
+    force: bool = False,
 ) -> str:
-    """Server configuration and status.
+    """Server configuration, status, and credential setup.
 
+    Config actions:
     - status: Show graph path, node/edge counts, embedding backend, last updated
     - set: Update runtime setting (key + value). Keys: log_level
     - cache_clear: Wipe all embeddings from the graph
+
+    Setup actions:
+    - setup_status: Show current credential state and setup URL
+    - setup_start: Start relay setup to configure API keys via browser
+    - setup_skip: Set local mode (skip relay permanently)
+    - setup_reset: Clear credentials and reset to awaiting_setup
+    - setup_complete: Re-resolve credentials from env vars
     """
     match action:
         case "status":
@@ -345,10 +357,101 @@ def config(
             return _config_set(key, value)
         case "cache_clear":
             return _config_cache_clear(repo_root)
+        case "setup_status":
+            from . import credential_state as _cs
+
+            state = _cs.get_state()
+            return _json(
+                {
+                    "state": state.value,
+                    "setup_url": _cs.get_setup_url(),
+                    "cloud_keys_in_env": [
+                        k for k in _cs.CLOUD_KEYS if os.environ.get(k)
+                    ],
+                }
+            )
+        case "setup_start":
+            from .credential_state import (
+                CredentialState,
+                get_state,
+                trigger_relay_setup,
+            )
+
+            if get_state() == CredentialState.CONFIGURED and not force:
+                return _json(
+                    {
+                        "status": "already_configured",
+                        "message": "Already configured. Use force=true to reconfigure.",
+                    }
+                )
+            url = await trigger_relay_setup(force=True)
+            if url:
+                return _json(
+                    {
+                        "status": "setup_started",
+                        "setup_url": url,
+                        "message": "Open this URL to configure API keys.",
+                    }
+                )
+            return _json(
+                {
+                    "status": "error",
+                    "message": "Failed to start relay session.",
+                }
+            )
+        case "setup_skip":
+            from mcp_core import set_local_mode
+
+            from .credential_state import CredentialState, set_state
+
+            set_local_mode(SERVER_NAME)
+            set_state(CredentialState.LOCAL)
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Local mode set. Relay will not trigger on restart.",
+                }
+            )
+        case "setup_reset":
+            from .credential_state import reset_state
+
+            reset_state()
+            return _json(
+                {
+                    "status": "ok",
+                    "message": "Credentials cleared. Next tool call will offer setup.",
+                }
+            )
+        case "setup_complete":
+            from .credential_state import (
+                get_state as _get_state,
+            )
+            from .credential_state import (
+                resolve_credential_state,
+            )
+
+            resolve_credential_state()
+            state = _get_state()
+            return _json(
+                {
+                    "status": "ok",
+                    "state": state.value,
+                    "message": "Credential state refreshed.",
+                }
+            )
         case _:
             import difflib
 
-            valid_actions = ["cache_clear", "set", "status"]
+            valid_actions = [
+                "cache_clear",
+                "set",
+                "setup_complete",
+                "setup_reset",
+                "setup_skip",
+                "setup_start",
+                "setup_status",
+                "status",
+            ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(
@@ -469,151 +572,7 @@ def _config_cache_clear(repo_root: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tool 5: setup (credential relay management)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    description=(
-        "Credential setup and relay management. Actions: "
-        "status|start|skip|reset|complete. "
-        "status: Show current credential state. "
-        "start: Start relay setup to configure API keys via browser. "
-        "skip: Set local mode (skip relay permanently). "
-        "reset: Clear credentials and reset state. "
-        "complete: Re-resolve credentials from env vars."
-    ),
-    annotations=ToolAnnotations(
-        title="Setup",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=True,
-    ),
-)
-async def setup(
-    action: str,
-    force: bool = False,
-) -> str:
-    """Credential setup and relay management.
-
-    Actions:
-    - status: Show current credential state and setup URL
-    - start: Start relay setup to configure API keys via browser
-    - skip: Set local mode (skip relay permanently)
-    - reset: Clear credentials and reset to awaiting_setup
-    - complete: Re-resolve credentials from env vars (pick up manually set keys)
-    """
-    match action:
-        case "status":
-            from . import credential_state as _cs
-
-            state = _cs.get_state()
-            return _json(
-                {
-                    "state": state.value,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": [
-                        k for k in _cs.CLOUD_KEYS if os.environ.get(k)
-                    ],
-                }
-            )
-
-        case "start":
-            from .credential_state import (
-                CredentialState,
-                get_state,
-                trigger_relay_setup,
-            )
-
-            if get_state() == CredentialState.CONFIGURED and not force:
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use force=true to reconfigure.",
-                    }
-                )
-            url = await trigger_relay_setup(force=True)
-            if url:
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {
-                    "status": "error",
-                    "message": "Failed to start relay session.",
-                }
-            )
-
-        case "skip":
-            from mcp_core import set_local_mode
-
-            from .credential_state import CredentialState, set_state
-
-            set_local_mode(SERVER_NAME)
-            set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
-
-        case "reset":
-            from .credential_state import reset_state
-
-            reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
-
-        case "complete":
-            from .credential_state import (
-                get_state as _get_state,
-            )
-            from .credential_state import (
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = _get_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
-
-        case _:
-            import difflib
-
-            valid_actions = [
-                "complete",
-                "reset",
-                "skip",
-                "start",
-                "status",
-            ]
-            closest = difflib.get_close_matches(action, valid_actions, n=1)
-            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
-
-
-# ---------------------------------------------------------------------------
-# Tool 6: help (documentation)
+# Tool 5: help (documentation)
 # ---------------------------------------------------------------------------
 
 
@@ -678,7 +637,7 @@ def help(topic: str = "graph") -> str:
 
 
 # ---------------------------------------------------------------------------
-# Constants (used by setup tool)
+# Constants
 # ---------------------------------------------------------------------------
 
 SERVER_NAME = "better-code-review-graph"

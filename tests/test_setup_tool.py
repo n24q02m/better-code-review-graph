@@ -1,7 +1,7 @@
-"""Tests for the server setup tool (server.py lines 494-612).
+"""Tests for setup_* sub-actions of the config tool (server.py).
 
-Covers: setup(action=status|start|skip|reset|complete), unknown action,
-and _maybe_include_setup_hint helper.
+Covers: config(action=setup_status|setup_start|setup_skip|setup_reset|setup_complete),
+unknown action variants, and _maybe_include_setup_hint helper.
 """
 
 from __future__ import annotations
@@ -40,8 +40,6 @@ class TestMaybeIncludeSetupHint:
 
     def _real_hint_fn(self):
         """Import the real function from server module source."""
-        # The conftest patches server._maybe_include_setup_hint at the module level.
-        # We re-import the original implementation directly to test it.
         from better_code_review_graph.credential_state import (
             CredentialState as _CS,
         )
@@ -101,57 +99,57 @@ class TestMaybeIncludeSetupHint:
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- status action
+# config setup_status action
 # ---------------------------------------------------------------------------
 
 
 class TestSetupStatus:
     async def test_status_returns_state_info(self):
-        """Status returns current state and cloud keys in env."""
+        """setup_status returns current state and cloud keys in env."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.CONFIGURED
         cs._setup_url = None
 
-        result = json.loads(await setup(action="status"))
+        result = json.loads(await config(action="setup_status"))
         assert result["state"] == "configured"
         assert "cloud_keys_in_env" in result
 
     async def test_status_with_setup_url(self):
-        """Status includes setup_url when set."""
+        """setup_status includes setup_url when set."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.SETUP_IN_PROGRESS
         cs._setup_url = "https://relay.example.com/setup"
 
-        result = json.loads(await setup(action="status"))
+        result = json.loads(await config(action="setup_status"))
         assert result["state"] == "setup_in_progress"
         assert result["setup_url"] == "https://relay.example.com/setup"
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- start action
+# config setup_start action
 # ---------------------------------------------------------------------------
 
 
 class TestSetupStart:
     async def test_start_already_configured_no_force(self):
-        """Start with already configured state and no force returns already_configured."""
+        """setup_start with already configured state and no force returns already_configured."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.CONFIGURED
 
-        result = json.loads(await setup(action="start"))
+        result = json.loads(await config(action="setup_start"))
         assert result["status"] == "already_configured"
         assert "force=true" in result["message"]
 
     async def test_start_triggers_relay_setup(self):
-        """Start triggers relay and returns URL."""
+        """setup_start triggers relay and returns URL."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.AWAITING_SETUP
 
@@ -160,14 +158,14 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value="https://relay.example.com/setup#k=abc",
         ):
-            result = json.loads(await setup(action="start"))
+            result = json.loads(await config(action="setup_start"))
             assert result["status"] == "setup_started"
             assert result["setup_url"] == "https://relay.example.com/setup#k=abc"
 
     async def test_start_relay_failure(self):
-        """Start returns error when relay fails."""
+        """setup_start returns error when relay fails."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.AWAITING_SETUP
 
@@ -176,14 +174,14 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value=None,
         ):
-            result = json.loads(await setup(action="start"))
+            result = json.loads(await config(action="setup_start"))
             assert result["status"] == "error"
             assert "Failed" in result["message"]
 
     async def test_start_force_overrides_configured(self):
-        """Start with force=true reconfigures even when CONFIGURED."""
+        """setup_start with force=true reconfigures even when CONFIGURED."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.CONFIGURED
 
@@ -192,37 +190,37 @@ class TestSetupStart:
             new_callable=AsyncMock,
             return_value="https://relay.example.com/new-session",
         ):
-            result = json.loads(await setup(action="start", force=True))
+            result = json.loads(await config(action="setup_start", force=True))
             assert result["status"] == "setup_started"
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- skip action
+# config setup_skip action
 # ---------------------------------------------------------------------------
 
 
 class TestSetupSkip:
     async def test_skip_sets_local_mode(self):
-        """Skip sets LOCAL mode and calls set_local_mode."""
-        from better_code_review_graph.server import setup
+        """setup_skip sets LOCAL mode and calls set_local_mode."""
+        from better_code_review_graph.server import config
 
         with patch("mcp_core.set_local_mode") as mock_local:
-            result = json.loads(await setup(action="skip"))
+            result = json.loads(await config(action="setup_skip"))
             assert result["status"] == "ok"
             assert "Local mode" in result["message"]
             mock_local.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- reset action
+# config setup_reset action
 # ---------------------------------------------------------------------------
 
 
 class TestSetupReset:
     async def test_reset_clears_state(self):
-        """Reset clears credentials and resets state."""
+        """setup_reset clears credentials and resets state."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.CONFIGURED
 
@@ -230,48 +228,48 @@ class TestSetupReset:
             patch("mcp_core.clear_mode"),
             patch("mcp_core.storage.config_file.delete_config"),
         ):
-            result = json.loads(await setup(action="reset"))
+            result = json.loads(await config(action="setup_reset"))
             assert result["status"] == "ok"
             assert cs._state == CredentialState.AWAITING_SETUP
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- complete action
+# config setup_complete action
 # ---------------------------------------------------------------------------
 
 
 class TestSetupComplete:
     async def test_complete_refreshes_state(self, monkeypatch):
-        """Complete re-resolves credential state."""
+        """setup_complete re-resolves credential state."""
         from better_code_review_graph import credential_state as cs
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
         cs._state = CredentialState.AWAITING_SETUP
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
-        result = json.loads(await setup(action="complete"))
+        result = json.loads(await config(action="setup_complete"))
         assert result["status"] == "ok"
         assert result["state"] == "configured"
 
 
 # ---------------------------------------------------------------------------
-# setup tool -- unknown action
+# config setup_* unknown action (via config unknown action path)
 # ---------------------------------------------------------------------------
 
 
 class TestSetupUnknownAction:
     async def test_unknown_action_returns_error(self):
         """Unknown action returns error with valid actions."""
-        from better_code_review_graph.server import setup
+        from better_code_review_graph.server import config
 
-        result = json.loads(await setup(action="nonexistent"))
+        result = json.loads(await config(action="nonexistent_setup_action"))
         assert "error" in result
         assert "valid_actions" in result
 
-    async def test_close_match_suggestion(self):
-        """Typo in action returns a suggestion."""
-        from better_code_review_graph.server import setup
+    async def test_setup_prefix_typo_suggestion(self):
+        """Typo in setup_ action returns a suggestion."""
+        from better_code_review_graph.server import config
 
-        result = json.loads(await setup(action="statu"))
+        result = json.loads(await config(action="setup_statu"))
         assert "error" in result
-        assert "status" in result["error"]
+        assert "setup_status" in result["error"]
