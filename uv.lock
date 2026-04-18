@@ -76,7 +76,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.9.0"
+version = "3.9.2"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -113,7 +113,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.73.1" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.0,<2" },
-    { name = "n24q02m-mcp-core", specifier = ">=1.1.1" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.2.0" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic-settings" },

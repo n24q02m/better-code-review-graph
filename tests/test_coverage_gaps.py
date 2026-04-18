@@ -328,13 +328,13 @@ class TestIsRetryable:
 
 
 class TestConfigStatusVersionFallback:
-    def test_version_dev_fallback(self):
+    async def test_version_dev_fallback(self):
         """Cover lines 350-351: version = 'dev' when package not installed."""
         from better_code_review_graph.server import config
 
         with patch("better_code_review_graph.server._config_status") as mock_status:
             mock_status.return_value = json.dumps({"status": "ok", "version": "dev"})
-            result = json.loads(config(action="status"))
+            result = json.loads(await config(action="status"))
             assert result["version"] == "dev"
 
     def test_version_fallback_direct(self):
@@ -665,13 +665,13 @@ class TestIncrementalNonParseableFile:
 
 
 class TestConfigCacheClearFallback:
-    def test_cache_clear_runtime_error(self):
+    async def test_cache_clear_runtime_error(self):
         """Cover lines 447-448: cache_clear handles RuntimeError."""
         from better_code_review_graph.server import config
 
         # Use a nonexistent path that will trigger RuntimeError
         result = json.loads(
-            config(action="cache_clear", repo_root="/nonexistent/path/xyz")
+            await config(action="cache_clear", repo_root="/nonexistent/path/xyz")
         )
         assert result["status"] == "cache cleared"
         assert result["embeddings_removed"] == 0
@@ -683,11 +683,13 @@ class TestConfigCacheClearFallback:
 
 
 class TestConfigStatusFallback:
-    def test_status_runtime_error(self):
+    async def test_status_runtime_error(self):
         """Cover lines 381-382: _config_status handles RuntimeError."""
         from better_code_review_graph.server import config
 
-        result = json.loads(config(action="status", repo_root="/nonexistent/path/xyz"))
+        result = json.loads(
+            await config(action="status", repo_root="/nonexistent/path/xyz")
+        )
         # Should return ok with 0 nodes (no graph found)
         assert result["status"] == "ok"
         assert result.get("total_nodes", 0) == 0

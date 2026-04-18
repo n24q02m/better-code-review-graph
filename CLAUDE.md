@@ -7,7 +7,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 ## Cau truc
 
 - `src/better_code_review_graph/` -- Package chinh (src layout)
-  - `server.py` -- FastMCP server, 6 tools: graph + query + review (3 main) + config + setup + help
+  - `server.py` -- FastMCP server, 5 tools: graph + query + review (3 main) + config (incl. setup_*) + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
   - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
@@ -53,7 +53,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
                                           |
                                      Embedding store --> Semantic search
                                           |
-                                     FastMCP server --> 6 tools (graph + query + review + config + setup + help)
+                                     FastMCP server --> 5 tools (graph + query + review + config + help)
 ```
 
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
@@ -61,7 +61,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
 - **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud multi-provider (Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
-- **Server** (server.py): 6 tools — graph (build/update/stats/embed), query (query/search/impact/large_functions), review, config, setup (credential relay), help. Returns JSON strings.
+- **Server** (server.py): 5 tools — graph (build/update/stats/embed), query (query/search/impact/large_functions), review, config (status/set/cache_clear + setup_status/setup_start/setup_skip/setup_reset/setup_complete), help. Returns JSON strings.
 
 ## Embedding backends
 
