@@ -938,6 +938,16 @@ class TestSemanticSearchWithEmbeddings:
 
 
 class TestQueryGraphEdgeCases:
+    def test_query_invalid_pattern(self, repo_with_graph):
+        """Cover line 431: return error for unknown pattern."""
+        result = query_graph(
+            pattern="invalid_pattern",
+            target="some_target",
+            repo_root=str(repo_with_graph),
+        )
+        assert result["status"] == "error"
+        assert "Unknown pattern" in result["error"]
+
     def test_query_search_single_candidate(self, repo_with_graph):
         """When search returns exactly 1 candidate, use it."""
         result = query_graph(
