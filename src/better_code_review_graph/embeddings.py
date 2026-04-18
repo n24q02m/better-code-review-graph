@@ -595,16 +595,13 @@ class EmbeddingStore:
         # Batch fetch existing metadata to prevent N+1 queries
         qns = [n.qualified_name for n in nodes if n.kind != "File"]
         existing_map: dict[str, dict[str, Any]] = {}
-        batch_fetch_size = 450
-        for i in range(0, len(qns), batch_fetch_size):
-            batch = qns[i : i + batch_fetch_size]
-            rows = self._conn.execute(
-                "SELECT qualified_name, text_hash, provider FROM embeddings "
-                "WHERE qualified_name IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
-            ).fetchall()
-            for r in rows:
-                existing_map[r["qualified_name"]] = r
+        rows = self._conn.execute(
+            "SELECT qualified_name, text_hash, provider FROM embeddings "
+            "WHERE qualified_name IN (SELECT value FROM json_each(?))",
+            (json.dumps(qns),),
+        ).fetchall()
+        for r in rows:
+            existing_map[r["qualified_name"]] = r
 
         for node in nodes:
             if node.kind == "File":
