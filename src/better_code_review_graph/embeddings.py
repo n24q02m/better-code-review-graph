@@ -222,6 +222,34 @@ class Qwen3EmbedBackend:
 # ---------------------------------------------------------------------------
 
 
+# Priority-ordered mapping: first provider whose key is present in env wins.
+# Mirrors wet-mcp + mnemo-mcp _EMBEDDING_PROVIDERS (MCP config parity).
+_DEFAULT_CLOUD_MODELS: tuple[tuple[str, str], ...] = (
+    ("JINA_AI_API_KEY", "jina_ai/jina-embeddings-v5-text-small"),
+    ("GEMINI_API_KEY", "gemini/gemini-embedding-001"),
+    ("GOOGLE_API_KEY", "gemini/gemini-embedding-001"),
+    ("OPENAI_API_KEY", "text-embedding-3-large"),
+    ("COHERE_API_KEY", "embed-multilingual-v3.0"),
+    ("CO_API_KEY", "embed-multilingual-v3.0"),
+)
+
+
+def _auto_select_cloud_model() -> str:
+    """Pick the first cloud model whose API key is available in env.
+
+    Default is ``embed-multilingual-v3.0`` (Cohere) only when no cloud key is
+    set -- that keeps behaviour stable in pure-local mode where this value is
+    never used. When cloud keys are present, we must pick a model whose
+    provider key is non-empty; otherwise the provider SDK builds an empty
+    ``Bearer`` header and fails with ``LocalProtocolError`` before the
+    request leaves the machine.
+    """
+    for env_var, model in _DEFAULT_CLOUD_MODELS:
+        if os.getenv(env_var):
+            return model
+    return "embed-multilingual-v3.0"
+
+
 class CloudEmbeddingBackend:
     """Cloud embedding via native SDKs (Jina, Gemini, OpenAI, Cohere).
 
@@ -236,7 +264,7 @@ class CloudEmbeddingBackend:
         model: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model or os.getenv("EMBEDDING_MODEL", "embed-multilingual-v3.0")
+        self.model = model or os.getenv("EMBEDDING_MODEL") or _auto_select_cloud_model()
         self.api_key = api_key
         self._provider = _detect_embedding_provider(self.model)
         self._bare_model = _strip_provider(self.model)

@@ -308,6 +308,26 @@ class TestProviderDetection:
 
 
 class TestCloudEmbeddingBackend:
+    @pytest.fixture(autouse=True)
+    def _clean_cloud_env(self, monkeypatch):
+        """Remove cloud keys so auto-selection falls back to Cohere default.
+
+        Tests that patch ``cohere.ClientV2`` expect the backend's default
+        provider to be Cohere. Without this fixture, a developer whose
+        environment has ``JINA_AI_API_KEY`` set (e.g. after running an E2E
+        relay submit) would see those tests pick Jina instead and fail.
+        """
+        for key in (
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+            "EMBEDDING_MODEL",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
     def _mock_cohere_response(self, texts, dim=768):
         """Build a mock Cohere embed response."""
         mock_resp = MagicMock()
