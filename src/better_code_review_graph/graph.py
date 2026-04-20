@@ -294,18 +294,11 @@ class GraphStore:
             return []
 
         unique_files = list(set(file_paths))
-        results: list[GraphNode] = []
-        batch_size = 450  # Stay well under SQLite's default limit
-
-        for i in range(0, len(unique_files), batch_size):
-            batch = unique_files[i : i + batch_size]
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
-            ).fetchall()
-            results.extend(self._row_to_node(r) for r in rows)
-
-        return results
+        rows = self._conn.execute(
+            "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))",
+            (json.dumps(unique_files),),
+        ).fetchall()
+        return [self._row_to_node(r) for r in rows]
 
     def get_nodes_by_qualified_names(
         self, qualified_names: list[str]
@@ -319,18 +312,11 @@ class GraphStore:
             return []
 
         unique_qns = list(set(qualified_names))
-        results: list[GraphNode] = []
-        batch_size = 450  # Stay well under SQLite's default limit
-
-        for i in range(0, len(unique_qns), batch_size):
-            batch = unique_qns[i : i + batch_size]
-            rows = self._conn.execute(
-                "SELECT * FROM nodes WHERE qualified_name IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
-            ).fetchall()
-            results.extend(self._row_to_node(r) for r in rows)
-
-        return results
+        rows = self._conn.execute(
+            "SELECT * FROM nodes WHERE qualified_name IN (SELECT value FROM json_each(?))",
+            (json.dumps(unique_qns),),
+        ).fetchall()
+        return [self._row_to_node(r) for r in rows]
 
     def get_edges_by_source(self, qualified_name: str) -> list[GraphEdge]:
         rows = self._conn.execute(
@@ -356,18 +342,11 @@ class GraphStore:
             return []
 
         unique_qns = list(set(qualified_names))
-        results: list[GraphEdge] = []
-        batch_size = 450  # Stay well under SQLite's default limit
-
-        for i in range(0, len(unique_qns), batch_size):
-            batch = unique_qns[i : i + batch_size]
-            rows = self._conn.execute(
-                "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
-            ).fetchall()
-            results.extend(self._row_to_edge(r) for r in rows)
-
-        return results
+        rows = self._conn.execute(
+            "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))",
+            (json.dumps(unique_qns),),
+        ).fetchall()
+        return [self._row_to_edge(r) for r in rows]
 
     def search_edges_by_target_name(
         self, name: str, kind: str = "CALLS"
@@ -607,17 +586,14 @@ class GraphStore:
             return []
         qns = list(qualified_names)
         results: list[GraphEdge] = []
-        batch_size = 450  # Stay well under SQLite's default 999 limit
-        for i in range(0, len(qns), batch_size):
-            batch = qns[i : i + batch_size]
-            rows = self._conn.execute(
-                "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?))",
-                (json.dumps(batch),),
-            ).fetchall()
-            for r in rows:
-                edge = self._row_to_edge(r)
-                if edge.target_qualified in qualified_names:
-                    results.append(edge)
+        rows = self._conn.execute(
+            "SELECT * FROM edges WHERE source_qualified IN (SELECT value FROM json_each(?))",
+            (json.dumps(qns),),
+        ).fetchall()
+        for r in rows:
+            edge = self._row_to_edge(r)
+            if edge.target_qualified in qualified_names:
+                results.append(edge)
         return results
 
     # --- Internal helpers ---
