@@ -424,7 +424,7 @@ class TestSaveCredentials:
                 "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
             ) as mock_share,
         ):
-            result = save_credentials(config)
+            result = save_credentials(config, {"sub": "test-sub"})
             assert result is None
             mock_write.assert_called_once_with(SERVER_NAME, config)
             mock_share.assert_called_once_with(config)

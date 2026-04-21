@@ -225,8 +225,13 @@ def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
         logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
 
 
-def save_credentials(config: dict[str, str]) -> dict | None:
+def save_credentials(config: dict[str, str], _context: dict[str, str]) -> dict | None:
     """Save credentials from OAuth form to config.enc and apply to environment.
+
+    ``_context`` carries the per-authorize ``sub`` (for future multi-user
+    extensions). Better-code-review-graph is single-user by design — the
+    SQLite graph DB and optional embedding-provider API keys live in one
+    shared ``config.enc`` on the host, so the subject is intentionally unused.
 
     Called by the local OAuth AS when the user submits API keys via the
     browser form. Returns optional dict with next_step info (always None
