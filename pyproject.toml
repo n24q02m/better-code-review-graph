@@ -30,7 +30,7 @@ dependencies = [
     "openai>=2.32.0",
     "httpx",
     "pydantic-settings",
-    "n24q02m-mcp-core>=1.4.3,<2",
+    "n24q02m-mcp-core>=1.5.0,<2",
     "Pygments>=2.20.0",
 ]
 
@@ -45,7 +45,7 @@ dev = [
     "pytest-timeout",
     "ruff>=0.15.11",
     "syrupy",
-    "ty>=0.0.31",
+    "ty>=0.0.32",
 ]
 
 [tool.hatch.build.targets.wheel]

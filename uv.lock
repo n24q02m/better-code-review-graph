@@ -114,7 +114,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.73.1" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.0,<2" },
-    { name = "n24q02m-mcp-core", specifier = ">=1.4.3,<2" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.5.0,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic-settings" },
@@ -133,7 +133,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff", specifier = ">=0.15.11" },
     { name = "syrupy" },
-    { name = "ty", specifier = ">=0.0.31" },
+    { name = "ty", specifier = ">=0.0.32" },
 ]
 
 [[package]]
@@ -879,7 +879,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.4.3"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -892,9 +892,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/6b/a1d150bde068eacf56dfc8f7bc5043990c031899ffb7f6d7fc557395d009/n24q02m_mcp_core-1.4.3.tar.gz", hash = "sha256:9738e83a465cbaf0d18b460f977779b471149d0fd1b3d56f7e2cb080ec3e6e6b", size = 146834, upload-time = "2026-04-20T03:59:03.002Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/15/46/8c9649ea93f74a3acb341d37e68255fc4a5513e584f8cb4cbf1d7133d80a/n24q02m_mcp_core-1.5.0.tar.gz", hash = "sha256:bcfe9c3775be202775f968a5ce2d749408ea422f764ed1faee174566848d2843", size = 152477, upload-time = "2026-04-21T05:28:25.152Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/6e/ff2ba5f28e341fa617d6e13ec856b0ef18b2b5cd0048145c2ad4d54d1c6d/n24q02m_mcp_core-1.4.3-py3-none-any.whl", hash = "sha256:359f56cbb349cd365a7e681b3064a855e9a32e97cfad412ef4e798e779ea352f", size = 89331, upload-time = "2026-04-20T03:59:04.11Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/64/d4256c78febde9ab675a27b103319bdc80249d59075b18f67b7fc6b8bc42/n24q02m_mcp_core-1.5.0-py3-none-any.whl", hash = "sha256:02de010f34c4ee51c4f30e6c5b5eb30c7d5599fbf00f25ee25ad95d1f7b0a644", size = 92819, upload-time = "2026-04-21T05:28:26.355Z" },
 ]
 
 [[package]]
