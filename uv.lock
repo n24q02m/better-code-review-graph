@@ -119,7 +119,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.8.0" },
+    { name = "qwen3-embed", specifier = ">=1.9.0" },
     { name = "tree-sitter", specifier = ">=0.25.2,<1" },
     { name = "tree-sitter-language-pack", specifier = ">=0.13.0,<1" },
     { name = "watchdog", specifier = ">=4.0.2,<6" },
@@ -1308,7 +1308,7 @@ wheels = [
 
 [[package]]
 name = "qwen3-embed"
-version = "1.8.0"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1319,9 +1319,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/8b/86679949c5ffc301c1b3cab6f085ce02a93822382bbb6e113bada22d46d6/qwen3_embed-1.8.0.tar.gz", hash = "sha256:a7a2bb99c734c0b047b3c7f7d036a17069472822037ace4e2c7b5fba2195475e", size = 180557, upload-time = "2026-04-04T06:03:26.206Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/0a/8aa2479f81b32783420a25cd210480385ccc33fde959be31b7c869384701/qwen3_embed-1.9.0.tar.gz", hash = "sha256:72c8c75ea912c6ccb2dcc51f369fbd16d38d5070824980c21dbdedd78152f470", size = 182123, upload-time = "2026-04-21T09:08:59.12Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/75/ba3b7c32c8fbc574cf969f9813bdd7120692835c39c4db84b10a61a79233/qwen3_embed-1.8.0-py3-none-any.whl", hash = "sha256:fc23920384cf3bb2c3d1b17a446d12a5b22fd087fa1b0a60b48542e837b41c14", size = 56294, upload-time = "2026-04-04T06:03:24.939Z" },
+    { url = "https://files.pythonhosted.org/packages/04/04/f65138f8e6224d1803e4643c6eccf2ca5e8e0610b684f865c7ba94cfb4ab/qwen3_embed-1.9.0-py3-none-any.whl", hash = "sha256:be1d2ccbc8596cc4abc6940c5746940c665564a5903e55e8f62466e92502b039", size = 58763, upload-time = "2026-04-21T09:08:58.01Z" },
 ]
 
 [[package]]
