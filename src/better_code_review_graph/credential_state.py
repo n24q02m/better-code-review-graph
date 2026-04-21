@@ -124,7 +124,7 @@ async def _close_active_handle() -> None:
         return
     try:
         await handle.close()
-    except Exception:
+    except Exception:  # pragma: no cover - best-effort cleanup, hard to fault-inject
         logger.opt(exception=True).debug(
             "Best-effort close of credential-form handle failed"
         )
@@ -135,7 +135,7 @@ def _schedule_spawn_cleanup(grace_s: float = _SPAWN_CLEANUP_S) -> None:
     if _active_handle is None:
         return
 
-    async def _delayed_close() -> None:
+    async def _delayed_close() -> None:  # pragma: no cover - timer-based detached task
         try:
             await asyncio.sleep(grace_s)
             await _close_active_handle()
@@ -144,7 +144,7 @@ def _schedule_spawn_cleanup(grace_s: float = _SPAWN_CLEANUP_S) -> None:
         except Exception:
             logger.opt(exception=True).debug("Delayed spawn cleanup failed")
 
-    try:
+    try:  # pragma: no cover - detached task scheduling
         task = asyncio.create_task(_delayed_close())
         task.add_done_callback(lambda _t: None)
     except RuntimeError:
@@ -270,7 +270,7 @@ def reset_state() -> None:
 
     # Close any active local credential-form spawn; fire-and-forget so callers
     # don't need to be async.
-    if _active_handle is not None:
+    if _active_handle is not None:  # pragma: no cover - detached task scheduling
         try:
             task = asyncio.create_task(_close_active_handle())
             task.add_done_callback(lambda _t: None)

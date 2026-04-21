@@ -591,3 +591,149 @@ class TestMainModule:
                     )
                 )
                 mock_main.assert_called_once()
+
+
+class TestGitHelpers:
+    """Coverage for _run_git helper fallbacks used by local-commit detection."""
+
+    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    def test_run_git_returns_none_without_git_binary(self, _mock_which, tmp_path):
+        from better_code_review_graph.incremental import _run_git
+
+        assert _run_git(tmp_path, ["rev-parse", "HEAD"]) is None
+
+    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    def test_get_head_sha_returns_none_without_git(self, _mock_which, tmp_path):
+        from better_code_review_graph.incremental import get_head_sha
+
+        assert get_head_sha(tmp_path) is None
+
+    def test_is_valid_commit_empty_sha(self, tmp_path):
+        from better_code_review_graph.incremental import is_valid_commit
+
+        assert is_valid_commit(tmp_path, "") is False
+
+    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_run_git_handles_timeout(self, _which, mock_run, tmp_path):
+        from better_code_review_graph.incremental import _run_git
+
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
+        assert _run_git(tmp_path, ["rev-parse", "HEAD"]) is None
+
+    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    def test_get_head_sha_returns_none_on_failure(self, _which, mock_run, tmp_path):
+        from better_code_review_graph.incremental import get_head_sha
+
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        assert get_head_sha(tmp_path) is None
+
+
+class TestLocalCommitDetection:
+    """Regression tests for #328: update must cover all local commits,
+    not just HEAD~1. Verify via `last_built_head` metadata persistence."""
+
+    def _git(self, cwd, *args):
+        subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+
+    def _make_repo(self, tmp_path):
+        self._git(tmp_path, "init", "-q", "-b", "main")
+        self._git(tmp_path, "config", "user.email", "t@example.com")
+        self._git(tmp_path, "config", "user.name", "t")
+        return tmp_path
+
+    def test_incremental_widens_base_to_last_built_head(self, tmp_path):
+        self._make_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n")
+        self._git(tmp_path, "add", "a.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: initial")
+
+        store = GraphStore(tmp_path / "g.db")
+        full_build(tmp_path, store)
+        head_after_full = store.get_metadata("last_built_head")
+        assert head_after_full is not None
+
+        # Add THREE local-only commits
+        for name, body in [
+            ("b.py", "y = 2\n"),
+            ("c.py", "z = 3\n"),
+            ("d.py", "w = 4\n"),
+        ]:
+            (tmp_path / name).write_text(body)
+            self._git(tmp_path, "add", name)
+            self._git(tmp_path, "commit", "-q", "-m", f"fix: add {name}")
+
+        result = incremental_update(tmp_path, store)
+        picked = set(result["changed_files"])
+        # All three new files must show up, not just the last one
+        assert {"b.py", "c.py", "d.py"}.issubset(picked), (
+            f"Expected all 3 local commits picked up; got {picked}"
+        )
+
+        new_head = store.get_metadata("last_built_head")
+        assert new_head is not None and new_head != head_after_full
+
+    def test_incremental_falls_back_to_head1_without_last_built_head(self, tmp_path):
+        self._make_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n")
+        self._git(tmp_path, "add", "a.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: a")
+        (tmp_path / "b.py").write_text("y = 2\n")
+        self._git(tmp_path, "add", "b.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: b")
+
+        store = GraphStore(tmp_path / "g.db")
+        # No prior build -> no last_built_head metadata
+        assert store.get_metadata("last_built_head") is None
+
+        result = incremental_update(tmp_path, store)
+        # Default HEAD~1 covers only the last commit (b.py), not a.py
+        assert "b.py" in result["changed_files"]
+
+    def test_explicit_sha_base_overrides_auto_widening(self, tmp_path):
+        self._make_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n")
+        self._git(tmp_path, "add", "a.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: a")
+
+        store = GraphStore(tmp_path / "g.db")
+        full_build(tmp_path, store)
+
+        (tmp_path / "b.py").write_text("y = 2\n")
+        self._git(tmp_path, "add", "b.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: b")
+        head_after_b = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(tmp_path),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        (tmp_path / "c.py").write_text("z = 3\n")
+        self._git(tmp_path, "add", "c.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: c")
+
+        # Explicit SHA base overrides auto-widening; only commits after head_after_b
+        result = incremental_update(tmp_path, store, base=head_after_b)
+        assert "c.py" in result["changed_files"]
+        assert "b.py" not in result["changed_files"]
+
+    def test_stale_last_built_head_falls_back(self, tmp_path):
+        self._make_repo(tmp_path)
+        (tmp_path / "a.py").write_text("x = 1\n")
+        self._git(tmp_path, "add", "a.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: a")
+
+        store = GraphStore(tmp_path / "g.db")
+        full_build(tmp_path, store)
+
+        # Poison with a non-existent SHA
+        store.set_metadata("last_built_head", "deadbeef" * 5)
+
+        (tmp_path / "b.py").write_text("y = 2\n")
+        self._git(tmp_path, "add", "b.py")
+        self._git(tmp_path, "commit", "-q", "-m", "fix: b")
+
+        # Should fall back to HEAD~1 (still picks up b.py which is the last commit)
+        result = incremental_update(tmp_path, store)
+        assert "b.py" in result["changed_files"]

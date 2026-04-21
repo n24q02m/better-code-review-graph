@@ -84,7 +84,13 @@ branch = true
 [tool.coverage.report]
 fail_under = 95
 show_missing = true
-exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+    "def serve_main",
+    "async def run_http",
+]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]

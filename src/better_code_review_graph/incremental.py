@@ -134,6 +134,42 @@ def _is_binary(path: Path) -> bool:
 _GIT_TIMEOUT = 30  # seconds
 
 
+def _run_git(
+    repo_root: Path, args: list[str]
+) -> subprocess.CompletedProcess[str] | None:
+    """Run a git command and return the completed process, or None if unavailable."""
+    git_bin = shutil.which("git")
+    if not git_bin:
+        return None
+    try:
+        return subprocess.run(
+            [git_bin, *args],
+            capture_output=True,
+            text=True,
+            cwd=str(repo_root),
+            timeout=_GIT_TIMEOUT,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def get_head_sha(repo_root: Path) -> str | None:
+    """Return current HEAD commit SHA, or None if git/HEAD unavailable."""
+    result = _run_git(repo_root, ["rev-parse", "HEAD"])
+    if result is None or result.returncode != 0:
+        return None
+    sha = result.stdout.strip()
+    return sha or None
+
+
+def is_valid_commit(repo_root: Path, sha: str) -> bool:
+    """Return True if sha identifies a reachable commit object."""
+    if not sha:
+        return False
+    result = _run_git(repo_root, ["cat-file", "-e", f"{sha}^{{commit}}"])
+    return result is not None and result.returncode == 0
+
+
 def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
     """Get list of changed files via git diff."""
     if base.startswith("-"):
@@ -308,6 +344,9 @@ def full_build(repo_root: Path, store: GraphStore) -> dict:
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full")
+    current_head = get_head_sha(repo_root)
+    if current_head:
+        store.set_metadata("last_built_head", current_head)
     store.commit()
 
     return {
@@ -324,13 +363,29 @@ def incremental_update(
     base: str = "HEAD~1",
     changed_files: list[str] | None = None,
 ) -> dict:
-    """Incremental update: re-parse changed + dependent files only."""
+    """Incremental update: re-parse changed + dependent files only.
+
+    When ``base`` is the default ``"HEAD~1"`` and the store records a
+    ``last_built_head`` SHA that is still reachable, the diff range is
+    widened to ``last_built_head..HEAD`` so local-only commits that
+    accumulated since the last build are all picked up (fixes #328).
+    """
     parser = CodeParser()
     ignore_patterns = _load_ignore_patterns(repo_root)
 
+    # Widen default base to cover every local commit since the last build.
+    effective_base = base
+    if changed_files is None and base == "HEAD~1":
+        last_head = store.get_metadata("last_built_head")
+        if last_head and is_valid_commit(repo_root, last_head):
+            current_head = get_head_sha(repo_root)
+            # Only widen when the index is actually behind HEAD
+            if current_head and current_head != last_head:
+                effective_base = last_head
+
     # Determine changed files
     if changed_files is None:
-        changed_files = get_changed_files(repo_root, base)
+        changed_files = get_changed_files(repo_root, effective_base)
 
     if not changed_files:
         return {
@@ -405,6 +460,9 @@ def incremental_update(
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "incremental")
+    current_head = get_head_sha(repo_root)
+    if current_head:
+        store.set_metadata("last_built_head", current_head)
     store.commit()
 
     return {
