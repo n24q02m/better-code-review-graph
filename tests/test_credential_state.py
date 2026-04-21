@@ -13,7 +13,6 @@ import pytest
 
 from better_code_review_graph.credential_state import (
     CLOUD_KEYS,
-    DEFAULT_RELAY_URL,
     SERVER_NAME,
     CredentialState,
     _share_cloud_keys_to_peers,
@@ -37,9 +36,11 @@ def _reset_module_state():
 
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
+    cs._active_handle = None
     yield
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
+    cs._active_handle = None
 
 
 @pytest.fixture
@@ -58,9 +59,6 @@ def _clean_env(monkeypatch):
 class TestConstants:
     def test_server_name(self):
         assert SERVER_NAME == "better-code-review-graph"
-
-    def test_default_relay_url(self):
-        assert DEFAULT_RELAY_URL.startswith("https://")
 
     def test_cloud_keys_contains_expected(self):
         assert "GEMINI_API_KEY" in CLOUD_KEYS
@@ -308,6 +306,8 @@ class TestShareCloudKeysToPeers:
 
 
 class TestTriggerRelaySetup:
+    """Tests for trigger_relay_setup -- local HTTP fallback (no remote relay)."""
+
     async def test_skips_when_already_configured(self):
         """Does not trigger relay when state is CONFIGURED."""
         set_state(CredentialState.CONFIGURED)
@@ -320,350 +320,77 @@ class TestTriggerRelaySetup:
         url = await trigger_relay_setup()
         assert url is None
 
-    async def test_force_overrides_configured(self):
-        """force=True triggers relay even when CONFIGURED."""
+    async def test_force_spawns_local_form(self):
+        """force=True spawns a local credential form even when CONFIGURED."""
         set_state(CredentialState.CONFIGURED)
 
-        mock_session_info = MagicMock()
-        mock_session_info.relay_url = "https://existing-session.example.com"
-
-        with patch(
-            "mcp_core.acquire_session_lock",
-            new_callable=AsyncMock,
-            return_value=mock_session_info,
-        ):
-            url = await trigger_relay_setup(force=True)
-            assert url == "https://existing-session.example.com"
-            assert get_state() == CredentialState.SETUP_IN_PROGRESS
-
-    async def test_reuses_existing_session(self):
-        """Reuses existing session lock."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        mock_session_info = MagicMock()
-        mock_session_info.relay_url = "https://existing.example.com/setup"
-
-        with patch(
-            "mcp_core.acquire_session_lock",
-            new_callable=AsyncMock,
-            return_value=mock_session_info,
-        ):
-            url = await trigger_relay_setup()
-            assert url == "https://existing.example.com/setup"
-            assert get_setup_url() == "https://existing.example.com/setup"
-
-    async def test_creates_new_session(self, monkeypatch):
-        """Creates new relay session when no existing lock."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        mock_session = MagicMock()
-        mock_session.session_id = "test-session-123"
-        mock_session.relay_url = "https://new-session.example.com/setup#k=abc"
+        mock_handle = MagicMock(host="127.0.0.1", port=52201)
 
         with (
             patch(
-                "mcp_core.acquire_session_lock",
+                "mcp_core.start_local_server_background",
                 new_callable=AsyncMock,
-                return_value=None,
-            ),
+                return_value=mock_handle,
+                create=True,
+            ) as mock_start,
+            patch("mcp_core.try_open_browser"),
+        ):
+            url = await trigger_relay_setup(force=True)
+            assert url == "http://127.0.0.1:52201/"
+            assert get_state() == CredentialState.SETUP_IN_PROGRESS
+            mock_start.assert_awaited_once()
+
+    async def test_reuses_active_handle(self):
+        """When an active handle already exists, reuse its URL."""
+        import better_code_review_graph.credential_state as cs
+
+        set_state(CredentialState.AWAITING_SETUP)
+        cs._active_handle = MagicMock()
+        cs._setup_url = "http://127.0.0.1:52202/"
+
+        with patch(
+            "mcp_core.start_local_server_background",
+            new_callable=AsyncMock,
+            create=True,
+        ) as mock_start:
+            url = await trigger_relay_setup()
+            assert url == "http://127.0.0.1:52202/"
+            mock_start.assert_not_awaited()
+
+    async def test_creates_new_spawn(self):
+        """AWAITING_SETUP with no handle -> spawn local form, open browser."""
+        set_state(CredentialState.AWAITING_SETUP)
+
+        mock_handle = MagicMock(host="127.0.0.1", port=52203)
+
+        with (
             patch(
-                "mcp_core.relay.client.create_session",
+                "mcp_core.start_local_server_background",
                 new_callable=AsyncMock,
-                return_value=mock_session,
-            ),
-            patch(
-                "mcp_core.write_session_lock",
-                new_callable=AsyncMock,
-            ) as mock_write_lock,
+                return_value=mock_handle,
+                create=True,
+            ) as mock_start,
             patch("mcp_core.try_open_browser") as mock_browser,
-            patch("asyncio.create_task") as mock_task,
         ):
             url = await trigger_relay_setup()
-            assert url == "https://new-session.example.com/setup#k=abc"
+            assert url == "http://127.0.0.1:52203/"
             assert get_setup_url() == url
-            mock_write_lock.assert_called_once()
+            mock_start.assert_awaited_once()
             mock_browser.assert_called_once_with(url)
-            mock_task.assert_called_once()
 
-    async def test_relay_setup_failure_returns_none(self, monkeypatch):
+    async def test_relay_setup_failure_returns_none(self):
         """Relay setup failure returns None and resets state."""
         set_state(CredentialState.AWAITING_SETUP)
 
         with patch(
-            "mcp_core.acquire_session_lock",
+            "mcp_core.start_local_server_background",
             new_callable=AsyncMock,
-            side_effect=ConnectionError("cannot connect"),
+            side_effect=RuntimeError("bind failed"),
+            create=True,
         ):
             url = await trigger_relay_setup()
             assert url is None
             assert get_state() == CredentialState.AWAITING_SETUP
-
-
-# ---------------------------------------------------------------------------
-# _poll_relay_background
-# ---------------------------------------------------------------------------
-
-
-class TestPollRelayBackground:
-    async def test_poll_success_sets_configured(self):
-        """Successful poll applies config and sets CONFIGURED."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-        mock_session.session_id = "sess-123"
-        relay_base = "https://relay.example.com"
-        config_data = {"GEMINI_API_KEY": "from-poll", "JINA_AI_API_KEY": "jina-poll"}
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                return_value=config_data,
-            ),
-            patch("mcp_core.storage.config_file.write_config") as mock_write,
-            patch(
-                "mcp_core.relay.client.send_message",
-                new_callable=AsyncMock,
-            ) as mock_send,
-            patch(
-                "mcp_core.release_session_lock",
-                new_callable=AsyncMock,
-            ) as mock_release,
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ) as mock_share,
-        ):
-            await _poll_relay_background(relay_base, mock_session, timeout=10.0)
-            assert get_state() == CredentialState.CONFIGURED
-            mock_write.assert_called_once_with(SERVER_NAME, config_data)
-            mock_share.assert_called_once_with(config_data)
-            mock_send.assert_called_once()
-            mock_release.assert_called_once_with(SERVER_NAME)
-
-    async def test_poll_success_default_timeout(self):
-        """Default timeout is 300s when timeout=None."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-        mock_session.session_id = "sess-456"
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                return_value={"GEMINI_API_KEY": "test"},
-            ) as mock_poll,
-            patch("mcp_core.storage.config_file.write_config"),
-            patch(
-                "mcp_core.relay.client.send_message",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "mcp_core.release_session_lock",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=None
-            )
-            # Check that poll_timeout defaulted to 300.0
-            call_kwargs = mock_poll.call_args
-            assert call_kwargs[1]["timeout_s"] == 300.0
-
-    async def test_poll_send_message_failure_non_fatal(self):
-        """send_message failure is non-fatal."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-        mock_session.session_id = "sess-789"
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                return_value={"GEMINI_API_KEY": "test"},
-            ),
-            patch("mcp_core.storage.config_file.write_config"),
-            patch(
-                "mcp_core.relay.client.send_message",
-                new_callable=AsyncMock,
-                side_effect=ConnectionError("send failed"),
-            ),
-            patch(
-                "mcp_core.release_session_lock",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            # Should still be CONFIGURED despite send_message failure
-            assert get_state() == CredentialState.CONFIGURED
-
-    async def test_poll_session_no_id_skips_send(self):
-        """Session without session_id skips send_message."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        # Session object without session_id attribute
-        mock_session = MagicMock(spec=[])
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                return_value={"GEMINI_API_KEY": "test"},
-            ),
-            patch("mcp_core.storage.config_file.write_config"),
-            patch(
-                "mcp_core.relay.client.send_message",
-                new_callable=AsyncMock,
-            ) as mock_send,
-            patch(
-                "mcp_core.release_session_lock",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            assert get_state() == CredentialState.CONFIGURED
-            mock_send.assert_not_called()
-
-    async def test_poll_relay_skipped_sets_local(self):
-        """RELAY_SKIPPED runtime error sets LOCAL mode."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("RELAY_SKIPPED"),
-            ),
-            patch("mcp_core.set_local_mode") as mock_local,
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            assert get_state() == CredentialState.LOCAL
-            mock_local.assert_called_once_with(SERVER_NAME)
-
-    async def test_poll_relay_skipped_set_local_mode_failure(self):
-        """set_local_mode failure on RELAY_SKIPPED is non-fatal."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("RELAY_SKIPPED"),
-            ),
-            patch(
-                "mcp_core.set_local_mode",
-                side_effect=ImportError("no module"),
-            ),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            assert get_state() == CredentialState.LOCAL
-
-    async def test_poll_other_runtime_error_resets(self):
-        """Non-RELAY_SKIPPED RuntimeError resets to AWAITING_SETUP."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-
-        with patch(
-            "mcp_core.relay.client.poll_for_result",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("timed out"),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            assert get_state() == CredentialState.AWAITING_SETUP
-
-    async def test_poll_generic_exception_resets(self):
-        """Generic exception resets to AWAITING_SETUP."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-
-        with patch(
-            "mcp_core.relay.client.poll_for_result",
-            new_callable=AsyncMock,
-            side_effect=ConnectionError("network error"),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=10.0
-            )
-            assert get_state() == CredentialState.AWAITING_SETUP
-
-    async def test_poll_success_injects_env_vars(self, monkeypatch, _clean_env):
-        """Successful poll injects config values into os.environ."""
-        from better_code_review_graph.credential_state import _poll_relay_background
-
-        set_state(CredentialState.SETUP_IN_PROGRESS)
-
-        mock_session = MagicMock()
-        mock_session.session_id = "sess-env-inject"
-        config_data = {"GEMINI_API_KEY": "injected-gem", "JINA_AI_API_KEY": ""}
-
-        with (
-            patch(
-                "mcp_core.relay.client.poll_for_result",
-                new_callable=AsyncMock,
-                return_value=config_data,
-            ),
-            patch("mcp_core.storage.config_file.write_config"),
-            patch(
-                "mcp_core.relay.client.send_message",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "mcp_core.release_session_lock",
-                new_callable=AsyncMock,
-            ),
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ),
-        ):
-            await _poll_relay_background(
-                "https://relay.example.com", mock_session, timeout=5.0
-            )
-            import os as _os
-
-            assert _os.environ.get("GEMINI_API_KEY") == "injected-gem"
-            monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
 class TestShareCloudKeysOuterException:
