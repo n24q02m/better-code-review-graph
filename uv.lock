@@ -624,11 +624,11 @@ wheels = [
 
 [[package]]
 name = "idna"
-version = "3.11"
+version = "3.12"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6f/6d/0703ccc57f3a7233505399edb88de3cbd678da106337b9fcde432b65ed60/idna-3.11.tar.gz", hash = "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902", size = 194582, upload-time = "2025-10-12T14:55:20.501Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/22/12/2948fbe5513d062169bd91f7d7b1cd97bc8894f32946b71fa39f6e63ca0c/idna-3.12.tar.gz", hash = "sha256:724e9952cc9e2bd7550ea784adb098d837ab5267ef67a1ab9cf7846bdbdd8254", size = 194350, upload-time = "2026-04-21T13:32:48.916Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/61/66938bbb5fc52dbdf84594873d5b51fb1f7c7794e9c0f5bd885f30bc507b/idna-3.11-py3-none-any.whl", hash = "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea", size = 71008, upload-time = "2025-10-12T14:55:18.883Z" },
+    { url = "https://files.pythonhosted.org/packages/53/b2/acc33950394b3becb2b664741a0c0889c7ef9f9ffbfa8d47eddb53a50abd/idna-3.12-py3-none-any.whl", hash = "sha256:60ffaa1858fac94c9c124728c24fcde8160f3fb4a7f79aa8cdd33a9d1af60a67", size = 68634, upload-time = "2026-04-21T13:32:47.403Z" },
 ]
 
 [[package]]
@@ -1308,7 +1308,7 @@ wheels = [
 
 [[package]]
 name = "qwen3-embed"
-version = "1.8.0"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1319,9 +1319,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/8b/86679949c5ffc301c1b3cab6f085ce02a93822382bbb6e113bada22d46d6/qwen3_embed-1.8.0.tar.gz", hash = "sha256:a7a2bb99c734c0b047b3c7f7d036a17069472822037ace4e2c7b5fba2195475e", size = 180557, upload-time = "2026-04-04T06:03:26.206Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/0a/8aa2479f81b32783420a25cd210480385ccc33fde959be31b7c869384701/qwen3_embed-1.9.0.tar.gz", hash = "sha256:72c8c75ea912c6ccb2dcc51f369fbd16d38d5070824980c21dbdedd78152f470", size = 182123, upload-time = "2026-04-21T09:08:59.12Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/75/ba3b7c32c8fbc574cf969f9813bdd7120692835c39c4db84b10a61a79233/qwen3_embed-1.8.0-py3-none-any.whl", hash = "sha256:fc23920384cf3bb2c3d1b17a446d12a5b22fd087fa1b0a60b48542e837b41c14", size = 56294, upload-time = "2026-04-04T06:03:24.939Z" },
+    { url = "https://files.pythonhosted.org/packages/04/04/f65138f8e6224d1803e4643c6eccf2ca5e8e0610b684f865c7ba94cfb4ab/qwen3_embed-1.9.0-py3-none-any.whl", hash = "sha256:be1d2ccbc8596cc4abc6940c5746940c665564a5903e55e8f62466e92502b039", size = 58763, upload-time = "2026-04-21T09:08:58.01Z" },
 ]
 
 [[package]]
@@ -1750,15 +1750,15 @@ wheels = [
 
 [[package]]
 name = "uvicorn"
-version = "0.44.0"
+version = "0.45.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "h11" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/da/6eee1ff8b6cbeed47eeb5229749168e81eb4b7b999a1a15a7176e51410c9/uvicorn-0.44.0.tar.gz", hash = "sha256:6c942071b68f07e178264b9152f1f16dfac5da85880c4ce06366a96d70d4f31e", size = 86947, upload-time = "2026-04-06T09:23:22.826Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/2e/62b0d9a2cfc8b4de6771322dae30f2db76c66dae9ec32e94e176a44ad563/uvicorn-0.45.0.tar.gz", hash = "sha256:3fe650df136c5bd2b9b06efc5980636344a2fbb840e9ddd86437d53144fa335d", size = 87818, upload-time = "2026-04-21T10:43:46.815Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b7/23/a5bbd9600dd607411fa644c06ff4951bec3a4d82c4b852374024359c19c0/uvicorn-0.44.0-py3-none-any.whl", hash = "sha256:ce937c99a2cc70279556967274414c087888e8cec9f9c94644dfca11bd3ced89", size = 69425, upload-time = "2026-04-06T09:23:21.524Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/88/d0f7512465b166a4e931ccf7e77792be60fb88466a43964c7566cbaff752/uvicorn-0.45.0-py3-none-any.whl", hash = "sha256:2db26f588131aeec7439de00f2dd52d5f210710c1f01e407a52c90b880d1fd4f", size = 69838, upload-time = "2026-04-21T10:43:45.029Z" },
 ]
 
 [[package]]
