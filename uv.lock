@@ -119,7 +119,7 @@ requires-dist = [
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.8.0" },
+    { name = "qwen3-embed", specifier = ">=1.9.0" },
     { name = "tree-sitter", specifier = ">=0.25.2,<1" },
     { name = "tree-sitter-language-pack", specifier = ">=0.13.0,<1" },
     { name = "watchdog", specifier = ">=4.0.2,<6" },
