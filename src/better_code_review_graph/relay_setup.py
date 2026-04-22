@@ -18,7 +18,6 @@ from .relay_schema import RELAY_SCHEMA
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "better-code-review-graph"
-DEFAULT_RELAY_URL = "https://better-code-review-graph.n24q02m.com"
 REQUIRED_FIELDS = [
     "GEMINI_API_KEY"
 ]  # Used for config file lookup (any key triggers match)
@@ -72,10 +71,20 @@ async def ensure_config() -> dict[str, str] | None:
     except Exception:
         pass
 
-    # 3. No local credentials found -- trigger relay setup
-    logger.info("No credentials found. Starting relay setup...")
+    # 3. No local credentials found -- trigger relay setup.
+    # Per mode-matrix 2.5, better-code-review-graph default is `http local relay`;
+    # `remote-relay` mode requires user-supplied URL (no centralized
+    # better-code-review-graph.n24q02m.com).
+    relay_url = os.environ.get("MCP_RELAY_URL")
+    if not relay_url:
+        raise RuntimeError(
+            "MCP_RELAY_URL env var is required for remote-relay mode. "
+            "better-code-review-graph default mode is 'http local relay' "
+            "(no remote URL needed). For self-host remote-relay, "
+            "set MCP_RELAY_URL=https://<your-instance>."
+        )
 
-    relay_url = DEFAULT_RELAY_URL
+    logger.info("No credentials found. Starting relay setup...")
     try:
         from mcp_core.relay.client import create_session
 
