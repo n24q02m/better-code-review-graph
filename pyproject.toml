@@ -106,4 +106,3 @@ changelog_file = "CHANGELOG.md"
 type = "github"
 
 [tool.uv.sources]
-n24q02m-mcp-core = { path = "../mcp-core/packages/core-py" }
