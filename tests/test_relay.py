@@ -378,14 +378,17 @@ class TestCLIIntegration:
             patch(
                 "better_code_review_graph.credential_state.resolve_credential_state",
             ) as mock_resolve,
-            patch("better_code_review_graph.server.mcp") as mock_mcp,
+            patch(
+                "mcp_core.transport.run_smart_stdio_proxy", return_value=0
+            ) as mock_proxy,
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
+            pytest.raises(SystemExit, match="0"),
         ):
             from better_code_review_graph.cli import main
 
             main()
             mock_resolve.assert_called_once()
-            mock_mcp.run.assert_called_once()
+            mock_proxy.assert_called_once()
 
     def test_main_continues_on_relay_error(self):
         with (

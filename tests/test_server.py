@@ -7,6 +7,8 @@ import os
 import subprocess
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from better_code_review_graph.server import (
     config,
     graph,
@@ -425,20 +427,22 @@ class TestHelpTool:
 
 
 class TestServeMain:
-    @patch("better_code_review_graph.server.mcp")
+    @patch("mcp_core.transport.run_smart_stdio_proxy", return_value=0)
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
-    def test_serve_main_sets_repo_root(self, mock_mcp):
+    def test_serve_main_sets_repo_root(self, mock_proxy):
         import better_code_review_graph.server as server_module
 
-        serve_main(repo_root="/my/repo")
+        with pytest.raises(SystemExit, match="0"):
+            serve_main(repo_root="/my/repo")
         assert server_module._default_repo_root == "/my/repo"
-        mock_mcp.run.assert_called_once_with(transport="stdio")
+        mock_proxy.assert_called_once()
 
-    @patch("better_code_review_graph.server.mcp")
+    @patch("mcp_core.transport.run_smart_stdio_proxy", return_value=0)
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
-    def test_serve_main_none_repo_root(self, mock_mcp):
+    def test_serve_main_none_repo_root(self, mock_proxy):
         import better_code_review_graph.server as server_module
 
-        serve_main(repo_root=None)
+        with pytest.raises(SystemExit, match="0"):
+            serve_main(repo_root=None)
         assert server_module._default_repo_root is None
-        mock_mcp.run.assert_called_once_with(transport="stdio")
+        mock_proxy.assert_called_once()

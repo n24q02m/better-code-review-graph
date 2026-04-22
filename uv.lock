@@ -114,7 +114,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.73.1" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.0,<2" },
-    { name = "n24q02m-mcp-core", specifier = ">=1.6.3" },
+    { name = "n24q02m-mcp-core", directory = "../mcp-core/packages/core-py" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pydantic-settings" },
@@ -880,7 +880,7 @@ wheels = [
 [[package]]
 name = "n24q02m-mcp-core"
 version = "1.6.3"
-source = { registry = "https://pypi.org/simple" }
+source = { directory = "../mcp-core/packages/core-py" }
 dependencies = [
     { name = "authlib" },
     { name = "cryptography" },
@@ -892,9 +892,28 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/da/50f3012aa594b42b875b8624668b767e31bfefbac7917d1df802ea5c3940/n24q02m_mcp_core-1.6.3.tar.gz", hash = "sha256:84d66bc8d088701d6aa6cb7db7244b01db433d4cd86c48f2120a1ace31b8fa2b", size = 154516, upload-time = "2026-04-22T10:01:57.106Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/f6/98954d794692979adc1ccea1e76126bce12154772c2fdeac899c79e635fd/n24q02m_mcp_core-1.6.3-py3-none-any.whl", hash = "sha256:3025e35dd31a92939f222f7235eda516f9bc4a57c99bafeaea6e98808369bf0b", size = 94351, upload-time = "2026-04-22T10:01:55.802Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "authlib", specifier = ">=1.7.0" },
+    { name = "cryptography", specifier = ">=46.0.7" },
+    { name = "fastmcp", specifier = ">=3.2.4" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "platformdirs", specifier = ">=4.9.6" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "starlette", specifier = ">=0.52.1" },
+    { name = "tomli-w", specifier = ">=1.2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.15.11" },
+    { name = "ty", specifier = ">=0.0.32" },
 ]
 
 [[package]]

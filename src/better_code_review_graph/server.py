@@ -678,7 +678,10 @@ def serve_main(repo_root: str | None = None) -> None:
     resolve_credential_state()
 
     if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
-        mcp.run(transport="stdio")
+        from mcp_core.transport import run_smart_stdio_proxy
+
+        daemon_cmd = [sys.executable, "-m", "better_code_review_graph"]
+        sys.exit(run_smart_stdio_proxy("better-code-review-graph", daemon_cmd))
     else:
         asyncio.run(run_http())
 
