@@ -5,14 +5,32 @@ from __future__ import annotations
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from better_code_review_graph.relay_schema import RELAY_SCHEMA
 from better_code_review_graph.relay_setup import (
     CLOUD_KEYS,
-    DEFAULT_RELAY_URL,
     SERVER_NAME,
     apply_config,
     ensure_config,
 )
+
+# Test URL used when exercising the create_session path. Matches the
+# MCP_RELAY_URL env var set by the module-level autouse fixture below
+# (no production default per mode-matrix 2.5).
+TEST_RELAY_URL = "https://relay.example.com"
+
+
+@pytest.fixture(autouse=True)
+def _default_relay_url_env(monkeypatch):
+    """Set MCP_RELAY_URL for every test in this module.
+
+    Per mode-matrix 2.5, remote-relay mode requires explicit MCP_RELAY_URL
+    (no DEFAULT_RELAY_URL fallback). Tests that need to verify the "missing
+    MCP_RELAY_URL" behavior can delenv it inside the test body.
+    """
+    monkeypatch.setenv("MCP_RELAY_URL", TEST_RELAY_URL)
+
 
 # ---------------------------------------------------------------------------
 # relay_schema
@@ -64,8 +82,9 @@ class TestRelaySetupConstants:
         assert "OPENAI_API_KEY" in CLOUD_KEYS
         assert "COHERE_API_KEY" in CLOUD_KEYS
 
-    def test_relay_url(self):
-        assert DEFAULT_RELAY_URL.startswith("https://")
+    # DEFAULT_RELAY_URL removed per mode-matrix 2.5 (no centralized subdomain
+    # for default-local servers). See test_missing_relay_url_raises below for
+    # the enforcement test.
 
 
 class TestEnsureConfigEnvVar:
@@ -138,6 +157,17 @@ class TestEnsureConfigFile:
 
 
 class TestEnsureConfigRelay:
+    async def test_missing_relay_url_raises(self, monkeypatch):
+        """Remote-relay without MCP_RELAY_URL must raise per matrix 2.5."""
+        for key in CLOUD_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv("MCP_RELAY_URL", raising=False)
+        with (
+            patch("mcp_core.storage.config_file.read_config", return_value=None),
+            pytest.raises(RuntimeError, match="MCP_RELAY_URL"),
+        ):
+            await ensure_config()
+
     async def test_relay_success(self, monkeypatch):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
@@ -164,7 +194,7 @@ class TestEnsureConfigRelay:
                 assert result is not None
                 assert result["JINA_AI_API_KEY"] == "from-relay"
                 mock_create.assert_called_once_with(
-                    DEFAULT_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
+                    TEST_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
                 )
                 mock_poll.assert_called_once()
                 mock_write.assert_called_once_with(

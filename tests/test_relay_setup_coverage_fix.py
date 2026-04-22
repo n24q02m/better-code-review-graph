@@ -9,6 +9,12 @@ from better_code_review_graph.relay_setup import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _default_relay_url_env(monkeypatch):
+    """Set MCP_RELAY_URL for every test in this module per mode-matrix 2.5."""
+    monkeypatch.setenv("MCP_RELAY_URL", "https://relay.example.com")
+
+
 @pytest.mark.asyncio
 async def test_read_config_exception(monkeypatch):
     for key in CLOUD_KEYS:
