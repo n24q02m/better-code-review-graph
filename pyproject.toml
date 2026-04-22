@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "better-code-review-graph"
-version = "3.10.4"
+version = "3.10.3"
 description = "Knowledge graph for token-efficient code reviews — fixed search, configurable embeddings, qualified call resolution"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
@@ -30,7 +30,7 @@ dependencies = [
     "openai>=2.32.0",
     "httpx",
     "pydantic-settings",
-    "n24q02m-mcp-core>=1.6.2",
+    "n24q02m-mcp-core>=1.6.3",
     "Pygments>=2.20.0",
 ]
 
