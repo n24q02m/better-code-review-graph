@@ -95,9 +95,11 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 3. pytest (`--tb=short -q --timeout=30`)
 4. Commit message: enforce Conventional Commits
 
-## Infisical
+## Secrets (skret + AWS SSM)
 
-- Project: `e40d27b4-b8c5-4b53-ad56-97c15b3057d7`
+- skret SSM namespace: `/better-code-review-graph/prod` (region `ap-southeast-1`)
+- CI: `skret env -e prod --path=/better-code-review-graph/prod --format=dotenv >> $GITHUB_ENV`
+- Local dev: `skret run -e prod -- <cmd>` (uses AWS credential chain)
 
 ## Luu y quan trong
 
