@@ -654,14 +654,22 @@ class EmbeddingStore:
         texts = [t for _, t, _ in to_embed]
         vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
 
-        for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True):
-            blob = _encode_vector(vec)
-            self._conn.execute(
-                """INSERT OR REPLACE INTO embeddings
-                   (qualified_name, vector, text_hash, provider)
-                   VALUES (?, ?, ?, ?)""",
-                (node.qualified_name, blob, text_hash, provider_name),
+        # Use executemany for batch insertion to eliminate N+1 query bottlenecks
+        insert_data = [
+            (
+                node.qualified_name,
+                _encode_vector(vec),
+                text_hash,
+                provider_name,
             )
+            for (node, _text, text_hash), vec in zip(to_embed, vectors, strict=True)
+        ]
+        self._conn.executemany(
+            """INSERT OR REPLACE INTO embeddings
+               (qualified_name, vector, text_hash, provider)
+               VALUES (?, ?, ?, ?)""",
+            insert_data,
+        )
 
         self._conn.commit()
         return len(to_embed)
