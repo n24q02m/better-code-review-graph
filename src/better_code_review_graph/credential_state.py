@@ -21,8 +21,10 @@ that is reserved for explicit ``MCP_MODE`` HTTP deployments. See
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -225,19 +227,68 @@ def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
         logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
 
 
-def save_credentials(config: dict[str, str], _context: dict[str, str]) -> dict | None:
-    """Save credentials from OAuth form to config.enc and apply to environment.
+def _sub_data_dir(sub: str) -> Path:
+    """Return per-JWT-sub data directory (creates if missing).
 
-    ``_context`` carries the per-authorize ``sub`` (for future multi-user
-    extensions). Better-code-review-graph is single-user by design — the
-    SQLite graph DB and optional embedding-provider API keys live in one
-    shared ``config.enc`` on the host, so the subject is intentionally unused.
+    Used in multi-user remote mode where ``PUBLIC_URL`` is set. Each JWT
+    ``sub`` gets its own scope for ``config.json`` (cloud API keys) and
+    ``graph.db`` (per-user code knowledge graph) so credentials and graph
+    state never leak across users sharing the same deployment.
+    """
+    base = Path(os.environ.get("CRG_DATA_DIR", str(Path.home() / ".crg")))
+    d = base / "subs" / sub
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def db_path_for_sub(sub: str) -> Path:
+    """Return per-sub graph.db path for multi-user remote mode."""
+    return _sub_data_dir(sub) / "graph.db"
+
+
+def store_for_sub(sub: str, config: dict[str, str]) -> None:
+    """Persist a sub's credential config to ``<data>/subs/<sub>/config.json``."""
+    (_sub_data_dir(sub) / "config.json").write_text(json.dumps(config))
+
+
+def read_for_sub(sub: str) -> dict[str, str]:
+    """Read a sub's credential config; returns ``{}`` if absent."""
+    p = _sub_data_dir(sub) / "config.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def save_credentials(
+    config: dict[str, str], context: dict[str, str] | None = None
+) -> dict | None:
+    """Save credentials from OAuth form and apply to environment.
+
+    Single-user mode (default, ``PUBLIC_URL`` unset): writes to the shared
+    ``config.enc`` on the host -- one set of cloud API keys for one user.
+
+    Multi-user remote mode (``PUBLIC_URL`` set): scopes credentials by the
+    per-authorize JWT ``sub`` from ``context``. Each user's keys land in
+    ``<CRG_DATA_DIR>/subs/<sub>/config.json`` so credentials never leak
+    across users. Refuses to persist if ``sub`` missing.
 
     Called by the local OAuth AS when the user submits API keys via the
     browser form. Returns optional dict with next_step info (always None
     for CRG -- no multi-step flow).
     """
     global _state
+
+    if os.environ.get("PUBLIC_URL"):
+        sub = context.get("sub") if context else None
+        if not sub:
+            raise RuntimeError(
+                "multi-user mode: SubjectContext sub required to save credentials"
+            )
+        store_for_sub(sub, config)
+        _state = CredentialState.CONFIGURED
+        logger.info("Credentials saved for sub={} via remote OAuth form", sub)
+        # Skip _share_cloud_keys_to_peers in multi-user mode -- peer config.enc
+        # is host-shared and would leak this user's keys to other tenants.
+        _schedule_spawn_cleanup()
+        return None
 
     from mcp_core.storage.config_file import write_config
 

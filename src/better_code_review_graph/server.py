@@ -649,17 +649,41 @@ SERVER_NAME = "better-code-review-graph"
 
 
 async def run_http(port: int = 0) -> None:
-    """Run as HTTP server with local OAuth 2.1 AS."""
+    """Run as HTTP server with local OAuth 2.1 AS.
+
+    Single-user (default): binds ``127.0.0.1`` -- one host, one user, one
+    shared ``config.enc``.
+
+    Multi-user remote (``PUBLIC_URL`` set): binds ``0.0.0.0:<MCP_PORT|8080>``
+    and refuses to start without ``MCP_DCR_SERVER_SECRET`` so per-JWT-sub
+    DCR signing is enforced. Each authorize-session's JWT ``sub`` scopes
+    credential storage and graph DB path.
+    """
     from mcp_core.transport.local_server import run_local_server
 
     from .credential_state import save_credentials
     from .relay_schema import RELAY_SCHEMA
+
+    public_url = os.environ.get("PUBLIC_URL")
+    if public_url:
+        if not os.environ.get("MCP_DCR_SERVER_SECRET"):
+            raise SystemExit(
+                "better-code-review-graph refuses to start: PUBLIC_URL set but "
+                "MCP_DCR_SERVER_SECRET missing. Multi-user remote mode "
+                "requires the DCR secret."
+            )
+        host = "0.0.0.0"
+        if port == 0:
+            port = int(os.environ.get("MCP_PORT", "8080"))
+    else:
+        host = "127.0.0.1"
 
     await run_local_server(
         mcp,
         server_name="better-code-review-graph",
         relay_schema=RELAY_SCHEMA,
         port=port,
+        host=host,
         on_credentials_saved=save_credentials,
     )
 
