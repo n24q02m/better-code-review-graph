@@ -244,12 +244,80 @@ class GraphStore:
         edges: list[EdgeInfo],
         fhash: str = "",
     ) -> None:
-        """Atomically replace all data for a file."""
+        """Atomically replace all data for a file using batch insertion to eliminate N+1 queries."""
         self.remove_file_data(file_path)
-        for node in nodes:
-            self.upsert_node(node, file_hash=fhash)
-        for edge in edges:
-            self.upsert_edge(edge)
+        now = time.time()
+
+        if nodes:
+            node_data = []
+            for node in nodes:
+                qualified = self._make_qualified(node)
+                extra = json.dumps(node.extra) if node.extra else "{}"
+                node_data.append(
+                    (
+                        node.kind,
+                        node.name,
+                        qualified,
+                        node.file_path,
+                        node.line_start,
+                        node.line_end,
+                        node.language,
+                        node.parent_name,
+                        node.params,
+                        node.return_type,
+                        node.modifiers,
+                        int(node.is_test),
+                        fhash,
+                        extra,
+                        now,
+                    )
+                )
+
+            self._conn.executemany(
+                """INSERT INTO nodes
+                   (kind, name, qualified_name, file_path, line_start, line_end,
+                    language, parent_name, params, return_type, modifiers, is_test,
+                    file_hash, extra, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(qualified_name) DO UPDATE SET
+                     kind=excluded.kind, name=excluded.name,
+                     file_path=excluded.file_path, line_start=excluded.line_start,
+                     line_end=excluded.line_end, language=excluded.language,
+                     parent_name=excluded.parent_name, params=excluded.params,
+                     return_type=excluded.return_type, modifiers=excluded.modifiers,
+                     is_test=excluded.is_test, file_hash=excluded.file_hash,
+                     extra=excluded.extra, updated_at=excluded.updated_at
+                """,
+                node_data,
+            )
+
+        if edges:
+            edge_data = []
+            seen = set()
+            for edge in reversed(edges):
+                key = (edge.kind, edge.source, edge.target, edge.file_path, edge.line)
+                if key not in seen:
+                    seen.add(key)
+                    extra = json.dumps(edge.extra) if edge.extra else "{}"
+                    edge_data.append(
+                        (
+                            edge.kind,
+                            edge.source,
+                            edge.target,
+                            edge.file_path,
+                            edge.line,
+                            extra,
+                            now,
+                        )
+                    )
+
+            self._conn.executemany(
+                """INSERT INTO edges
+                   (kind, source_qualified, target_qualified, file_path, line, extra, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                edge_data[::-1],
+            )
+
         self._conn.commit()
         self._invalidate_cache()
 
