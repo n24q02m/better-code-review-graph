@@ -95,7 +95,6 @@ def resolve_credential_state() -> CredentialState:
                     os.environ[key] = value
             logger.info("Config loaded from encrypted file")
             _state = CredentialState.CONFIGURED
-            _share_cloud_keys_to_peers(saved)
             return _state
     except Exception:
         pass
@@ -209,24 +208,6 @@ async def trigger_relay_setup(
         return None
 
 
-def _share_cloud_keys_to_peers(config: dict[str, str]) -> None:
-    """Write shared cloud API keys to wet-mcp and mnemo-mcp config files."""
-    try:
-        from mcp_core.storage.config_file import write_config
-
-        shared = {k: v for k, v in config.items() if k in CLOUD_KEYS and v}
-        if not shared:
-            return
-        for peer in ("wet-mcp", "mnemo-mcp"):
-            try:
-                write_config(peer, shared)
-                logger.debug("Shared cloud keys to {}", peer)
-            except Exception as e:
-                logger.debug("Failed to share keys to {}: {}", peer, e)
-    except Exception as e:
-        logger.debug("_share_cloud_keys_to_peers failed (non-fatal): {}", e)
-
-
 def _sub_data_dir(sub: str) -> Path:
     """Return per-JWT-sub data directory (creates if missing).
 
@@ -285,8 +266,6 @@ def save_credentials(
         store_for_sub(sub, config)
         _state = CredentialState.CONFIGURED
         logger.info("Credentials saved for sub={} via remote OAuth form", sub)
-        # Skip _share_cloud_keys_to_peers in multi-user mode -- peer config.enc
-        # is host-shared and would leak this user's keys to other tenants.
         _schedule_spawn_cleanup()
         return None
 
@@ -298,8 +277,6 @@ def save_credentials(
     apply_config(config)
     _state = CredentialState.CONFIGURED
     logger.info("Credentials saved via local OAuth form")
-
-    _share_cloud_keys_to_peers(config)
 
     # Cloud-only setup is done -- schedule local spawn cleanup so the browser
     # renders "Setup complete!" then the local server closes.

@@ -1,7 +1,7 @@
 """Tests for credential_state module -- non-blocking credential state machine.
 
 Covers: CredentialState enum, resolve_credential_state(), trigger_relay_setup(),
-_poll_relay_background(), _share_cloud_keys_to_peers(), set_state(), reset_state(),
+_poll_relay_background(), set_state(), reset_state(),
 get_state(), get_setup_url().
 """
 
@@ -15,7 +15,6 @@ from better_code_review_graph.credential_state import (
     CLOUD_KEYS,
     SERVER_NAME,
     CredentialState,
-    _share_cloud_keys_to_peers,
     get_setup_url,
     get_state,
     reset_state,
@@ -175,12 +174,13 @@ class TestResolveCredentialState:
             },
         ):
             with patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ) as mock_share:
+                "mcp_core.storage.config_file.write_config"
+            ) as mock_write:
                 result = resolve_credential_state()
                 assert result == CredentialState.CONFIGURED
                 assert monkeypatch.setenv  # env vars should have been set
-                mock_share.assert_called_once()
+                # Per-server isolation: must not write to peers.
+                assert mock_write.call_count == 0
 
     def test_config_file_injects_env(self, monkeypatch, _clean_env):
         """Config values are injected into environment."""
@@ -188,13 +188,10 @@ class TestResolveCredentialState:
             "mcp_core.storage.config_file.read_config",
             return_value={"GEMINI_API_KEY": "injected-from-config"},
         ):
-            with patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ):
-                resolve_credential_state()
-                assert (
-                    monkeypatch.setenv is not None
-                )  # monkeypatch is active so env changes are safe
+            resolve_credential_state()
+            assert (
+                monkeypatch.setenv is not None
+            )  # monkeypatch is active so env changes are safe
 
     def test_config_file_no_cloud_keys(self, monkeypatch, _clean_env):
         """Config file with no cloud keys -> falls through."""
@@ -251,53 +248,22 @@ class TestResolveCredentialState:
 
 
 # ---------------------------------------------------------------------------
-# _share_cloud_keys_to_peers
+# Credential isolation regression guard
 # ---------------------------------------------------------------------------
 
 
-class TestShareCloudKeysToPeers:
-    def test_shares_to_wet_and_mnemo(self):
-        """Writes shared cloud keys to wet-mcp and mnemo-mcp."""
-        config = {"GEMINI_API_KEY": "test-key", "JINA_AI_API_KEY": "jina-key"}
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
-            assert mock_write.call_count == 2
-            calls = mock_write.call_args_list
-            peer_names = {c[0][0] for c in calls}
-            assert peer_names == {"wet-mcp", "mnemo-mcp"}
+class TestCredentialIsolation:
+    """better-code-review-graph must not write to peer MCP servers' configs.
 
-    def test_empty_config_skips_sharing(self):
-        """No cloud keys in config -> no writes."""
-        config = {"UNKNOWN_KEY": "value"}
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
-            mock_write.assert_not_called()
+    Replaces the prior `_share_cloud_keys_to_peers` helper which propagated
+    cloud keys to wet-mcp + mnemo-mcp. The transparent-bridge architecture
+    mandates each server own its own credentials.
+    """
 
-    def test_empty_values_filtered(self):
-        """Empty-string values are filtered out."""
-        config = {"GEMINI_API_KEY": "", "JINA_AI_API_KEY": ""}
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
-            _share_cloud_keys_to_peers(config)
-            mock_write.assert_not_called()
+    def test_no_share_helper_exists(self):
+        import better_code_review_graph.credential_state as mod
 
-    def test_peer_write_failure_non_fatal(self):
-        """Individual peer write failure doesn't crash."""
-        config = {"GEMINI_API_KEY": "test-key"}
-        with patch(
-            "mcp_core.storage.config_file.write_config",
-            side_effect=OSError("disk full"),
-        ):
-            # Should not raise
-            _share_cloud_keys_to_peers(config)
-
-    def test_import_error_non_fatal(self):
-        """Import error for write_config doesn't crash."""
-        config = {"GEMINI_API_KEY": "test-key"}
-        with patch(
-            "mcp_core.storage.config_file.write_config",
-            side_effect=ImportError("no module"),
-        ):
-            _share_cloud_keys_to_peers(config)
+        assert not hasattr(mod, "_share_cloud_keys_to_peers")
 
 
 # ---------------------------------------------------------------------------
@@ -393,41 +359,19 @@ class TestTriggerRelaySetup:
             assert get_state() == CredentialState.AWAITING_SETUP
 
 
-class TestShareCloudKeysOuterException:
-    def test_outer_import_error_non_fatal(self):
-        """Outer import of write_config failing is non-fatal."""
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "mcp_core.storage.config_file":
-                raise ImportError("no mcp_core")
-            return real_import(name, *args, **kwargs)
-
-        with patch.object(builtins, "__import__", side_effect=fake_import):
-            # Should not raise
-            _share_cloud_keys_to_peers({"GEMINI_API_KEY": "key"})
-
-
 class TestSaveCredentials:
     def test_save_credentials_writes_config_and_applies_env(
         self, monkeypatch, _clean_env
     ):
-        """save_credentials writes config, applies env, sets CONFIGURED, shares."""
+        """save_credentials writes own config + applies env. Must NOT touch peers."""
         from better_code_review_graph.credential_state import save_credentials
 
         config = {"GEMINI_API_KEY": "save-test-key"}
-        with (
-            patch("mcp_core.storage.config_file.write_config") as mock_write,
-            patch(
-                "better_code_review_graph.credential_state._share_cloud_keys_to_peers"
-            ) as mock_share,
-        ):
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
             result = save_credentials(config, {"sub": "test-sub"})
             assert result is None
+            assert mock_write.call_count == 1
             mock_write.assert_called_once_with(SERVER_NAME, config)
-            mock_share.assert_called_once_with(config)
             assert get_state() == CredentialState.CONFIGURED
             import os as _os
 
