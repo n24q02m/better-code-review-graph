@@ -173,9 +173,7 @@ class TestResolveCredentialState:
                 "JINA_AI_API_KEY": "jina-cfg",
             },
         ):
-            with patch(
-                "mcp_core.storage.config_file.write_config"
-            ) as mock_write:
+            with patch("mcp_core.storage.config_file.write_config") as mock_write:
                 result = resolve_credential_state()
                 assert result == CredentialState.CONFIGURED
                 assert monkeypatch.setenv  # env vars should have been set
