@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/n24q02m-better-code-review-graph-badge.png)](https://mseep.ai/app/n24q02m-better-code-review-graph)
+
 # Better Code Review Graph
 
 mcp-name: io.github.n24q02m/better-code-review-graph
