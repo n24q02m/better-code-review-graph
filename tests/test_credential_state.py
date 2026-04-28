@@ -375,3 +375,70 @@ class TestSaveCredentials:
 
             assert _os.environ.get("GEMINI_API_KEY") == "save-test-key"
             monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    def test_save_credentials_multi_user_routes_to_per_sub_store(
+        self, monkeypatch, tmp_path, _clean_env
+    ):
+        """When PUBLIC_URL is set, credentials must land in
+        <CRG_DATA_DIR>/subs/<sub>/config.json -- never wet-mcp / mnemo-mcp."""
+        from better_code_review_graph.credential_state import save_credentials
+
+        monkeypatch.setenv("PUBLIC_URL", "https://crg.example.test")
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+
+        config = {"GEMINI_API_KEY": "user-a-key"}
+        with patch("mcp_core.storage.config_file.write_config") as mock_write:
+            result = save_credentials(config, {"sub": "user-a-sub"})
+
+        assert result is None
+        # Multi-user mode must NOT touch the shared host config.enc.
+        assert mock_write.call_count == 0
+        assert get_state() == CredentialState.CONFIGURED
+        # Key landed in per-sub bucket.
+        per_sub_file = tmp_path / "subs" / "user-a-sub" / "config.json"
+        assert per_sub_file.exists()
+        import json
+
+        assert json.loads(per_sub_file.read_text()) == config
+
+    def test_save_credentials_multi_user_requires_sub(self, monkeypatch, _clean_env):
+        """Multi-user mode without a SubjectContext sub is a hard error --
+        silent-fallback to single-user would leak credentials across users."""
+        import pytest
+
+        from better_code_review_graph.credential_state import save_credentials
+
+        monkeypatch.setenv("PUBLIC_URL", "https://crg.example.test")
+        with pytest.raises(RuntimeError, match="SubjectContext"):
+            save_credentials({"GEMINI_API_KEY": "k"}, None)
+        with pytest.raises(RuntimeError, match="SubjectContext"):
+            save_credentials({"GEMINI_API_KEY": "k"}, {})
+
+
+class TestPerSubHelpers:
+    """Cover the per-JWT-sub directory helpers used by remote multi-user mode."""
+
+    def test_db_path_for_sub(self, monkeypatch, tmp_path):
+        from better_code_review_graph.credential_state import db_path_for_sub
+
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        path = db_path_for_sub("user-x")
+        assert path == tmp_path / "subs" / "user-x" / "graph.db"
+        # Parent dir is created eagerly so the SQLite open() succeeds.
+        assert path.parent.exists()
+
+    def test_read_for_sub_returns_empty_when_absent(self, monkeypatch, tmp_path):
+        from better_code_review_graph.credential_state import read_for_sub
+
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        assert read_for_sub("brand-new-sub") == {}
+
+    def test_read_for_sub_roundtrips_stored_config(self, monkeypatch, tmp_path):
+        from better_code_review_graph.credential_state import (
+            read_for_sub,
+            store_for_sub,
+        )
+
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        store_for_sub("user-y", {"GEMINI_API_KEY": "y-key"})
+        assert read_for_sub("user-y") == {"GEMINI_API_KEY": "y-key"}
