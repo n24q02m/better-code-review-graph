@@ -46,6 +46,7 @@ async def test_all_tools(tmp_path):
                 "review",
                 "config",
                 "help",
+                "config__open_relay",
             }
             d = json.loads(
                 (
