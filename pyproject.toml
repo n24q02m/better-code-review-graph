@@ -27,7 +27,7 @@ dependencies = [
     "qwen3-embed>=1.9.1",
     "cohere>=6.1.0",
     "google-genai>=1.73.1",
-    "openai>=2.32.0",
+    "openai>=2.33.0",
     "httpx",
     "pydantic-settings",
     "n24q02m-mcp-core>=1.10.0",
@@ -45,7 +45,7 @@ dev = [
     "pytest-timeout",
     "ruff>=0.15.12",
     "syrupy",
-    "ty>=0.0.32",
+    "ty>=0.0.33",
 ]
 
 [tool.hatch.build.targets.wheel]
