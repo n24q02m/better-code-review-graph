@@ -410,6 +410,17 @@ _QUERY_PATTERNS = {
 }
 
 
+def _list_kinds_in_graph(store: Any) -> list[str]:
+    """Return distinct node kinds present in the graph (for D15 hints)."""
+    try:
+        rows = store._conn.execute(
+            "SELECT DISTINCT kind FROM nodes ORDER BY kind"
+        ).fetchall()
+        return [r["kind"] for r in rows]
+    except Exception:
+        return []
+
+
 def _resolve_query_target(
     store: Any,
     root: Any,
@@ -421,6 +432,9 @@ def _resolve_query_target(
     Returns:
         tuple: (node, resolved_qn_or_path, error_response)
     """
+    original_target = target
+    promoted_from_unqualified = False
+    promoted_indexed_under: list[str] = []
     node = store.get_node(target)
     if not node:
         full_target_raw = root / target
@@ -441,15 +455,33 @@ def _resolve_query_target(
         candidates = store.search_nodes(target, limit=5)
         if len(candidates) == 1:
             node = candidates[0]
+            # Bare-name target was promoted to a qualified node; surface this
+            # via the D15 advisory fields when the bare target differs from
+            # the resolved qualified_name.
+            if "::" not in original_target and "::" in node.qualified_name:
+                promoted_from_unqualified = True
+                promoted_indexed_under = [node.qualified_name]
             target = node.qualified_name
         elif len(candidates) > 1:
+            # D15: distinguish ambiguous unqualified bare-name lookup from a
+            # genuine "not_found". Keep status="ambiguous" for backward compat
+            # but add reason="ambiguous_unqualified" + indexed_kinds + hint.
             return (
                 None,
                 target,
                 {
                     "status": "ambiguous",
-                    "summary": f"Multiple matches for '{target}'. Please use a qualified name.",
+                    "reason": "ambiguous_unqualified",
+                    "summary": (
+                        f"Multiple matches for '{target}'. Please use a qualified name."
+                    ),
                     "candidates": [node_to_dict(c) for c in candidates],
+                    "indexed_kinds": sorted({c.kind for c in candidates}),
+                    "indexed_under": [c.qualified_name for c in candidates],
+                    "hint": (
+                        f"Multiple symbols match '{target}'. "
+                        "Try qualifying with namespace from indexed_under."
+                    ),
                 },
             )
 
@@ -482,17 +514,32 @@ def _resolve_query_target(
                     },
                 )
         else:
+            # D15: bare not_found is ambiguous between three distinct failures.
+            # Add reason field so callers can distinguish.
+            indexed_kinds = _list_kinds_in_graph(store)
             return (
                 None,
                 target,
                 {
                     "status": "not_found",
+                    "reason": "no_such_symbol",
                     "summary": f"No node found matching '{target}'.",
+                    "indexed_kinds": indexed_kinds,
+                    "hint": (
+                        f"Symbol '{target}' not indexed in graph. "
+                        "Verify name spelling or pass a qualified form "
+                        "('file_path::Class.method')."
+                    ),
                 },
             )
 
     if pattern == "importers_of" and node:
         return node, node.file_path, None
+
+    if promoted_from_unqualified:
+        # Stash advisory info on the store object as a simple side-channel.
+        # query_graph() will read and propagate to the response.
+        store._d15_promoted_indexed_under = promoted_indexed_under  # type: ignore[attr-defined]
 
     return node, node.qualified_name, None
 
@@ -612,10 +659,46 @@ def _handle_file_summary(store: Any, abs_path: str, results: list[dict]) -> None
         results.append(node_to_dict(n))
 
 
+# D16: allowed languages for the languages filter parameter.
+# Mirrors the parser's supported language set (see CLAUDE.md "Supported languages").
+_ALLOWED_LANGUAGES: set[str] = {
+    "python",
+    "typescript",
+    "javascript",
+    "go",
+    "rust",
+    "java",
+    "csharp",
+    "ruby",
+    "kotlin",
+    "swift",
+    "php",
+    "c",
+    "cpp",
+    "solidity",
+}
+
+
+def _validate_languages(languages: list[str] | None) -> dict[str, Any] | None:
+    """Validate languages filter values; return error dict or None."""
+    if languages is None:
+        return None
+    invalid = sorted(set(languages) - _ALLOWED_LANGUAGES)
+    if invalid:
+        return {
+            "status": "error",
+            "error": (
+                f"invalid_languages: {invalid}; allowed: {sorted(_ALLOWED_LANGUAGES)}"
+            ),
+        }
+    return None
+
+
 def query_graph(
     pattern: str,
     target: str,
     repo_root: str | None = None,
+    languages: list[str] | None = None,
 ) -> dict[str, Any]:
     """Run a predefined graph query.
 
@@ -624,6 +707,10 @@ def query_graph(
                  importers_of, children_of, tests_for, inheritors_of, file_summary.
         target: The node name, qualified name, or file path to query about.
         repo_root: Repository root path. Auto-detected if omitted.
+        languages: Optional list of language names to filter results to. Only
+            applies to ``tests_for`` (filters returned test nodes by language).
+            Allowed values: python, typescript, javascript, go, rust, java,
+            csharp, ruby, kotlin, swift, php, c, cpp, solidity.
 
     Returns:
         Matching nodes and edges for the query.
@@ -633,6 +720,10 @@ def query_graph(
             "status": "error",
             "error": "Target too long (exceeds 1000 characters).",
         }
+
+    lang_err = _validate_languages(languages)
+    if lang_err:
+        return lang_err
 
     store, root = _get_store(repo_root)
     try:
@@ -684,7 +775,11 @@ def query_graph(
         elif pattern == "file_summary":
             _handle_file_summary(store, resolved_qn_or_path, results)
 
-        return {
+        # D16: filter tests_for results by language if requested.
+        if pattern == "tests_for" and languages is not None:
+            results = [r for r in results if r.get("language") in languages]
+
+        response: dict[str, Any] = {
             "status": "ok",
             "pattern": pattern,
             "target": target,
@@ -693,6 +788,18 @@ def query_graph(
             "results": results,
             "edges": edges_out,
         }
+
+        # D15: surface bare-name -> qualified-name promotion (issue #339).
+        promoted = getattr(store, "_d15_promoted_indexed_under", None)
+        if promoted:
+            response["resolved_from_unqualified"] = True
+            response["indexed_under"] = list(promoted)
+            response["hint"] = (
+                f"Bare name '{target}' was auto-resolved to "
+                f"{promoted[0]}. Pass the qualified form to disambiguate."
+            )
+
+        return response
     finally:
         store.close()
 
@@ -773,6 +880,34 @@ def _build_review_summary_text(
     return "\n".join(summary_parts)
 
 
+def _compute_untested_functions(
+    impact: dict[str, Any],
+    languages: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Return changed Function nodes lacking TESTED_BY edges.
+
+    D16: Optional ``languages`` filter scopes the list to functions whose
+    ``language`` field matches one of the given values. Mitigates the
+    cross-language false positive (issue #340) where Python implementations
+    are flagged untested simply because tests live in JS/TS or in
+    integration test fixtures.
+    """
+    test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
+    tested_qns = {e.source_qualified for e in test_edges}
+    tested_qns |= {e.target_qualified for e in test_edges}
+
+    out: list[dict[str, Any]] = []
+    for n in impact["changed_nodes"]:
+        if n.kind != "Function" or n.is_test:
+            continue
+        if n.qualified_name in tested_qns:
+            continue
+        if languages is not None and n.language not in languages:
+            continue
+        out.append(node_to_dict(n))
+    return out
+
+
 def get_review_context(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
@@ -780,6 +915,7 @@ def get_review_context(
     max_lines_per_file: int = 200,
     repo_root: str | None = None,
     base: str = "HEAD~1",
+    languages: list[str] | None = None,
 ) -> dict[str, Any]:
     """Generate a focused review context from changed files.
 
@@ -792,10 +928,20 @@ def get_review_context(
         max_lines_per_file: Max source lines per file in output (default: 200).
         repo_root: Repository root path. Auto-detected if omitted.
         base: Git ref for change detection (default: HEAD~1).
+        languages: Optional list of language names to scope the
+            ``untested_functions`` field to. Functions whose ``language``
+            isn't in the list are excluded. ``review_guidance`` text is
+            re-derived from the filtered list. Allowed values: python,
+            typescript, javascript, go, rust, java, csharp, ruby, kotlin,
+            swift, php, c, cpp, solidity. (D16, fixes #340.)
 
     Returns:
         Structured review context with subgraph, source snippets, and review guidance.
     """
+    lang_err = _validate_languages(languages)
+    if lang_err:
+        return lang_err
+
     store, root = _get_store(repo_root)
     try:
         if changed_files is None:
@@ -813,6 +959,8 @@ def get_review_context(
         abs_files = _filter_valid_paths(root, changed_files)
         impact = store.get_impact_radius(abs_files, max_depth=max_depth)
 
+        untested_functions = _compute_untested_functions(impact, languages=languages)
+
         context: dict[str, Any] = {
             "changed_files": changed_files,
             "impacted_files": impact["impacted_files"],
@@ -821,14 +969,17 @@ def get_review_context(
                 "impacted_nodes": [node_to_dict(n) for n in impact["impacted_nodes"]],
                 "edges": [edge_to_dict(e) for e in impact["edges"]],
             },
+            "untested_functions": untested_functions,
         }
+        if languages is not None:
+            context["languages_filter"] = list(languages)
 
         if include_source:
             context["source_snippets"] = _get_source_snippets(
                 root, changed_files, impact["changed_nodes"], max_lines_per_file
             )
 
-        guidance = _generate_review_guidance(impact, changed_files)
+        guidance = _generate_review_guidance(impact, changed_files, languages=languages)
         context["review_guidance"] = guidance
 
         return {
@@ -872,8 +1023,20 @@ def _extract_relevant_lines(lines: list[str], nodes: list, file_path: str) -> st
     return "\n".join(parts)
 
 
-def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
-    """Generate review guidance based on the impact analysis."""
+def _generate_review_guidance(
+    impact: dict,
+    changed_files: list[str],
+    languages: list[str] | None = None,
+) -> str:
+    """Generate review guidance based on the impact analysis.
+
+    Args:
+        impact: Impact-radius analysis output.
+        changed_files: List of changed file paths (relative).
+        languages: Optional language filter — when set, restrict the
+            untested-function warning to functions whose ``language`` is
+            in the list. (D16, fixes #340.)
+    """
     guidance_parts = []
 
     # Check for test coverage
@@ -886,6 +1049,8 @@ def _generate_review_guidance(impact: dict, changed_files: list[str]) -> str:
         for f in changed_funcs
         if f.qualified_name not in tested_funcs and not f.is_test
     ]
+    if languages is not None:
+        untested = [f for f in untested if f.language in languages]
     if untested:
         guidance_parts.append(
             f"- {len(untested)} changed function(s) lack test coverage: "

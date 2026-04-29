@@ -105,7 +105,7 @@ class TestQueryTool:
             query(action="query", pattern="callers_of", target="foo", repo_root="/test")
         )
         mock_fn.assert_called_once_with(
-            pattern="callers_of", target="foo", repo_root="/test"
+            pattern="callers_of", target="foo", repo_root="/test", languages=None
         )
         assert result["status"] == "ok"
 
@@ -217,6 +217,7 @@ class TestReviewTool:
             max_lines_per_file=50,
             repo_root="/test",
             base="main",
+            languages=None,
         )
         assert result["status"] == "ok"
 
@@ -231,6 +232,7 @@ class TestReviewTool:
             max_lines_per_file=200,
             repo_root=None,
             base="HEAD~1",
+            languages=None,
         )
         assert result["status"] == "ok"
 
