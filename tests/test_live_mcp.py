@@ -135,16 +135,23 @@ class TestLiveMCP:
         )
 
     # ------------------------------------------------------------------
-    # 1. Tool listing — exactly 5 tools
+    # 1. Tool listing — 5 canonical tools + config__open_relay helper
     # ------------------------------------------------------------------
     async def test_list_tools(self):
-        """Server exposes exactly 5 tools: graph, query, review, config, help."""
+        """Server exposes the 5 canonical tools plus ``config__open_relay``."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools = await session.list_tools()
                 names = {t.name for t in tools.tools}
-                expected = {"graph", "query", "review", "config", "help"}
+                expected = {
+                    "graph",
+                    "query",
+                    "review",
+                    "config",
+                    "help",
+                    "config__open_relay",
+                }
                 assert expected == names, f"Expected {expected}, got {names}"
 
     # ------------------------------------------------------------------

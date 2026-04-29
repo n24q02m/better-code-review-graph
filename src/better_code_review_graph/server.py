@@ -12,9 +12,11 @@ from importlib.resources import files
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
+from mcp_core.relay.tool_helpers import register_open_relay_tool
 
 from .embeddings import EmbeddingStore, init_backend, resolve_backend
 from .incremental import get_db_path
+from .relay_schema import RELAY_SCHEMA
 from .tools import (
     build_or_update_graph,
     embed_graph,
@@ -660,6 +662,16 @@ def help(topic: str = "graph") -> str:
 # ---------------------------------------------------------------------------
 
 SERVER_NAME = "better-code-review-graph"
+
+
+# ---------------------------------------------------------------------------
+# Tool: config__open_relay (registered via mcp-core helper)
+# ---------------------------------------------------------------------------
+# Registers the standard ``config__open_relay`` MCP tool so the LLM can
+# re-trigger the relay form (e.g. after credential expiry) by tool call.
+# Returns ``{ url, browser_opened, status }``; auto-respawns the daemon if
+# it died. See ``mcp_core.relay.tool_helpers``.
+register_open_relay_tool(mcp, SERVER_NAME, RELAY_SCHEMA)
 
 
 # ---------------------------------------------------------------------------
