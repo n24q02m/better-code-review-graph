@@ -166,17 +166,25 @@ def query(
     # large_functions params
     min_lines: int = 50,
     file_path_pattern: str | None = None,
+    # tests_for params (D16)
+    languages: list[str] | None = None,
     # common
     repo_root: str | None = None,
 ) -> str:
     """Query the code knowledge graph for relationships, search, and impact analysis.
 
     Actions (required params -> optional):
-    - query (pattern, target -> repo_root): Predefined graph queries
+    - query (pattern, target -> repo_root, languages): Predefined graph queries
       pattern: callers_of | callees_of | imports_of | importers_of | children_of | tests_for | inheritors_of | file_summary
+      languages: filter `tests_for` results to listed languages (D16, fixes #340)
     - search (search_query -> kind, limit=20, repo_root): Search nodes by name/keyword/vector
     - impact (-> changed_files, max_depth=2, max_results=500, base="HEAD~1", repo_root): Blast radius analysis
     - large_functions (-> min_lines=50, kind, file_path_pattern, limit=20, repo_root): Find oversized functions
+
+    For `query` action with `callers_of`/`callees_of`, the `not_found` response
+    includes a `reason` field (`no_such_symbol` | `symbol_not_indexed` |
+    `ambiguous_unqualified`) plus `indexed_kinds`, `indexed_under`, and `hint`
+    advisory fields (D15, fixes #339).
     """
     match action:
         case "query":
@@ -199,7 +207,12 @@ def query(
             if not target:
                 return _json({"error": "target is required for query action"})
             return _json(
-                query_graph(pattern=pattern, target=target, repo_root=repo_root)
+                query_graph(
+                    pattern=pattern,
+                    target=target,
+                    repo_root=repo_root,
+                    languages=languages,
+                )
             )
         case "search":
             if not search_query:
@@ -271,6 +284,7 @@ def review(
     max_lines_per_file: int = 200,
     base: str = "HEAD~1",
     repo_root: str | None = None,
+    languages: list[str] | None = None,
 ) -> str:
     """Generate focused review context for code changes.
 
@@ -284,6 +298,10 @@ def review(
         max_lines_per_file: Max source lines per file (default: 200)
         base: Git ref for change detection (default: HEAD~1)
         repo_root: Repository root path (auto-detected)
+        languages: Optional list of language names (e.g. ``["python"]``) to
+            scope the ``untested_functions`` list. Excludes functions whose
+            language doesn't match. Fixes false positives on cross-language
+            repos (D16, fixes #340).
     """
     return _json(
         get_review_context(
@@ -293,6 +311,7 @@ def review(
             max_lines_per_file=max_lines_per_file,
             repo_root=repo_root,
             base=base,
+            languages=languages,
         )
     )
 
