@@ -118,6 +118,15 @@ uv run better-code-review-graph
 
 **Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/)
 
+## Trust Model
+
+This plugin implements **TC-Local** (machine-bound, single trust principal). See [mcp-core/docs/TRUST-MODEL.md](https://github.com/n24q02m/mcp-core/blob/main/docs/TRUST-MODEL.md) for full classification.
+
+| Mode | Storage | Encryption | Who can read your data? |
+|---|---|---|---|
+| stdio (default) | `~/.better-code-review-graph-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
+| HTTP self-host | Same as stdio | Same | Only you (admin = user) |
+
 ## License
 
 MIT -- See [LICENSE](LICENSE).
