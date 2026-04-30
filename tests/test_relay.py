@@ -372,23 +372,18 @@ class TestEnsureConfigRelayNotifyFailure:
 
 
 class TestCLIIntegration:
-    def test_main_calls_resolve_credential_state(self):
-        """serve_main calls resolve_credential_state (not old ensure_config)."""
+    def test_main_runs_stdio_directly(self):
+        """serve_main(stdio) invokes FastMCP stdio directly (no bridge layer)."""
+        from better_code_review_graph import server as server_module
+
         with (
-            patch(
-                "better_code_review_graph.credential_state.resolve_credential_state",
-            ) as mock_resolve,
-            patch(
-                "mcp_core.transport.run_smart_stdio_proxy", return_value=0
-            ) as mock_proxy,
+            patch.object(server_module.mcp, "run") as mock_run,
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
-            pytest.raises(SystemExit, match="0"),
         ):
             from better_code_review_graph.cli import main
 
             main()
-            mock_resolve.assert_called_once()
-            mock_proxy.assert_called_once()
+            mock_run.assert_called_once_with(transport="stdio")
 
     def test_main_continues_on_relay_error(self):
         with (

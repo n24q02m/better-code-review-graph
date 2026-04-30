@@ -7,8 +7,6 @@ import os
 import subprocess
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from better_code_review_graph.server import (
     config,
     graph,
@@ -429,22 +427,22 @@ class TestHelpTool:
 
 
 class TestServeMain:
-    @patch("mcp_core.transport.run_smart_stdio_proxy", return_value=0)
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
-    def test_serve_main_sets_repo_root(self, mock_proxy):
+    def test_serve_main_sets_repo_root(self):
+        """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
         import better_code_review_graph.server as server_module
 
-        with pytest.raises(SystemExit, match="0"):
+        with patch.object(server_module.mcp, "run") as mock_run:
             serve_main(repo_root="/my/repo")
         assert server_module._default_repo_root == "/my/repo"
-        mock_proxy.assert_called_once()
+        mock_run.assert_called_once_with(transport="stdio")
 
-    @patch("mcp_core.transport.run_smart_stdio_proxy", return_value=0)
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
-    def test_serve_main_none_repo_root(self, mock_proxy):
+    def test_serve_main_none_repo_root(self):
+        """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
         import better_code_review_graph.server as server_module
 
-        with pytest.raises(SystemExit, match="0"):
+        with patch.object(server_module.mcp, "run") as mock_run:
             serve_main(repo_root=None)
         assert server_module._default_repo_root is None
-        mock_proxy.assert_called_once()
+        mock_run.assert_called_once_with(transport="stdio")
