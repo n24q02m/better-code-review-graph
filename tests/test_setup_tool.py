@@ -226,7 +226,7 @@ class TestSetupReset:
 
         with (
             patch("mcp_core.clear_mode"),
-            patch("mcp_core.storage.config_file.delete_config"),
+            patch("better_code_review_graph.credential_state.PerPluginStore"),
         ):
             result = json.loads(await config(action="setup_reset"))
             assert result["status"] == "ok"

@@ -105,7 +105,10 @@ class TestEnsureConfigEnvVar:
             monkeypatch.delenv(key, raising=False)
         monkeypatch.setenv("GEMINI_API_KEY", "")
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch(
                 "mcp_core.relay.client.create_session",
                 side_effect=Exception("no relay"),
@@ -120,22 +123,26 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={"GEMINI_API_KEY": "from-file"},
-        ) as mock_read:
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {
+                "GEMINI_API_KEY": "from-file"
+            }
             result = await ensure_config()
             assert result is not None
             assert result["GEMINI_API_KEY"] == "from-file"
-            mock_read.assert_called_once_with(SERVER_NAME)
+            mock_store_cls.assert_called_once_with(SERVER_NAME)
 
     async def test_injects_config_into_env(self, monkeypatch):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={"GEMINI_API_KEY": "injected-key"},
-        ):
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {
+                "GEMINI_API_KEY": "injected-key"
+            }
             await ensure_config()
             assert os.environ.get("GEMINI_API_KEY") == "injected-key"
             monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -145,9 +152,9 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={"UNKNOWN_KEY": "value"},
-        ):
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {"UNKNOWN_KEY": "value"}
             with patch(
                 "mcp_core.relay.client.create_session",
                 side_effect=Exception("no relay"),
@@ -163,16 +170,23 @@ class TestEnsureConfigRelay:
             monkeypatch.delenv(key, raising=False)
         monkeypatch.delenv("MCP_RELAY_URL", raising=False)
         with (
-            patch("mcp_core.storage.config_file.read_config", return_value=None),
+            patch(
+                "better_code_review_graph.relay_setup.PerPluginStore"
+            ) as mock_store_cls,
             pytest.raises(RuntimeError, match="MCP_RELAY_URL"),
         ):
+            mock_store_cls.return_value.load.return_value = None
             await ensure_config()
 
     async def test_relay_success(self, monkeypatch):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
+            mock_store_cls.return_value.save = MagicMock()
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
@@ -187,7 +201,6 @@ class TestEnsureConfigRelay:
                     new_callable=AsyncMock,
                     return_value={"JINA_AI_API_KEY": "from-relay"},
                 ) as mock_poll,
-                patch("mcp_core.storage.config_file.write_config") as mock_write,
                 patch("httpx.AsyncClient") as _mock_http,
             ):
                 result = await ensure_config()
@@ -197,15 +210,18 @@ class TestEnsureConfigRelay:
                     TEST_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
                 )
                 mock_poll.assert_called_once()
-                mock_write.assert_called_once_with(
-                    SERVER_NAME, {"JINA_AI_API_KEY": "from-relay"}
+                mock_store_cls.return_value.save.assert_called_once_with(
+                    {"JINA_AI_API_KEY": "from-relay"}
                 )
 
     async def test_relay_server_unreachable(self, monkeypatch):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch(
                 "mcp_core.relay.client.create_session",
                 new_callable=AsyncMock,
@@ -218,7 +234,10 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
@@ -241,7 +260,10 @@ class TestEnsureConfigRelay:
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             mock_session = MagicMock()
             mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
@@ -287,14 +309,14 @@ class TestApplyConfig:
 
 class TestEnsureConfigFileReadException:
     async def test_read_config_exception_falls_through(self, monkeypatch):
-        """read_config raising triggers the silent `except Exception: pass`."""
+        """PerPluginStore.load raising triggers the silent `except Exception: pass`."""
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            side_effect=OSError("corrupt file"),
-        ):
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.side_effect = OSError("corrupt file")
             with patch(
                 "mcp_core.relay.client.create_session",
                 side_effect=Exception("no relay"),
@@ -326,7 +348,11 @@ class TestEnsureConfigRelayNotifyFailure:
             async def post(self, *a, **kw):
                 raise ConnectionError("notify failed")
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
+            mock_store_cls.return_value.save = MagicMock()
             with (
                 patch(
                     "mcp_core.relay.client.create_session",
@@ -338,7 +364,6 @@ class TestEnsureConfigRelayNotifyFailure:
                     new_callable=AsyncMock,
                     return_value={"GEMINI_API_KEY": "k"},
                 ),
-                patch("mcp_core.storage.config_file.write_config"),
                 patch("httpx.AsyncClient", _FailingClient),
             ):
                 result = await ensure_config()
@@ -354,7 +379,10 @@ class TestEnsureConfigRelayNotifyFailure:
         mock_session = MagicMock()
         mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
-        with patch("mcp_core.storage.config_file.read_config", return_value=None):
+        with patch(
+            "better_code_review_graph.relay_setup.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with (
                 patch(
                     "mcp_core.relay.client.create_session",

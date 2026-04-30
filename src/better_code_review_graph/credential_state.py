@@ -10,12 +10,17 @@ When no credentials are present, ``trigger_relay_setup`` spawns a LOCAL
 HTTP credential form on ``http://127.0.0.1:<random>`` via
 ``mcp_core.start_local_server_background`` with the CRG relay schema.
 The user pastes API keys into that local form; ``save_credentials``
-persists to ``config.enc``.
+persists to ``~/.better-code-review-graph-mcp/config.json`` via
+``PerPluginStore``.
 
 This fallback is LOCAL-ONLY. We never hit the remote relay URL here --
 that is reserved for explicit ``MCP_MODE`` HTTP deployments. See
 ``~/.claude/skills/mcp-dev/references/mode-matrix.md`` section
 ``stdio proxy`` for the canonical rule.
+
+Migrated from mcp_core.storage.config_file (shared config.enc) to
+mcp_core.storage.per_plugin_store (per-plugin encrypted store) for
+trust model alignment per spec 2026-04-30-trust-model-alignment.md.
 """
 
 from __future__ import annotations
@@ -28,8 +33,10 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from mcp_core.storage.per_plugin_store import PerPluginStore
 
 SERVER_NAME = "better-code-review-graph"
+PLUGIN_NAME = "better-code-review-graph"
 
 # Grace window so the browser renders "Setup complete!" before the local spawn closes.
 _SPAWN_CLEANUP_S = 5.0
@@ -86,14 +93,12 @@ def resolve_credential_state() -> CredentialState:
         return _state
 
     try:
-        from mcp_core.storage.config_file import read_config
-
-        saved = read_config(SERVER_NAME)
+        saved = PerPluginStore(PLUGIN_NAME).load()
         if saved and any(saved.get(k) for k in CLOUD_KEYS):
             for key, value in saved.items():
                 if value and key not in os.environ:
                     os.environ[key] = value
-            logger.info("Config loaded from encrypted file")
+            logger.info("Config loaded from encrypted per-plugin store")
             _state = CredentialState.CONFIGURED
             return _state
     except Exception:
@@ -269,11 +274,9 @@ def save_credentials(
         _schedule_spawn_cleanup()
         return None
 
-    from mcp_core.storage.config_file import write_config
-
     from better_code_review_graph.relay_setup import apply_config
 
-    write_config(SERVER_NAME, config)
+    PerPluginStore(PLUGIN_NAME).save(config)
     apply_config(config)
     _state = CredentialState.CONFIGURED
     logger.info("Credentials saved via local OAuth form")
@@ -307,9 +310,23 @@ def reset_state() -> None:
 
     try:
         from mcp_core import clear_mode
-        from mcp_core.storage.config_file import delete_config
 
         clear_mode(SERVER_NAME)
-        delete_config(SERVER_NAME)
+        PerPluginStore(PLUGIN_NAME).clear()
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Simple load/save/clear helpers (thin wrappers over PerPluginStore)
+# ---------------------------------------------------------------------------
+
+
+def load_credentials(sub: str | None = None) -> dict:
+    """Load credentials from per-plugin store. Returns empty dict if absent."""
+    return PerPluginStore(PLUGIN_NAME, sub).load() or {}
+
+
+def clear_credentials(sub: str | None = None) -> None:
+    """Remove credentials from per-plugin store."""
+    PerPluginStore(PLUGIN_NAME, sub).clear()
