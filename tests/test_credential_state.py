@@ -106,13 +106,16 @@ class TestStateAccessors:
 
         with (
             patch("mcp_core.clear_mode") as mock_clear,
-            patch("mcp_core.storage.config_file.delete_config") as mock_delete,
+            patch(
+                "better_code_review_graph.credential_state.PerPluginStore"
+            ) as mock_store_cls,
         ):
+            mock_store_cls.return_value.clear = MagicMock()
             reset_state()
             assert get_state() == CredentialState.AWAITING_SETUP
             assert get_setup_url() is None
             mock_clear.assert_called_once_with(SERVER_NAME)
-            mock_delete.assert_called_once_with(SERVER_NAME)
+            mock_store_cls.return_value.clear.assert_called_once()
 
     def test_reset_state_handles_import_error(self):
         """reset_state silently handles exceptions from relay core."""
@@ -157,56 +160,55 @@ class TestResolveCredentialState:
         """Empty string env vars are falsy, don't count as configured."""
         monkeypatch.setenv("GEMINI_API_KEY", "")
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value=None,
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_sets_configured(self, monkeypatch, _clean_env):
-        """Step 2: saved config with cloud keys -> CONFIGURED + env injected."""
+        """Step 2: saved per-plugin store with cloud keys -> CONFIGURED + env injected."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {
                 "GEMINI_API_KEY": "from-config",
                 "JINA_AI_API_KEY": "jina-cfg",
-            },
-        ):
-            with patch("mcp_core.storage.config_file.write_config") as mock_write:
-                result = resolve_credential_state()
-                assert result == CredentialState.CONFIGURED
-                assert monkeypatch.setenv  # env vars should have been set
-                # Per-server isolation: must not write to peers.
-                assert mock_write.call_count == 0
+            }
+            result = resolve_credential_state()
+            assert result == CredentialState.CONFIGURED
+            assert monkeypatch.setenv  # env vars should have been set
 
     def test_config_file_injects_env(self, monkeypatch, _clean_env):
         """Config values are injected into environment."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={"GEMINI_API_KEY": "injected-from-config"},
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {
+                "GEMINI_API_KEY": "injected-from-config"
+            }
             resolve_credential_state()
             assert (
                 monkeypatch.setenv is not None
             )  # monkeypatch is active so env changes are safe
 
     def test_config_file_no_cloud_keys(self, monkeypatch, _clean_env):
-        """Config file with no cloud keys -> falls through."""
+        """Store with no cloud keys -> falls through."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value={"UNKNOWN_KEY": "value"},
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = {"UNKNOWN_KEY": "value"}
             with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_read_exception(self, monkeypatch, _clean_env):
-        """Config file read failure -> falls through silently."""
+        """Store read failure -> falls through silently."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            side_effect=ImportError("no relay core"),
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.side_effect = ImportError("no store")
             with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
@@ -214,9 +216,9 @@ class TestResolveCredentialState:
     def test_local_mode_marker(self, monkeypatch, _clean_env):
         """Step 3: local mode marker -> LOCAL."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value=None,
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch("mcp_core.get_mode", return_value="local"):
                 result = resolve_credential_state()
                 assert result == CredentialState.LOCAL
@@ -224,9 +226,9 @@ class TestResolveCredentialState:
     def test_local_mode_marker_exception(self, monkeypatch, _clean_env):
         """get_mode exception -> falls through to AWAITING_SETUP."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value=None,
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch(
                 "mcp_core.get_mode",
                 side_effect=ImportError("no relay"),
@@ -237,9 +239,9 @@ class TestResolveCredentialState:
     def test_nothing_found_awaiting_setup(self, monkeypatch, _clean_env):
         """Step 4: nothing found -> AWAITING_SETUP."""
         with patch(
-            "mcp_core.storage.config_file.read_config",
-            return_value=None,
-        ):
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
             with patch("mcp_core.get_mode", return_value=None):
                 result = resolve_credential_state()
                 assert result == CredentialState.AWAITING_SETUP
@@ -361,15 +363,17 @@ class TestSaveCredentials:
     def test_save_credentials_writes_config_and_applies_env(
         self, monkeypatch, _clean_env
     ):
-        """save_credentials writes own config + applies env. Must NOT touch peers."""
+        """save_credentials writes own config via PerPluginStore + applies env."""
         from better_code_review_graph.credential_state import save_credentials
 
         config = {"GEMINI_API_KEY": "save-test-key"}
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
+        with patch(
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.save = MagicMock()
             result = save_credentials(config, {"sub": "test-sub"})
             assert result is None
-            assert mock_write.call_count == 1
-            mock_write.assert_called_once_with(SERVER_NAME, config)
+            mock_store_cls.return_value.save.assert_called_once_with(config)
             assert get_state() == CredentialState.CONFIGURED
             import os as _os
 
@@ -387,12 +391,15 @@ class TestSaveCredentials:
         monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
 
         config = {"GEMINI_API_KEY": "user-a-key"}
-        with patch("mcp_core.storage.config_file.write_config") as mock_write:
+        with patch(
+            "better_code_review_graph.credential_state.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.save = MagicMock()
             result = save_credentials(config, {"sub": "user-a-sub"})
 
         assert result is None
-        # Multi-user mode must NOT touch the shared host config.enc.
-        assert mock_write.call_count == 0
+        # Multi-user mode must NOT touch PerPluginStore (uses per-sub JSON directly).
+        mock_store_cls.return_value.save.assert_not_called()
         assert get_state() == CredentialState.CONFIGURED
         # Key landed in per-sub bucket.
         per_sub_file = tmp_path / "subs" / "user-a-sub" / "config.json"

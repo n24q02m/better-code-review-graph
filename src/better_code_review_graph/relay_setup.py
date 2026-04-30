@@ -58,13 +58,13 @@ async def ensure_config() -> dict[str, str] | None:
         logger.info("Cloud API keys found in environment, skipping relay")
         return None  # env vars take priority, no relay needed
 
-    # 2. Check saved relay config file (any cloud key is sufficient)
+    # 2. Check saved per-plugin store (any cloud key is sufficient)
     try:
-        from mcp_core.storage.config_file import read_config
+        from mcp_core.storage.per_plugin_store import PerPluginStore
 
-        saved = read_config(SERVER_NAME)
+        saved = PerPluginStore(SERVER_NAME).load()
         if saved and any(saved.get(k) for k in CLOUD_KEYS):
-            logger.info("Config loaded from file")
+            logger.info("Config loaded from per-plugin store")
             for key, value in saved.items():
                 os.environ.setdefault(key, value)
             return saved
@@ -107,12 +107,12 @@ async def ensure_config() -> dict[str, str] | None:
     # Poll for result with shorter timeout
     try:
         from mcp_core.relay.client import poll_for_result
-        from mcp_core.storage.config_file import write_config
+        from mcp_core.storage.per_plugin_store import PerPluginStore
 
         config = await poll_for_result(relay_url, session, timeout_s=RELAY_TIMEOUT_S)
 
-        # Save to config file
-        write_config(SERVER_NAME, config)
+        # Save to per-plugin store
+        PerPluginStore(SERVER_NAME).save(config)
         logger.info("Config saved successfully")
 
         # Notify relay page that setup is complete
