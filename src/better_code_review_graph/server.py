@@ -727,18 +727,20 @@ def serve_main(repo_root: str | None = None) -> None:
     global _default_repo_root
     _default_repo_root = repo_root
 
-    # Non-blocking credential resolution (fast, <10ms)
+    if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
+        # Stdio mode: run FastMCP stdio server directly. No bridge layer.
+        # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
+        # See: ~/projects/.superpower/mcp-core/specs/2026-04-30-multi-mode-stdio-http-architecture.md
+        mcp.run(transport="stdio")
+        return
+
+    # HTTP / local-relay path: resolve credentials so the relay form can hint
+    # current state. Stdio mode resolves lazily inside tool calls.
     from .credential_state import resolve_credential_state
 
     resolve_credential_state()
 
-    if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
-        from mcp_core.transport import run_smart_stdio_proxy
-
-        daemon_cmd = [sys.executable, "-m", "better_code_review_graph"]
-        sys.exit(run_smart_stdio_proxy("better-code-review-graph", daemon_cmd))
-    else:
-        asyncio.run(run_http())
+    asyncio.run(run_http())
 
 
 if __name__ == "__main__":
