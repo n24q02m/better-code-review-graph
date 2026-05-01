@@ -29,7 +29,9 @@ def _call_config_setup_status_sync() -> dict[str, Any]:
 class TestSetupStatusLiveDerivedState:
     """setup_status derives state from live PerPluginStore, not stale _state."""
 
-    def test_returns_configured_when_store_has_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_configured_when_store_has_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """setup_status returns configured when PerPluginStore has cloud keys."""
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -47,7 +49,9 @@ class TestSetupStatusLiveDerivedState:
         assert result["state"] == "configured"
         assert "GEMINI_API_KEY" in result["providers_configured"]
 
-    def test_returns_needs_setup_when_store_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_needs_setup_when_store_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """setup_status returns awaiting_setup when store empty and no env vars."""
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -93,7 +97,9 @@ class TestSetupStatusLiveDerivedState:
         assert "OPENAI_API_KEY" in result["providers_configured"]
         assert "OPENAI_API_KEY" in result["cloud_keys_in_env"]
 
-    def test_response_includes_providers_configured_field(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_response_includes_providers_configured_field(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """setup_status always includes providers_configured key in response."""
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
