@@ -22,7 +22,7 @@ async def test_read_config_exception(monkeypatch):
 
     # PerPluginStore constructor raises Exception -- should fall through to relay
     with patch(
-        "better_code_review_graph.relay_setup.PerPluginStore",
+        "better_code_review_graph.credential_state.PerPluginStore",
         side_effect=Exception("Disk error"),
     ):
         # To avoid going into relay setup, we also mock create_session to fail
@@ -48,7 +48,7 @@ async def test_httpx_post_exception(monkeypatch):
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("better_code_review_graph.relay_setup.PerPluginStore") as mock_store_cls:
+    with patch("better_code_review_graph.credential_state.PerPluginStore") as mock_store_cls:
         mock_store_cls.return_value.load.return_value = None
         with patch(
             "mcp_core.relay.client.create_session",
@@ -72,7 +72,7 @@ async def test_poll_for_result_runtime_error_unexpected(monkeypatch):
     for key in CLOUD_KEYS:
         monkeypatch.delenv(key, raising=False)
 
-    with patch("better_code_review_graph.relay_setup.PerPluginStore") as mock_store_cls:
+    with patch("better_code_review_graph.credential_state.PerPluginStore") as mock_store_cls:
         mock_store_cls.return_value.load.return_value = None
         mock_session = MagicMock()
         mock_session.relay_url = "https://relay.example.com/setup"

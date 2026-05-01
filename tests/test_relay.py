@@ -106,7 +106,7 @@ class TestEnsureConfigEnvVar:
         monkeypatch.setenv("GEMINI_API_KEY", "")
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             with patch(
@@ -123,7 +123,7 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = {
                 "GEMINI_API_KEY": "from-file"
@@ -138,7 +138,7 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = {
                 "GEMINI_API_KEY": "injected-key"
@@ -152,7 +152,7 @@ class TestEnsureConfigFile:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = {"UNKNOWN_KEY": "value"}
             with patch(
@@ -171,7 +171,7 @@ class TestEnsureConfigRelay:
         monkeypatch.delenv("MCP_RELAY_URL", raising=False)
         with (
             patch(
-                "better_code_review_graph.relay_setup.PerPluginStore"
+                "better_code_review_graph.credential_state.PerPluginStore"
             ) as mock_store_cls,
             pytest.raises(RuntimeError, match="MCP_RELAY_URL"),
         ):
@@ -183,7 +183,7 @@ class TestEnsureConfigRelay:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             mock_store_cls.return_value.save = MagicMock()
@@ -219,7 +219,7 @@ class TestEnsureConfigRelay:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             with patch(
@@ -235,7 +235,7 @@ class TestEnsureConfigRelay:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             mock_session = MagicMock()
@@ -261,7 +261,7 @@ class TestEnsureConfigRelay:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             mock_session = MagicMock()
@@ -314,7 +314,7 @@ class TestEnsureConfigFileReadException:
             monkeypatch.delenv(key, raising=False)
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.side_effect = OSError("corrupt file")
             with patch(
@@ -349,7 +349,7 @@ class TestEnsureConfigRelayNotifyFailure:
                 raise ConnectionError("notify failed")
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             mock_store_cls.return_value.save = MagicMock()
@@ -380,7 +380,7 @@ class TestEnsureConfigRelayNotifyFailure:
         mock_session.relay_url = "https://relay.example.com/setup#k=abc"
 
         with patch(
-            "better_code_review_graph.relay_setup.PerPluginStore"
+            "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             with (
