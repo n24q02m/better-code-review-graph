@@ -7,7 +7,7 @@ unknown action variants, and _maybe_include_setup_hint helper.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -104,28 +104,53 @@ class TestMaybeIncludeSetupHint:
 
 
 class TestSetupStatus:
-    async def test_status_returns_state_info(self):
-        """setup_status returns current state and cloud keys in env."""
-        from better_code_review_graph import credential_state as cs
+    async def test_status_returns_state_info(self, monkeypatch):
+        """setup_status derives `configured` from live env keys (G6 UX fix)."""
         from better_code_review_graph.server import config
 
-        cs._state = CredentialState.CONFIGURED
-        cs._setup_url = None
+        for key in (
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "JINA_AI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key-123")
 
-        result = json.loads(await config(action="setup_status"))
+        with patch(
+            "mcp_core.storage.per_plugin_store.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
+            result = json.loads(await config(action="setup_status"))
         assert result["state"] == "configured"
         assert "cloud_keys_in_env" in result
+        assert "GEMINI_API_KEY" in result["cloud_keys_in_env"]
 
-    async def test_status_with_setup_url(self):
-        """setup_status includes setup_url when set."""
+    async def test_status_with_setup_url(self, monkeypatch):
+        """setup_status includes setup_url when set on the module."""
         from better_code_review_graph import credential_state as cs
         from better_code_review_graph.server import config
 
-        cs._state = CredentialState.SETUP_IN_PROGRESS
+        for key in (
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "JINA_AI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(key, raising=False)
+        cs._state = CredentialState.AWAITING_SETUP
         cs._setup_url = "https://relay.example.com/setup"
 
-        result = json.loads(await config(action="setup_status"))
-        assert result["state"] == "setup_in_progress"
+        with patch(
+            "mcp_core.storage.per_plugin_store.PerPluginStore"
+        ) as mock_store_cls:
+            mock_store_cls.return_value.load.return_value = None
+            result = json.loads(await config(action="setup_status"))
+        assert result["state"] == "awaiting_setup"
         assert result["setup_url"] == "https://relay.example.com/setup"
 
 
@@ -146,52 +171,43 @@ class TestSetupStart:
         assert result["status"] == "already_configured"
         assert "force=true" in result["message"]
 
-    async def test_start_triggers_relay_setup(self):
-        """setup_start triggers relay and returns URL."""
+    async def test_start_returns_authorize_url_in_http_mode(self, monkeypatch):
+        """setup_start returns the HTTP server's /authorize URL when PUBLIC_URL set."""
         from better_code_review_graph import credential_state as cs
         from better_code_review_graph.server import config
 
         cs._state = CredentialState.AWAITING_SETUP
+        monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
-        with patch(
-            "better_code_review_graph.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.example.com/setup#k=abc",
-        ):
-            result = json.loads(await config(action="setup_start"))
-            assert result["status"] == "setup_started"
-            assert result["setup_url"] == "https://relay.example.com/setup#k=abc"
+        result = json.loads(await config(action="setup_start"))
+        assert result["status"] == "setup_started"
+        assert result["setup_url"] == "https://relay.example.com/authorize"
 
-    async def test_start_relay_failure(self):
-        """setup_start returns error when relay fails."""
+    async def test_start_returns_stdio_mode_message_when_no_public_url(
+        self, monkeypatch
+    ):
+        """setup_start in stdio mode (no PUBLIC_URL) returns an env-var hint."""
         from better_code_review_graph import credential_state as cs
         from better_code_review_graph.server import config
 
         cs._state = CredentialState.AWAITING_SETUP
+        monkeypatch.delenv("PUBLIC_URL", raising=False)
 
-        with patch(
-            "better_code_review_graph.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            result = json.loads(await config(action="setup_start"))
-            assert result["status"] == "error"
-            assert "Failed" in result["message"]
+        result = json.loads(await config(action="setup_start"))
+        assert result["status"] == "stdio_mode"
+        assert "GEMINI_API_KEY" in result["message"]
 
-    async def test_start_force_overrides_configured(self):
+    async def test_start_force_overrides_configured(self, monkeypatch):
         """setup_start with force=true reconfigures even when CONFIGURED."""
         from better_code_review_graph import credential_state as cs
         from better_code_review_graph.server import config
 
         cs._state = CredentialState.CONFIGURED
+        monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
-        with patch(
-            "better_code_review_graph.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.example.com/new-session",
-        ):
-            result = json.loads(await config(action="setup_start", force=True))
-            assert result["status"] == "setup_started"
+        result = json.loads(await config(action="setup_start", force=True))
+        assert result["status"] == "setup_started"
+        assert result["setup_url"] == "https://relay.example.com/authorize"
 
 
 # ---------------------------------------------------------------------------

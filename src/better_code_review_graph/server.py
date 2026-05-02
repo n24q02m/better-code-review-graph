@@ -16,7 +16,6 @@ from mcp_core.relay.tool_helpers import register_open_relay_tool
 
 from .embeddings import EmbeddingStore, init_backend, resolve_backend
 from .incremental import get_db_path
-from .relay_schema import RELAY_SCHEMA
 from .tools import (
     build_or_update_graph,
     embed_graph,
@@ -404,11 +403,7 @@ async def config(
                 }
             )
         case "setup_start":
-            from .credential_state import (
-                CredentialState,
-                get_state,
-                trigger_relay_setup,
-            )
+            from .credential_state import CredentialState, get_state
 
             if get_state() == CredentialState.CONFIGURED and not force:
                 return _json(
@@ -417,8 +412,12 @@ async def config(
                         "message": "Already configured. Use force=true to reconfigure.",
                     }
                 )
-            url = await trigger_relay_setup(force=True)
-            if url:
+            # In stdio mode (default after spec 2026-05-01) the server reads
+            # API keys from env vars only; the browser-based relay form is
+            # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
+            public_url = os.environ.get("PUBLIC_URL")
+            if public_url:
+                url = f"{public_url.rstrip('/')}/authorize"
                 return _json(
                     {
                         "status": "setup_started",
@@ -428,8 +427,13 @@ async def config(
                 )
             return _json(
                 {
-                    "status": "error",
-                    "message": "Failed to start relay session.",
+                    "status": "stdio_mode",
+                    "message": (
+                        "Stdio mode reads API keys from env vars only. "
+                        "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
+                        "COHERE_API_KEY in the plugin config, or switch to HTTP "
+                        "mode to use the browser-based setup form."
+                    ),
                 }
             )
         case "setup_skip":
@@ -681,9 +685,10 @@ SERVER_NAME = "better-code-review-graph"
 # ---------------------------------------------------------------------------
 # Registers the standard ``config__open_relay`` MCP tool so the LLM can
 # re-trigger the relay form (e.g. after credential expiry) by tool call.
-# Returns ``{ url, browser_opened, status }``; auto-respawns the daemon if
-# it died. See ``mcp_core.relay.tool_helpers``.
-register_open_relay_tool(mcp, SERVER_NAME, RELAY_SCHEMA)
+# In HTTP mode the tool returns ``<PUBLIC_URL>/authorize``; in stdio mode
+# it returns ``status: 'stdio_unsupported'`` so the caller can surface a
+# "switch to HTTP mode" message. See ``mcp_core.relay.tool_helpers``.
+register_open_relay_tool(mcp, SERVER_NAME, os.environ.get("PUBLIC_URL"))
 
 
 # ---------------------------------------------------------------------------
@@ -694,15 +699,17 @@ register_open_relay_tool(mcp, SERVER_NAME, RELAY_SCHEMA)
 async def run_http(port: int = 0) -> None:
     """Run as HTTP server with local OAuth 2.1 AS.
 
-    Single-user (default): binds ``127.0.0.1`` -- one host, one user, one
-    shared ``config.enc``.
+    Always multi-user remote-style (per spec 2026-05-01-stdio-pure-http-multiuser.md).
+    Binds ``0.0.0.0:<MCP_PORT|8080>`` when ``PUBLIC_URL`` is set and refuses
+    to start without ``MCP_DCR_SERVER_SECRET`` so per-JWT-sub DCR signing is
+    enforced. Each authorize-session's JWT ``sub`` scopes credential storage
+    and graph DB path.
 
-    Multi-user remote (``PUBLIC_URL`` set): binds ``0.0.0.0:<MCP_PORT|8080>``
-    and refuses to start without ``MCP_DCR_SERVER_SECRET`` so per-JWT-sub
-    DCR signing is enforced. Each authorize-session's JWT ``sub`` scopes
-    credential storage and graph DB path.
+    For local self-host without ``PUBLIC_URL`` the server still binds
+    ``127.0.0.1`` and runs the same multi-user code path with a single
+    JWT sub.
     """
-    from mcp_core.transport.local_server import run_local_server
+    from mcp_core.transport.local_server import run_http_server
 
     from .credential_state import save_credentials
     from .relay_schema import RELAY_SCHEMA
@@ -721,7 +728,7 @@ async def run_http(port: int = 0) -> None:
     else:
         host = "127.0.0.1"
 
-    await run_local_server(
+    await run_http_server(
         mcp,
         server_name="better-code-review-graph",
         relay_schema=RELAY_SCHEMA,
@@ -732,27 +739,43 @@ async def run_http(port: int = 0) -> None:
 
 
 def serve_main(repo_root: str | None = None) -> None:
-    """Run the MCP server. Defaults to HTTP, --stdio for backward compat."""
+    """Run the MCP server. Defaults to stdio; opt in to HTTP via flag/env.
+
+    Stdio mode (default): runs FastMCP stdio server directly. Reads cloud
+    API keys from env vars only. Universal MCP client compatibility.
+
+    HTTP mode (opt-in): triggered by ``--http`` argv flag,
+    ``MCP_TRANSPORT=http``, or ``TRANSPORT_MODE=http``. Multi-user JWT-sub
+    server with browser relay form at ``<PUBLIC_URL>/authorize``.
+
+    See: ~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md
+    """
     import asyncio
     import sys
 
     global _default_repo_root
     _default_repo_root = repo_root
 
-    if "--stdio" in sys.argv or os.environ.get("MCP_TRANSPORT") == "stdio":
-        # Stdio mode: run FastMCP stdio server directly. No bridge layer.
-        # Universal MCP client compatibility (Claude Code, Cursor, VS Code Copilot, etc.).
-        # See: ~/projects/.superpower/mcp-core/specs/2026-04-30-multi-mode-stdio-http-architecture.md
-        mcp.run(transport="stdio")
+    is_http = (
+        "--http" in sys.argv
+        or os.environ.get("MCP_TRANSPORT") == "http"
+        or os.environ.get("TRANSPORT_MODE") == "http"
+    )
+
+    if is_http:
+        # HTTP mode: resolve credentials so the relay form can hint current
+        # state. Stdio mode resolves lazily inside tool calls.
+        from .credential_state import resolve_credential_state
+
+        resolve_credential_state()
+
+        asyncio.run(run_http())
         return
 
-    # HTTP / local-relay path: resolve credentials so the relay form can hint
-    # current state. Stdio mode resolves lazily inside tool calls.
-    from .credential_state import resolve_credential_state
-
-    resolve_credential_state()
-
-    asyncio.run(run_http())
+    # Stdio mode (default): run FastMCP stdio server directly. No bridge
+    # layer. Cloud API keys come from env vars only -- CRG has a local
+    # fallback (qwen3-embed ONNX) so missing cloud creds is non-fatal.
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

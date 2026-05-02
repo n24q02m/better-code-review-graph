@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 
+from mcp_core.storage.per_plugin_store import PerPluginStore
+
 from .relay_schema import RELAY_SCHEMA
 
 logger = logging.getLogger(__name__)
@@ -60,8 +62,6 @@ async def ensure_config() -> dict[str, str] | None:
 
     # 2. Check saved per-plugin store (any cloud key is sufficient)
     try:
-        from mcp_core.storage.per_plugin_store import PerPluginStore
-
         saved = PerPluginStore(SERVER_NAME).load()
         if saved and any(saved.get(k) for k in CLOUD_KEYS):
             logger.info("Config loaded from per-plugin store")
@@ -107,7 +107,6 @@ async def ensure_config() -> dict[str, str] | None:
     # Poll for result with shorter timeout
     try:
         from mcp_core.relay.client import poll_for_result
-        from mcp_core.storage.per_plugin_store import PerPluginStore
 
         config = await poll_for_result(relay_url, session, timeout_s=RELAY_TIMEOUT_S)
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from better_code_review_graph.server import (
     config,
@@ -355,19 +355,22 @@ class TestConfigTool:
         assert "unknown action" not in str(result).lower()
         assert "state" in result
 
-    async def test_setup_start_action(self):
-        """config setup_start dispatches to relay trigger."""
+    async def test_setup_start_action(self, monkeypatch):
+        """config setup_start in HTTP mode returns the authorize URL.
+
+        After spec 2026-05-01-stdio-pure-http-multiuser.md the daemon-bridge
+        relay-form spawn is gone; the relay form lives on the HTTP server
+        itself at ``<PUBLIC_URL>/authorize``.
+        """
         from better_code_review_graph import credential_state as cs
 
         cs._state = cs.CredentialState.AWAITING_SETUP
-        with patch(
-            "better_code_review_graph.credential_state.trigger_relay_setup",
-            new_callable=AsyncMock,
-            return_value="https://relay.example.com/test",
-        ):
-            result = json.loads(await config(action="setup_start"))
-            assert "unknown action" not in str(result).lower()
-            assert result.get("status") == "setup_started"
+        monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
+
+        result = json.loads(await config(action="setup_start"))
+        assert "unknown action" not in str(result).lower()
+        assert result.get("status") == "setup_started"
+        assert result.get("setup_url") == "https://relay.example.com/authorize"
 
 
 # ---------------------------------------------------------------------------
