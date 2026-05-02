@@ -77,7 +77,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.13.0b6"
+version = "3.13.0b7"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -114,7 +114,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.74.0" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.0,<2" },
-    { name = "n24q02m-mcp-core", directory = "../mcp-core/packages/core-py" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.13.0b4,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.33.0" },
     { name = "pydantic-settings" },
@@ -880,7 +880,7 @@ wheels = [
 [[package]]
 name = "n24q02m-mcp-core"
 version = "1.13.0b5"
-source = { directory = "../mcp-core/packages/core-py" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
     { name = "cryptography" },
@@ -893,29 +893,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "authlib", specifier = ">=1.7.0" },
-    { name = "cryptography", specifier = ">=47.0.0" },
-    { name = "fastmcp", specifier = ">=3.2.4" },
-    { name = "filelock", specifier = ">=3.16.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "platformdirs", specifier = ">=4.9.6" },
-    { name = "pydantic", specifier = ">=2.12.5,<2.13" },
-    { name = "starlette", specifier = ">=1.0.0" },
-    { name = "tomli-w", specifier = ">=1.2.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "ruff", specifier = ">=0.15.12" },
-    { name = "ty", specifier = ">=0.0.33" },
+sdist = { url = "https://files.pythonhosted.org/packages/b0/5a/34fb2a2494e9d00edd041a1054bb814eb9ed76da8868d3b21c9d98803187/n24q02m_mcp_core-1.13.0b5.tar.gz", hash = "sha256:467b3eabbfb8c2a87262288ef3eed35c11f635b4b37ea0de79237bb450cec8eb", size = 185546, upload-time = "2026-05-02T06:52:04.834Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/64/b7cfff730a47b9520d7a8cbe39f8362cbe517c06828639fd0e0331f3c246/n24q02m_mcp_core-1.13.0b5-py3-none-any.whl", hash = "sha256:db0d395aefdb5c5d6599bf93f90da9c21c225c36c10f84703a5357a4fce018d7", size = 118638, upload-time = "2026-05-02T06:52:06.14Z" },
 ]
 
 [[package]]
