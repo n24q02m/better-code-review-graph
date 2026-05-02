@@ -164,7 +164,12 @@ class TestResolveCredentialState:
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_sets_configured(self, monkeypatch, _clean_env):
-        """Step 2: saved per-plugin store with cloud keys -> CONFIGURED + env injected."""
+        """Step 2 (HTTP mode): saved per-plugin store with cloud keys -> CONFIGURED.
+
+        Per spec 2026-05-01-stdio-pure-http-multiuser §4.1 + OQ3, PerPluginStore
+        is only consulted in HTTP mode -- requires ``--http`` / MCP_TRANSPORT=http.
+        """
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
@@ -177,7 +182,8 @@ class TestResolveCredentialState:
             assert monkeypatch.setenv  # env vars should have been set
 
     def test_config_file_injects_env(self, monkeypatch, _clean_env):
-        """Config values are injected into environment."""
+        """Config values are injected into environment (HTTP mode only)."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
@@ -190,7 +196,8 @@ class TestResolveCredentialState:
             )  # monkeypatch is active so env changes are safe
 
     def test_config_file_no_cloud_keys(self, monkeypatch, _clean_env):
-        """Store with no cloud keys -> falls through."""
+        """Store with no cloud keys -> falls through (HTTP mode)."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
@@ -200,7 +207,8 @@ class TestResolveCredentialState:
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_config_file_read_exception(self, monkeypatch, _clean_env):
-        """Store read failure -> falls through silently."""
+        """Store read failure -> falls through silently (HTTP mode)."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
@@ -210,7 +218,8 @@ class TestResolveCredentialState:
                 assert result == CredentialState.AWAITING_SETUP
 
     def test_local_mode_marker(self, monkeypatch, _clean_env):
-        """Step 3: local mode marker -> LOCAL."""
+        """Step 3 (HTTP mode): local mode marker -> LOCAL."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:
@@ -220,7 +229,8 @@ class TestResolveCredentialState:
                 assert result == CredentialState.LOCAL
 
     def test_local_mode_marker_exception(self, monkeypatch, _clean_env):
-        """get_mode exception -> falls through to AWAITING_SETUP."""
+        """get_mode exception -> falls through to AWAITING_SETUP (HTTP mode)."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         with patch(
             "better_code_review_graph.credential_state.PerPluginStore"
         ) as mock_store_cls:

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from enum import Enum
 from pathlib import Path
 
@@ -66,14 +67,39 @@ def get_setup_url() -> str | None:
     return _setup_url
 
 
+def _is_http_mode() -> bool:
+    """Detect HTTP transport mode per spec 2026-05-01-stdio-pure-http-multiuser §4.1.
+
+    Mirrors the TS detection in ``init-server.ts``: HTTP requires explicit
+    opt-in via ``--http`` argv, ``MCP_TRANSPORT=http``, or ``TRANSPORT_MODE=http``.
+    Default (no flag) is stdio.
+    """
+    return (
+        "--http" in sys.argv
+        or os.environ.get("MCP_TRANSPORT") == "http"
+        or os.environ.get("TRANSPORT_MODE") == "http"
+    )
+
+
 def resolve_credential_state() -> CredentialState:
     """Fast, synchronous credential check. Called during lifespan startup.
 
+    Stdio mode (default per spec 2026-05-01-stdio-pure-http-multiuser §4.1 + OQ3):
+    env vars ONLY. ``PerPluginStore`` is NOT consulted -- stdio = single-user
+    pure local; reading per-plugin store risks cross-process leak when the
+    user has multiple Claude Code sessions or has previously run HTTP mode.
+    Missing optional creds is acceptable -- crg has local FalkorDB + ONNX
+    embedding fallback so AWAITING_SETUP is a valid steady state in stdio.
+
+    HTTP mode (``--http`` / ``MCP_TRANSPORT=http`` / ``TRANSPORT_MODE=http``):
+    env vars first, then ``PerPluginStore`` for previously-saved relay form
+    submissions, then ``mcp_core.get_mode`` local-marker fallback.
+
     Checks (in order):
-    1. ENV VARS -- if any CLOUD_KEYS present, state = CONFIGURED
-    2. CONFIG FILE -- if saved config has cloud keys, apply to env, state = CONFIGURED
-    3. LOCAL MODE MARKER -- if user explicitly skipped, state = LOCAL
-    4. NOTHING -- state = AWAITING_SETUP (server starts fast, relay triggered lazily)
+    1. ENV VARS -- if any CLOUD_KEYS present, state = CONFIGURED (both modes)
+    2. CONFIG FILE -- HTTP mode only; saved config with cloud keys -> CONFIGURED
+    3. LOCAL MODE MARKER -- HTTP mode only; user explicitly skipped -> LOCAL
+    4. NOTHING -- state = AWAITING_SETUP
 
     Returns new state. Takes <10ms.
     """
@@ -84,28 +110,29 @@ def resolve_credential_state() -> CredentialState:
         _state = CredentialState.CONFIGURED
         return _state
 
-    try:
-        saved = PerPluginStore(PLUGIN_NAME).load()
-        if saved and any(saved.get(k) for k in CLOUD_KEYS):
-            for key, value in saved.items():
-                if value and key not in os.environ:
-                    os.environ[key] = value
-            logger.info("Config loaded from encrypted per-plugin store")
-            _state = CredentialState.CONFIGURED
-            return _state
-    except Exception:
-        pass
+    if _is_http_mode():
+        try:
+            saved = PerPluginStore(PLUGIN_NAME).load()
+            if saved and any(saved.get(k) for k in CLOUD_KEYS):
+                for key, value in saved.items():
+                    if value and key not in os.environ:
+                        os.environ[key] = value
+                logger.info("Config loaded from encrypted per-plugin store")
+                _state = CredentialState.CONFIGURED
+                return _state
+        except Exception:
+            pass
 
-    try:
-        from mcp_core import get_mode
+        try:
+            from mcp_core import get_mode
 
-        mode = get_mode(SERVER_NAME)
-        if mode == "local":
-            logger.info("Local mode marker found, skipping relay")
-            _state = CredentialState.LOCAL
-            return _state
-    except Exception:
-        pass
+            mode = get_mode(SERVER_NAME)
+            if mode == "local":
+                logger.info("Local mode marker found, skipping relay")
+                _state = CredentialState.LOCAL
+                return _state
+        except Exception:
+            pass
 
     logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
