@@ -33,23 +33,16 @@ class TestConfigOpenRelayRegistered:
         )
         assert "config__open_relay" in names
 
-    async def test_config_open_relay_returns_expected_keys(self, monkeypatch):
+    async def test_config_open_relay_returns_expected_keys(self):
         """Tool handler must return the documented ``url/browser_opened/status`` shape.
 
-        Patches the mcp-core daemon helpers so we exercise the closure without
-        spawning a real daemon. Verifies wiring (server name + schema flow
-        through register_open_relay_tool) end-to-end at the tool surface.
+        After spec 2026-05-01-stdio-pure-http-multiuser.md, the
+        ``config__open_relay`` tool is HTTP-only -- it returns
+        ``status: 'stdio_unsupported'`` when the server is running in stdio
+        mode (no ``PUBLIC_URL``). The server module loads with
+        ``PUBLIC_URL`` unset by default, so ``status`` is
+        ``stdio_unsupported`` here.
         """
-        from mcp_core.relay import tool_helpers as th
-
-        monkeypatch.setattr(th, "_daemon_is_alive", lambda name: True)
-        monkeypatch.setattr(
-            th, "_daemon_relay_url", lambda name: f"http://127.0.0.1:9999/{name}/relay"
-        )
-        monkeypatch.setattr(th, "_daemon_cred_state", lambda name: "configured")
-        monkeypatch.setattr(th, "_is_session_active_for_server", lambda name: False)
-        monkeypatch.setattr(th, "_try_open_browser", lambda url: True)
-
         result = await mcp.call_tool("config__open_relay", {})
         # FastMCP wraps the dict in structured/unstructured content; pull the
         # structured payload regardless of tuple/object shape.
@@ -62,9 +55,9 @@ class TestConfigOpenRelayRegistered:
             )
         assert payload is not None, f"No structured payload from tool call: {result!r}"
         assert set(payload.keys()) >= {"url", "browser_opened", "status"}
-        assert "better-code-review-graph" in payload["url"]
-        assert payload["browser_opened"] is True
-        assert payload["status"] == "configured"
+        assert payload["status"] == "stdio_unsupported"
+        assert payload["browser_opened"] is False
+        assert payload["url"] == ""
 
 
 if __name__ == "__main__":

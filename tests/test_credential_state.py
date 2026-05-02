@@ -1,13 +1,12 @@
 """Tests for credential_state module -- non-blocking credential state machine.
 
-Covers: CredentialState enum, resolve_credential_state(), trigger_relay_setup(),
-_poll_relay_background(), set_state(), reset_state(),
-get_state(), get_setup_url().
+Covers: CredentialState enum, resolve_credential_state(), set_state(),
+reset_state(), get_state(), get_setup_url().
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,7 +19,6 @@ from better_code_review_graph.credential_state import (
     reset_state,
     resolve_credential_state,
     set_state,
-    trigger_relay_setup,
 )
 
 # ---------------------------------------------------------------------------
@@ -35,11 +33,9 @@ def _reset_module_state():
 
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
-    cs._active_handle = None
     yield
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
-    cs._active_handle = None
 
 
 @pytest.fixture
@@ -267,96 +263,19 @@ class TestCredentialIsolation:
 
 
 # ---------------------------------------------------------------------------
-# trigger_relay_setup
+# trigger_relay_setup removed per spec 2026-05-01-stdio-pure-http-multiuser.md
+# Stdio mode reads creds from env vars only; HTTP mode serves the relay form
+# at <PUBLIC_URL>/authorize. There is no daemon-bridge auto-spawn anymore.
 # ---------------------------------------------------------------------------
 
 
-class TestTriggerRelaySetup:
-    """Tests for trigger_relay_setup -- local HTTP fallback (no remote relay)."""
+class TestNoTriggerRelaySetup:
+    """Regression: ``trigger_relay_setup`` must not exist after the spec."""
 
-    async def test_skips_when_already_configured(self):
-        """Does not trigger relay when state is CONFIGURED."""
-        set_state(CredentialState.CONFIGURED)
-        url = await trigger_relay_setup()
-        assert url is None
-
-    async def test_skips_when_local(self):
-        """Does not trigger relay when state is LOCAL."""
-        set_state(CredentialState.LOCAL)
-        url = await trigger_relay_setup()
-        assert url is None
-
-    async def test_force_spawns_local_form(self):
-        """force=True spawns a local credential form even when CONFIGURED."""
-        set_state(CredentialState.CONFIGURED)
-
-        mock_handle = MagicMock(host="127.0.0.1", port=52201)
-
-        with (
-            patch(
-                "mcp_core.start_local_server_background",
-                new_callable=AsyncMock,
-                return_value=mock_handle,
-                create=True,
-            ) as mock_start,
-            patch("mcp_core.try_open_browser"),
-        ):
-            url = await trigger_relay_setup(force=True)
-            assert url == "http://127.0.0.1:52201/"
-            assert get_state() == CredentialState.SETUP_IN_PROGRESS
-            mock_start.assert_awaited_once()
-
-    async def test_reuses_active_handle(self):
-        """When an active handle already exists, reuse its URL."""
+    def test_trigger_relay_setup_removed(self):
         import better_code_review_graph.credential_state as cs
 
-        set_state(CredentialState.AWAITING_SETUP)
-        cs._active_handle = MagicMock()
-        cs._setup_url = "http://127.0.0.1:52202/"
-
-        with patch(
-            "mcp_core.start_local_server_background",
-            new_callable=AsyncMock,
-            create=True,
-        ) as mock_start:
-            url = await trigger_relay_setup()
-            assert url == "http://127.0.0.1:52202/"
-            mock_start.assert_not_awaited()
-
-    async def test_creates_new_spawn(self):
-        """AWAITING_SETUP with no handle -> spawn local form, open browser."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        mock_handle = MagicMock(host="127.0.0.1", port=52203)
-
-        with (
-            patch(
-                "mcp_core.start_local_server_background",
-                new_callable=AsyncMock,
-                return_value=mock_handle,
-                create=True,
-            ) as mock_start,
-            patch("mcp_core.try_open_browser") as mock_browser,
-        ):
-            url = await trigger_relay_setup()
-            assert url == "http://127.0.0.1:52203/"
-            assert get_setup_url() == url
-            mock_start.assert_awaited_once()
-            mock_browser.assert_called_once_with(url)
-
-    async def test_relay_setup_failure_returns_none(self):
-        """Relay setup failure returns None and resets state."""
-        set_state(CredentialState.AWAITING_SETUP)
-
-        with patch(
-            "mcp_core.start_local_server_background",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("bind failed"),
-            create=True,
-        ):
-            url = await trigger_relay_setup()
-            assert url is None
-            assert get_state() == CredentialState.AWAITING_SETUP
+        assert not hasattr(cs, "trigger_relay_setup")
 
 
 class TestSaveCredentials:
