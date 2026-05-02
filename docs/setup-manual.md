@@ -1,5 +1,11 @@
 # Better Code Review Graph -- Manual Setup Guide
 
+> **2026-05-02 Update (v<auto>+)**: Plugin install (Method 1) now uses pure stdio mode. API keys are optional env vars.
+> The previous "Zero-Config Relay" auto-spawn pattern has been removed.
+> If you relied on the relay form to enter API keys, please:
+> 1. Set the env var directly in plugin config (Method 1), OR
+> 2. Switch to HTTP mode (Method 5) for browser-based setup.
+
 ## Prerequisites
 
 - **Python 3.13** (3.14+ is NOT supported)
@@ -7,21 +13,21 @@
 - Docker (optional, for containerized setup)
 - A code repository to analyze
 
-## Method 1: Plugin Install
+## Method 1: Claude Code Plugin (Recommended)
 
-For Claude Code users, the plugin approach includes auto-build hooks and review skills.
+Plugin marketplace install runs the server in **pure stdio mode** with optional API key env vars. No daemon-bridge, no auto-spawn, no relay form. The graph is stored locally in SQLite -- no external graph database required.
 
 1. Open Claude Code
-2. Run the following commands:
+2. Install the plugin:
    ```bash
    /plugin marketplace add n24q02m/claude-plugins
    /plugin install better-code-review-graph@n24q02m-plugins
    ```
 3. The server starts automatically when Claude Code launches
-4. The SessionStart hook auto-builds the graph for the current project
-5. PostToolUse hook auto-updates the graph after file changes
+4. The SessionStart hook auto-builds the graph for the current project; PostToolUse updates it after edits
+5. **Optional**: set any of `GEMINI_API_KEY`, `OPENAI_API_KEY`, `JINA_AI_API_KEY`, `COHERE_API_KEY` in the plugin config to enable cloud embedding/reranking. Without keys, the server runs in pure local ONNX mode (Qwen3 embedding, ~570MB downloaded on first use).
 
-## Method 2: uvx Direct
+## Method 2: uvx Direct (Stdio)
 
 1. Add to your MCP client configuration file:
 
@@ -56,13 +62,27 @@ For Claude Code users, the plugin approach includes auto-build hooks and review 
    }
    ```
 
-2. Restart your MCP client
-3. Build the graph for your project:
+2. (Optional) add API keys via the `env` block:
+   ```json
+   {
+     "mcpServers": {
+       "better-code-review-graph": {
+         "command": "uvx",
+         "args": ["--python", "3.13", "better-code-review-graph"],
+         "env": {
+           "JINA_AI_API_KEY": "jina_..."
+         }
+       }
+     }
+   }
+   ```
+3. Restart your MCP client
+4. Build the graph for your project:
    ```
    graph(action="build", repo_path="/path/to/your/repo")
    ```
 
-## Method 3: Docker
+## Method 3: Docker (Stdio)
 
 1. Pull the image:
    ```bash
@@ -108,45 +128,85 @@ For Claude Code users, the plugin approach includes auto-build hooks and review 
    uv run better-code-review-graph
    ```
 
+## Why upgrade to HTTP mode?
+
+Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (Method 5) when you need any of the following:
+
+- **claude.ai web compatibility** -- claude.ai (the web UI) supports HTTP MCP servers but cannot spawn local stdio processes.
+- **One server shared across N Claude Code sessions** -- a single HTTP instance serves multiple terminals/IDEs without re-spawning per session.
+- **Browser-based API key setup** -- paste cloud-embedding keys into a guided form instead of editing JSON config files. No upstream OAuth (better-code-review-graph has no upstream identity provider; keys belong to Jina/Gemini/OpenAI/Cohere).
+- **Multi-device credential sync** -- configure once on your laptop, the same encrypted credential set works from your desktop / tablet without copying API keys.
+- **Multi-user team sharing** -- a self-hosted HTTP server can serve multiple developers, each with isolated per-user credentials (per-JWT-sub).
+- **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background work, scheduled agents, or long-running graph builds.
+
+## Method 5: Self-Hosting HTTP Mode
+
+Host your own multi-user server. Single multi-user mode (per-JWT-sub credential isolation). Users paste their cloud-embedding API keys via the relay form -- there is no upstream OAuth flow because the API keys belong to third-party providers (Jina, Gemini, OpenAI, Cohere), not to better-code-review-graph itself.
+
+### Required Env
+
+| Variable | Description |
+|:---------|:------------|
+| `TRANSPORT_MODE=http` | Selects HTTP transport. |
+| `PUBLIC_URL` | Public URL of your server (e.g. `https://your-domain.com`). |
+| `DCR_SERVER_SECRET` | HMAC secret for stateless Dynamic Client Registration. Generate via `openssl rand -hex 32`. |
+
+### Run the Server
+
+```bash
+docker run -p 8080:8080 \
+  -e TRANSPORT_MODE=http \
+  -e PUBLIC_URL=https://your-domain.com \
+  -e DCR_SERVER_SECRET=$(openssl rand -hex 32) \
+  n24q02m/better-code-review-graph:latest
+```
+
+Point clients to your server:
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "type": "http",
+      "url": "https://your-domain.com/mcp"
+    }
+  }
+}
+```
+
+On first connection, each user opens the relay form at `https://your-domain.com/authorize` and pastes their cloud-embedding API keys (all optional -- empty submission keeps the user on local ONNX). Credentials are encrypted per-JWT-sub and never shared between users.
+
 ## Credential Setup
 
-### Option A: Environment Variables (Recommended)
+All API keys are **optional**. The server works with local ONNX embeddings out of the box.
 
-Set API keys in your shell profile or MCP client settings:
+### Stdio Mode (Env Vars)
+
+Set API keys in your MCP client `env` block or shell profile:
 
 ```bash
 export JINA_AI_API_KEY="jina_..."
+export GEMINI_API_KEY="AIza..."
 ```
 
-When environment variables are set, the relay is skipped entirely.
+### HTTP Mode (Relay Form)
+
+Each user opens `https://<your-host>/authorize` in their browser, pastes API keys (or leaves empty), and submits. Credentials are encrypted per-JWT-sub and stored server-side.
 
 ## Environment Variable Reference
 
-| Variable | Default | Description |
-|:---------|:--------|:------------|
-| `JINA_AI_API_KEY` | -- | Jina AI: embedding + reranking (highest priority) |
-| `GEMINI_API_KEY` | -- | Gemini: embedding (free tier). Also accepts `GOOGLE_API_KEY` |
-| `OPENAI_API_KEY` | -- | OpenAI: embedding |
-| `COHERE_API_KEY` | -- | Cohere: embedding + reranking. Also accepts `CO_API_KEY` |
-| `EMBEDDING_BACKEND` | auto-detect | `cloud` or `local` (ONNX) |
-| `EMBEDDING_MODEL` | auto-detect | Cloud embedding model name |
-| `LOG_LEVEL` | `INFO` | Logging level |
-
-### Zero-Config Relay
-
-> **Recommended for new users.** The relay is the primary setup method -- no environment variables needed. Credentials are encrypted end-to-end and stored locally.
-
-No manual configuration needed. On first start:
-
-1. The server prints a setup URL to stderr
-2. Open the URL in any browser
-3. Fill in your API keys on the guided form:
-   - **Jina AI API Key** -- embedding + reranking ([get key](https://jina.ai/api-key))
-   - **Gemini API Key** -- embedding, free tier available ([get key](https://aistudio.google.com/apikey))
-   - **OpenAI API Key** -- embedding ([get key](https://platform.openai.com/api-keys))
-   - **Cohere API Key** -- embedding + reranking ([get key](https://dashboard.cohere.com/api-keys))
-4. All fields are optional -- leave empty for local ONNX mode
-5. Credentials are encrypted and stored at `~/.config/mcp/config.enc`
+| Variable | Required | Default | Description |
+|:---------|:---------|:--------|:------------|
+| `JINA_AI_API_KEY` | No | -- | Jina AI: embedding + reranking (highest priority) |
+| `GEMINI_API_KEY` | No | -- | Gemini: embedding (free tier). Also accepts `GOOGLE_API_KEY` |
+| `OPENAI_API_KEY` | No | -- | OpenAI: embedding |
+| `COHERE_API_KEY` | No | -- | Cohere: embedding + reranking. Also accepts `CO_API_KEY` |
+| `EMBEDDING_BACKEND` | No | auto-detect | `cloud` or `local` (ONNX) |
+| `EMBEDDING_MODEL` | No | auto-detect | Cloud embedding model name |
+| `TRANSPORT_MODE` | No | `stdio` | Set to `http` to enable HTTP transport (multi-user). |
+| `PUBLIC_URL` | Yes (http) | -- | Server's public URL for relay form. |
+| `DCR_SERVER_SECRET` | Yes (http) | -- | HMAC secret for stateless Dynamic Client Registration. |
+| `PORT` | No | `8080` | Server port (http mode only). |
+| `LOG_LEVEL` | No | `INFO` | Logging level |
 
 ### Embedding Provider Priority
 
@@ -194,7 +254,3 @@ Ensure the volume mount is correct. The repo path inside the container is `/repo
 ```bash
 docker run -i --rm -v "/absolute/path/to/repo:/repo:ro" n24q02m/better-code-review-graph:latest
 ```
-
-### Relay setup URL does not appear
-
-The relay URL only appears when no API keys are set in environment. To force relay setup, unset all API key variables first.
