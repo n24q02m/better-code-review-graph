@@ -77,7 +77,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.13.0b7"
+version = "3.13.0b9"
 source = { editable = "." }
 dependencies = [
     { name = "cohere" },
@@ -114,7 +114,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.74.0" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.0,<2" },
-    { name = "n24q02m-mcp-core", specifier = ">=1.13.0b4,<2" },
+    { name = "n24q02m-mcp-core", specifier = ">=1.13.0b7,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.33.0" },
     { name = "pydantic-settings" },
@@ -879,7 +879,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.13.0b5"
+version = "1.13.0b7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -893,9 +893,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/5a/34fb2a2494e9d00edd041a1054bb814eb9ed76da8868d3b21c9d98803187/n24q02m_mcp_core-1.13.0b5.tar.gz", hash = "sha256:467b3eabbfb8c2a87262288ef3eed35c11f635b4b37ea0de79237bb450cec8eb", size = 185546, upload-time = "2026-05-02T06:52:04.834Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/46/e60f6a535043caf93df0ba91086bc613ce8205b4776508b3d0972f972f1e/n24q02m_mcp_core-1.13.0b7.tar.gz", hash = "sha256:5b39457b638f19a463ddae388b8d2e8767e78a33fcf424383730e3043e6e4c38", size = 188748, upload-time = "2026-05-03T12:08:07.455Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/64/b7cfff730a47b9520d7a8cbe39f8362cbe517c06828639fd0e0331f3c246/n24q02m_mcp_core-1.13.0b5-py3-none-any.whl", hash = "sha256:db0d395aefdb5c5d6599bf93f90da9c21c225c36c10f84703a5357a4fce018d7", size = 118638, upload-time = "2026-05-02T06:52:06.14Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/2a/250105b2bef539a91968f60a4493c52be970e9179b7380d6897734831c51/n24q02m_mcp_core-1.13.0b7-py3-none-any.whl", hash = "sha256:06b74ddf4f1847b81665487ca69e463b13b73214fa79d9800a12af571d1b1d9c", size = 121709, upload-time = "2026-05-03T12:08:05.608Z" },
 ]
 
 [[package]]
