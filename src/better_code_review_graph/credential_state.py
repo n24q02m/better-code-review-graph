@@ -19,6 +19,7 @@ trust model alignment per spec 2026-04-30-trust-model-alignment.md.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import sys
@@ -51,6 +52,17 @@ class CredentialState(Enum):
 # Module-level state
 _state: CredentialState = CredentialState.AWAITING_SETUP
 _setup_url: str | None = None
+
+# Per-request JWT ``sub`` (HTTP multi-user mode).
+#
+# Set by the ``auth_scope`` middleware in ``run_http_server`` AFTER mcp-core
+# verifies the bearer JWT. Per-tool-call handlers consume this via
+# :func:`credentials_for_current_request` to look up the correct
+# per-sub credential bucket so concurrent users do not see each other's
+# API keys. ``None`` in stdio mode and any non-HTTP context.
+_current_sub: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "crg_current_sub", default=None
+)
 
 
 def get_state() -> CredentialState:
@@ -167,6 +179,41 @@ def read_for_sub(sub: str) -> dict[str, str]:
     """Read a sub's credential config; returns ``{}`` if absent."""
     p = _sub_data_dir(sub) / "config.json"
     return json.loads(p.read_text()) if p.exists() else {}
+
+
+def set_current_sub(sub: str | None) -> None:
+    """Set the JWT ``sub`` for the current request (HTTP multi-user mode).
+
+    Called by the ``auth_scope`` middleware in :func:`run_http` so per-tool-call
+    handlers can resolve credentials for the right user via
+    :func:`credentials_for_current_request`. Pass ``None`` to clear.
+    """
+    _current_sub.set(sub)
+
+
+def get_current_sub() -> str | None:
+    """Return the JWT ``sub`` set by the current HTTP request, if any."""
+    return _current_sub.get()
+
+
+def credentials_for_current_request() -> dict[str, str]:
+    """Return cloud API key dict applicable to the current request.
+
+    HTTP multi-user mode: ``auth_scope`` middleware sets ``_current_sub``
+    from the verified JWT before the tool handler runs. We look up that
+    user's per-sub bucket (``<CRG_DATA_DIR>/subs/<sub>/config.json``) and
+    return its contents. Empty dict if the user has not completed setup.
+
+    Stdio / single-user HTTP / no-JWT contexts: ``_current_sub`` is ``None``
+    so we fall back to the process environment, returning only ``CLOUD_KEYS``
+    that are set. Existing call sites that read ``os.environ.get(...)``
+    directly continue to work unchanged; this helper exists for future
+    HTTP-multi-user-aware code paths.
+    """
+    sub = _current_sub.get()
+    if sub is None:
+        return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
+    return read_for_sub(sub)
 
 
 def save_credentials(

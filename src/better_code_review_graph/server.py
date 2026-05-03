@@ -711,7 +711,7 @@ async def run_http(port: int = 0) -> None:
     """
     from mcp_core.transport.local_server import run_http_server
 
-    from .credential_state import save_credentials
+    from .credential_state import _current_sub, save_credentials
     from .relay_schema import RELAY_SCHEMA
 
     public_url = os.environ.get("PUBLIC_URL")
@@ -728,6 +728,19 @@ async def run_http(port: int = 0) -> None:
     else:
         host = "127.0.0.1"
 
+    async def _per_request_sub_scope(claims: dict, next_):
+        """Bind the verified JWT ``sub`` to a contextvar for this request.
+
+        Mounted only when ``PUBLIC_URL`` is set (multi-user remote mode).
+        ``ContextVar.set/reset`` keeps the binding scoped to this request
+        even under concurrent in-flight requests on the same event loop.
+        """
+        token = _current_sub.set(claims.get("sub"))
+        try:
+            await next_()
+        finally:
+            _current_sub.reset(token)
+
     await run_http_server(
         mcp,
         server_name="better-code-review-graph",
@@ -735,6 +748,7 @@ async def run_http(port: int = 0) -> None:
         port=port,
         host=host,
         on_credentials_saved=save_credentials,
+        auth_scope=_per_request_sub_scope if public_url else None,
     )
 
 
