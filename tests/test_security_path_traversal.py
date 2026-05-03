@@ -1,28 +1,41 @@
 import os
-import unittest
-from pathlib import Path
-import tempfile
 import shutil
 
 # To allow testing locally in constrained sandbox environments,
 # we mock the mcp_core modules before importing credential_state
 import sys
+import tempfile
 import types
-if 'mcp_core' not in sys.modules:
-    mcp_core = types.ModuleType('mcp_core')
-    mcp_core.storage = types.ModuleType('mcp_core.storage')
-    mcp_core.storage.per_plugin_store = types.ModuleType('mcp_core.storage.per_plugin_store')
+import unittest
+from pathlib import Path
+
+if "mcp_core" not in sys.modules:
+    mcp_core = types.ModuleType("mcp_core")
+    mcp_core.storage = types.ModuleType("mcp_core.storage")
+    mcp_core.storage.per_plugin_store = types.ModuleType(
+        "mcp_core.storage.per_plugin_store"
+    )
+
     class MockStore:
-        def __init__(self, *args, **kwargs): pass
-        def load(self): return {}
-        def save(self, config): pass
-        def clear(self): pass
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def load(self):
+            return {}
+
+        def save(self, config):
+            pass
+
+        def clear(self):
+            pass
+
     mcp_core.storage.per_plugin_store.PerPluginStore = MockStore
-    sys.modules['mcp_core'] = mcp_core
-    sys.modules['mcp_core.storage'] = mcp_core.storage
-    sys.modules['mcp_core.storage.per_plugin_store'] = mcp_core.storage.per_plugin_store
+    sys.modules["mcp_core"] = mcp_core
+    sys.modules["mcp_core.storage"] = mcp_core.storage
+    sys.modules["mcp_core.storage.per_plugin_store"] = mcp_core.storage.per_plugin_store
 
 from better_code_review_graph.credential_state import _sub_data_dir
+
 
 class TestSecurityPathTraversal(unittest.TestCase):
     def setUp(self):
@@ -57,11 +70,14 @@ class TestSecurityPathTraversal(unittest.TestCase):
         with self.assertRaises(ValueError) as context:
             _sub_data_dir(malicious_sub)
 
-        self.assertIn("Invalid sub path (path traversal detected)", str(context.exception))
+        self.assertIn(
+            "Invalid sub path (path traversal detected)", str(context.exception)
+        )
 
         # Try an absolute path
         with self.assertRaises(ValueError):
             _sub_data_dir("/etc/passwd")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()
