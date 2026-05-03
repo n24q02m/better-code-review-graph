@@ -671,9 +671,15 @@ class GraphStore:
             if self._nxg_cache is not None:
                 return self._nxg_cache
             g: nx.DiGraph = nx.DiGraph()
-            rows = self._conn.execute("SELECT * FROM edges").fetchall()
-            for r in rows:
-                g.add_edge(r["source_qualified"], r["target_qualified"], kind=r["kind"])
+            # Bolt: Optimized to fetch only necessary columns and use generator expression
+            # with add_edges_from instead of multiple add_edge calls in a Python loop.
+            rows = self._conn.execute(
+                "SELECT source_qualified, target_qualified, kind FROM edges"
+            ).fetchall()
+            g.add_edges_from(
+                (r["source_qualified"], r["target_qualified"], {"kind": r["kind"]})
+                for r in rows
+            )
             self._nxg_cache = g
             return g
 
