@@ -892,9 +892,13 @@ def _compute_untested_functions(
     are flagged untested simply because tests live in JS/TS or in
     integration test fixtures.
     """
-    test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
-    tested_qns = {e.source_qualified for e in test_edges}
-    tested_qns |= {e.target_qualified for e in test_edges}
+    # Bolt Optimization: Single-pass iteration to collect tested_qns
+    # Prevents N+1 list comprehensions and avoids allocating intermediate collections
+    tested_qns = set()
+    for e in impact["edges"]:
+        if e.kind == "TESTED_BY":
+            tested_qns.add(e.source_qualified)
+            tested_qns.add(e.target_qualified)
 
     out: list[dict[str, Any]] = []
     for n in impact["changed_nodes"]:

@@ -72,3 +72,4 @@ docs/superpowers/
 .Jules/
 .superpower/
 clean.ps1
+test_venv
