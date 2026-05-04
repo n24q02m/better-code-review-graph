@@ -6,6 +6,15 @@
 > 1. Set the env var directly in plugin config (Method 1), OR
 > 2. Switch to HTTP mode (Method 5) for browser-based setup.
 
+## Method overview
+
+This plugin supports **1 install method only**: stdio via plugin install (`uvx`/`npx`). Reason: the plugin needs direct host access to your project files (Godot project / repo path) and doesn't ship Docker or HTTP variants.
+
+For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-email-mcp`, `better-telegram-mcp`, `wet-mcp`, `mnemo-mcp`, `imagine-mcp`) support 3 methods:
+1. **Default** -- Plugin install (`uvx`/`npx`) stdio
+2. **Fallback** -- Docker stdio (Windows/macOS PATH issues)
+3. **Recommended** -- Docker HTTP (multi-device, OAuth/relay form, claude.ai web)
+
 ## Prerequisites
 
 - **Python 3.13** (3.14+ is NOT supported)
