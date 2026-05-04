@@ -2,6 +2,15 @@
   "name": "better-code-review-graph",
   "description": "Persistent incremental knowledge graph for token-efficient code reviews",
   "version": "3.13.0",
+  "userConfig": {
+    "JINA_AI_API_KEY": {
+      "type": "string",
+      "title": "Jina AI API key (optional)",
+      "description": "Optional cloud reranker. Without it, server uses local ONNX. https://jina.ai/api-dashboard/",
+      "sensitive": true,
+      "required": false
+    }
+  },
   "author": {
     "name": "n24q02m",
     "url": "https://github.com/n24q02m"
@@ -16,7 +25,8 @@
         "better-code-review-graph"
       ],
       "env": {
-        "MCP_TRANSPORT": "stdio"
+        "MCP_TRANSPORT": "stdio",
+        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}"
       }
     }
   }

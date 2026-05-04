@@ -26,15 +26,28 @@ For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-
 
 Plugin marketplace install runs the server in **pure stdio mode** with optional API key env vars. No daemon-bridge, no auto-spawn, no relay form. The graph is stored locally in SQLite -- no external graph database required.
 
-1. Open Claude Code
-2. Install the plugin:
+### Step 0: Credential prompt
+
+When you run `/plugin install better-code-review-graph@n24q02m-plugins`, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+
+| Field | Required | Sensitive | Notes |
+|:------|:---------|:----------|:------|
+| `JINA_AI_API_KEY` | No | Yes | Optional cloud reranker. Without it, the server uses local ONNX (Qwen3, ~570MB downloaded on first use). https://jina.ai/api-dashboard/ |
+
+Press Enter to skip; the server runs entirely with local ONNX. The sensitive value is stored in the system keychain (or `~/.claude/.credentials.json` fallback) and persists across `/plugin update`. Claude Code substitutes the value into `mcpServers.better-code-review-graph.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` -- you do not edit `env` manually.
+
+> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `EMBEDDING_BACKEND`, etc.) are not part of the install prompt; if you need them, add them manually to `mcpServers.better-code-review-graph.env` in your settings.
+
+### Steps
+
+1. Open Claude Code.
+2. Install the plugin (Claude Code prompts for `JINA_AI_API_KEY` -- press Enter to skip):
    ```bash
    /plugin marketplace add n24q02m/claude-plugins
    /plugin install better-code-review-graph@n24q02m-plugins
    ```
-3. The server starts automatically when Claude Code launches
-4. The SessionStart hook auto-builds the graph for the current project; PostToolUse updates it after edits
-5. **Optional**: set any of `GEMINI_API_KEY`, `OPENAI_API_KEY`, `JINA_AI_API_KEY`, `COHERE_API_KEY` in the plugin config to enable cloud embedding/reranking. Without keys, the server runs in pure local ONNX mode (Qwen3 embedding, ~570MB downloaded on first use).
+3. The server starts automatically when Claude Code launches.
+4. The SessionStart hook auto-builds the graph for the current project; PostToolUse updates it after edits.
 
 ## Credential Setup
 

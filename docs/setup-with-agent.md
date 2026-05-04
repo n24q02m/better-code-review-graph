@@ -21,6 +21,18 @@ For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-
 
 Plugin marketplace install runs the server in **pure stdio mode** with optional API key env vars. No daemon-bridge, no auto-spawn, no relay form. Graph storage is local SQLite -- no external graph database required.
 
+### Step 0: Credential prompt
+
+When the install command runs, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+
+| Field | Required | Sensitive | Source |
+|:------|:---------|:----------|:-------|
+| `JINA_AI_API_KEY` | No | Yes | https://jina.ai/api-dashboard/ |
+
+Press Enter to skip; the server falls back to local ONNX. The plugin manifest substitutes the value into `mcpServers.better-code-review-graph.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` and stores the sensitive value in the system keychain (persists across `/plugin update`). You do not edit `env` manually.
+
+### Steps
+
 ```bash
 # Install from marketplace (includes skills: /refactor-check, /review-delta, /review-pr + hooks)
 /plugin marketplace add n24q02m/claude-plugins
@@ -29,7 +41,7 @@ Plugin marketplace install runs the server in **pure stdio mode** with optional 
 
 The plugin includes SessionStart and PostToolUse hooks that auto-build and auto-update the code graph.
 
-**Optional**: set any of `GEMINI_API_KEY`, `OPENAI_API_KEY`, `JINA_AI_API_KEY`, `COHERE_API_KEY` in the plugin config to enable cloud embedding/reranking. Without keys, the server runs in pure local ONNX mode (Qwen3 embedding, ~570MB downloaded on first use).
+> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `EMBEDDING_BACKEND`, etc.) are not part of the `userConfig` prompt; add them manually to `mcpServers.better-code-review-graph.env` in your settings if needed.
 
 ## Environment Variables
 
