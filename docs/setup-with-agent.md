@@ -6,7 +6,7 @@
 > The previous "Zero-Config Relay" auto-spawn pattern has been removed.
 > If you relied on the relay form to enter API keys, please:
 > 1. Set the env var directly in plugin config (Option 1), OR
-> 2. Switch to HTTP mode (Option 4) for browser-based setup.
+> 2. Use HTTP self-host mode (advanced; out of scope of this guide).
 
 ## Method overview
 
@@ -30,143 +30,6 @@ Plugin marketplace install runs the server in **pure stdio mode** with optional 
 The plugin includes SessionStart and PostToolUse hooks that auto-build and auto-update the code graph.
 
 **Optional**: set any of `GEMINI_API_KEY`, `OPENAI_API_KEY`, `JINA_AI_API_KEY`, `COHERE_API_KEY` in the plugin config to enable cloud embedding/reranking. Without keys, the server runs in pure local ONNX mode (Qwen3 embedding, ~570MB downloaded on first use).
-
-## Option 2: MCP Direct (Stdio + uvx)
-
-**Python 3.13 required** -- Python 3.14+ is NOT supported.
-
-### Claude Code (settings.json)
-
-Add to `~/.claude/settings.local.json` under `"mcpServers"`:
-
-```json
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
-    }
-  }
-}
-```
-
-To enable cloud embedding, add an `env` block with any subset of API keys:
-
-```json
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"],
-      "env": {
-        "JINA_AI_API_KEY": "jina_..."
-      }
-    }
-  }
-}
-```
-
-### Codex CLI (config.toml)
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.better-code-review-graph]
-command = "uvx"
-args = ["--python", "3.13", "better-code-review-graph"]
-```
-
-### OpenCode (opencode.json)
-
-Add to `opencode.json` in the project root:
-
-```json
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "uvx",
-      "args": ["--python", "3.13", "better-code-review-graph"]
-    }
-  }
-}
-```
-
-## Option 3: Docker (Stdio)
-
-```bash
-docker run -i --rm \
-  -v ".:/repo:ro" \
-  n24q02m/better-code-review-graph:latest
-```
-
-Or as an MCP server config:
-
-```json
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-v", ".:/repo:ro", "n24q02m/better-code-review-graph:latest"]
-    }
-  }
-}
-```
-
-Note: The `-v ".:/repo:ro"` mount gives the server read-only access to the current directory for graph building.
-
-## Why upgrade to HTTP mode?
-
-Stdio is the default and works fine for single-user local setups. You may want to switch to HTTP mode (Option 4) when you need any of the following:
-
-- **claude.ai web compatibility** -- claude.ai (the web UI) supports HTTP MCP servers but cannot spawn local stdio processes.
-- **One server shared across N Claude Code sessions** -- a single HTTP instance serves multiple terminals/IDEs without re-spawning per session.
-- **Browser-based API key setup** -- paste cloud-embedding keys into a guided form instead of editing JSON config files. No upstream OAuth (better-code-review-graph has no upstream identity provider; keys belong to Jina/Gemini/OpenAI/Cohere).
-- **Multi-device credential sync** -- configure once on your laptop, the same encrypted credential set works from your desktop / tablet without copying API keys.
-- **Multi-user team sharing** -- a self-hosted HTTP server can serve multiple developers, each with isolated per-user credentials (per-JWT-sub).
-- **Always-on persistent process for webhooks/agents** -- HTTP servers stay alive between sessions, enabling background work, scheduled agents, or long-running graph builds.
-
-## Option 4: HTTP Self-Host (Multi-User)
-
-Host your own HTTP server with paste-token relay form per user. See [setup-manual.md](setup-manual.md) "Method 5: Self-Hosting HTTP Mode" for full instructions.
-
-Quick start:
-
-```bash
-docker run -p 8080:8080 \
-  -e TRANSPORT_MODE=http \
-  -e PUBLIC_URL=https://your-domain.com \
-  -e DCR_SERVER_SECRET=$(openssl rand -hex 32) \
-  n24q02m/better-code-review-graph:latest
-```
-
-Client config:
-
-```json
-{
-  "mcpServers": {
-    "better-code-review-graph": {
-      "type": "http",
-      "url": "https://your-domain.com/mcp"
-    }
-  }
-}
-```
-
-Each user opens `https://your-domain.com/authorize` once, pastes API keys (or leaves empty for local ONNX), and submits. Credentials are encrypted per-JWT-sub.
-
-### Edge auth: relay password
-
-Public HTTP deployments expose `<your-domain>/authorize` to URL discovery. To prevent random Internet users from accessing the relay form, mint a relay password:
-
-```bash
-openssl rand -hex 32
-# Save in your skret / .env as:
-MCP_RELAY_PASSWORD=<generated-32-byte-hex>
-```
-
-Share this password out-of-band (Signal/email/SMS) with anyone you invite to use your server. They will see a login form when first opening `/authorize`; once logged in, the cookie persists 24 hours.
-
-**Single-user dev exception**: If `PUBLIC_URL=http://localhost:8080`, you can leave `MCP_RELAY_PASSWORD` empty to disable the gate. The server logs a warning if you skip the password with a non-localhost `PUBLIC_URL`.
 
 ## Environment Variables
 
@@ -208,10 +71,6 @@ All environment variables are **optional**. The server works with local ONNX emb
 ### Stdio Mode (Env Vars)
 
 Set API keys directly via env vars (or leave unset for local ONNX). No relay form, no browser flow.
-
-### HTTP Mode (Relay Form)
-
-Each user opens `https://<your-host>/authorize` in their browser, pastes any subset of API keys, and submits. All fields are optional -- empty submission keeps the user on local ONNX. Credentials are encrypted per-JWT-sub and never shared between users.
 
 ## Verification
 
