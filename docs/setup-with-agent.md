@@ -21,15 +21,16 @@ For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-
 
 Plugin marketplace install runs the server in **pure stdio mode** with optional API key env vars. No daemon-bridge, no auto-spawn, no relay form. Graph storage is local SQLite -- no external graph database required.
 
-### Step 0: Credential prompt
+### Credential prompts at install
 
-When the install command runs, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+When you run `/plugin install`, Claude Code prompts you for the following credentials (declared in `userConfig` per CC docs). Sensitive values are stored in your system keychain and persist across `/plugin update`:
 
-| Field | Required | Sensitive | Source |
-|:------|:---------|:----------|:-------|
-| `JINA_AI_API_KEY` | No | Yes | https://jina.ai/api-dashboard/ |
-
-Press Enter to skip; the server falls back to local ONNX. The plugin manifest substitutes the value into `mcpServers.better-code-review-graph.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` and stores the sensitive value in the system keychain (persists across `/plugin update`). You do not edit `env` manually.
+| Field | Required | Where to obtain |
+|---|---|---|
+| `JINA_AI_API_KEY` | Optional | https://jina.ai/api-key |
+| `GEMINI_API_KEY` | Optional | https://aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | Optional | https://platform.openai.com/api-keys |
+| `COHERE_API_KEY` | Optional | https://dashboard.cohere.com/api-keys |
 
 ### Steps
 
