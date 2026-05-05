@@ -26,17 +26,16 @@ For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-
 
 Plugin marketplace install runs the server in **pure stdio mode** with optional API key env vars. No daemon-bridge, no auto-spawn, no relay form. The graph is stored locally in SQLite -- no external graph database required.
 
-### Step 0: Credential prompt
+### Credential prompts at install
 
-When you run `/plugin install better-code-review-graph@n24q02m-plugins`, Claude Code prompts for the optional field declared in `plugin.json` `userConfig`:
+When you run `/plugin install`, Claude Code prompts you for the following credentials (declared in `userConfig` per CC docs). Sensitive values are stored in your system keychain and persist across `/plugin update`:
 
-| Field | Required | Sensitive | Notes |
-|:------|:---------|:----------|:------|
-| `JINA_AI_API_KEY` | No | Yes | Optional cloud reranker. Without it, the server uses local ONNX (Qwen3, ~570MB downloaded on first use). https://jina.ai/api-dashboard/ |
-
-Press Enter to skip; the server runs entirely with local ONNX. The sensitive value is stored in the system keychain (or `~/.claude/.credentials.json` fallback) and persists across `/plugin update`. Claude Code substitutes the value into `mcpServers.better-code-review-graph.env.JINA_AI_API_KEY` via `${user_config.JINA_AI_API_KEY}` -- you do not edit `env` manually.
-
-> Other optional env vars (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`, `EMBEDDING_BACKEND`, etc.) are not part of the install prompt; if you need them, add them manually to `mcpServers.better-code-review-graph.env` in your settings.
+| Field | Required | Where to obtain |
+|---|---|---|
+| `JINA_AI_API_KEY` | Optional | https://jina.ai/api-key |
+| `GEMINI_API_KEY` | Optional | https://aistudio.google.com/apikey |
+| `OPENAI_API_KEY` | Optional | https://platform.openai.com/api-keys |
+| `COHERE_API_KEY` | Optional | https://dashboard.cohere.com/api-keys |
 
 ### Steps
 
