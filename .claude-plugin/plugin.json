@@ -9,6 +9,27 @@
       "description": "Optional cloud reranker. Without it, server uses local ONNX. https://jina.ai/api-dashboard/",
       "sensitive": true,
       "required": false
+    },
+    "GEMINI_API_KEY": {
+      "type": "string",
+      "title": "Gemini API key (optional)",
+      "description": "Optional cloud embedding fallback. Free tier available. https://aistudio.google.com/apikey",
+      "sensitive": true,
+      "required": false
+    },
+    "OPENAI_API_KEY": {
+      "type": "string",
+      "title": "OpenAI API key (optional)",
+      "description": "Optional cloud embedding fallback. https://platform.openai.com/api-keys",
+      "sensitive": true,
+      "required": false
+    },
+    "COHERE_API_KEY": {
+      "type": "string",
+      "title": "Cohere API key (optional)",
+      "description": "Optional cloud embedding + reranking fallback. https://dashboard.cohere.com/api-keys",
+      "sensitive": true,
+      "required": false
     }
   },
   "author": {
@@ -26,7 +47,10 @@
       ],
       "env": {
         "MCP_TRANSPORT": "stdio",
-        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}"
+        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
+        "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",
+        "OPENAI_API_KEY": "${user_config.OPENAI_API_KEY}",
+        "COHERE_API_KEY": "${user_config.COHERE_API_KEY}"
       }
     }
   }
