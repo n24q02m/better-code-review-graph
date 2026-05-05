@@ -15,6 +15,8 @@ For comparison, the other 6 plugins in this stack (`better-notion-mcp`, `better-
 2. **Fallback** -- Docker stdio (Windows/macOS PATH issues)
 3. **Recommended** -- Docker HTTP (multi-device, OAuth/relay form, claude.ai web)
 
+> **⚠️ Mutually exclusive — pick ONE per plugin (applies to those 6 plugins, not crg)**: For the 6 plugins above that offer Method 2 (Docker stdio) or Method 3 (HTTP), do NOT stack `/plugin install` AND a user `mcpServers` override — both would load simultaneously and create duplicate entries (plugin's `npx`/`uvx` stdio + your override). Plugin matching is by **endpoint** (URL or command string) per CC docs, not by name — and `npx`/`uvx` ≠ `docker` ≠ HTTP URL, so all three are distinct endpoints. Choosing Method 2 or Method 3 means losing the plugin's skills/agents/hooks/commands. `better-code-review-graph` only offers Method 1, so this note is informational only — there is no Docker stdio or HTTP variant to conflict with the plugin install here.
+
 ## Prerequisites
 
 - **Python 3.13** (3.14+ is NOT supported)
