@@ -160,7 +160,12 @@ def _sub_data_dir(sub: str) -> Path:
     state never leak across users sharing the same deployment.
     """
     base = Path(os.environ.get("CRG_DATA_DIR", str(Path.home() / ".crg")))
-    d = base / "subs" / sub
+    subs_base = (base / "subs").resolve()
+
+    d = (base / "subs" / sub).resolve()
+    if not d.is_relative_to(subs_base):
+        raise ValueError(f"Invalid subject (path traversal detected): {sub}")
+
     d.mkdir(parents=True, exist_ok=True)
     return d
 
