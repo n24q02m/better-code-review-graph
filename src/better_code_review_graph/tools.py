@@ -1288,20 +1288,56 @@ def renamed_in_diff(
 
 
 def _filter_valid_paths(root: Path, changed_files: list[str]) -> list[str]:
-    """Resolve and filter paths for safety and validity."""
+    """Resolve and filter paths for safety and validity.
+
+    Uses a dual-cache system to minimize OS-level I/O while preserving original
+    symlink handling logic.
+    """
     abs_files = []
     root_resolved = root.resolve()
+
+    result_cache: dict[str, str | None] = {}
+    parent_cache: dict[Path, Path | None] = {}
+
     for f in changed_files:
+        if f in result_cache:
+            res = result_cache[f]
+            if res is not None:
+                abs_files.append(res)
+            continue
+
         full_path_raw = root / f
         try:
-            full_path = full_path_raw.resolve()
+            parent_raw = full_path_raw.parent
+            if parent_raw not in parent_cache:
+                try:
+                    parent_cache[parent_raw] = parent_raw.resolve(strict=True)
+                except OSError:
+                    # Parent directory might not exist yet if it's a deleted file,
+                    # fallback to resolving the full path.
+                    parent_cache[parent_raw] = None
+
+            parent_resolved = parent_cache[parent_raw]
+            if parent_resolved:
+                full_path = parent_resolved / full_path_raw.name
+            else:
+                full_path = full_path_raw.resolve()
+
             if not full_path.is_relative_to(root_resolved):
+                result_cache[f] = None
                 continue
+
             if full_path_raw.is_symlink() or full_path.is_symlink():
+                result_cache[f] = None
                 continue
-            abs_files.append(str(full_path))
+
+            res_str = str(full_path)
+            result_cache[f] = res_str
+            abs_files.append(res_str)
         except (OSError, ValueError):
+            result_cache[f] = None
             continue
+
     return abs_files
 
 
