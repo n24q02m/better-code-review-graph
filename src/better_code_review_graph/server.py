@@ -637,12 +637,16 @@ def help(topic: str = "graph") -> str:
     - query: Query operations (query, search, impact, large_functions)
     - review: Code review context generation
     - config: Server configuration (status, set, cache_clear)
+    - recipes: Common operational recipes (#319) -- workflow patterns
+      that combine the 5 tools (freshness check, blast radius, scope
+      completeness, pre-merge review, etc.)
     """
     valid_topics = {
         "graph": "graph.md",
         "query": "query.md",
         "review": "review.md",
         "config": "config.md",
+        "recipes": "recipes.md",
     }
     filename = valid_topics.get(topic)
     if not filename:
