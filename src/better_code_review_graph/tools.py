@@ -209,6 +209,57 @@ _BUILTIN_CALL_NAMES: set[str] = {
 }
 
 
+def _build_response_header(
+    store: GraphStore | None,
+    db_path: Path | None,
+    *,
+    keyword_only: bool | None = None,
+) -> dict[str, Any]:
+    """Build a metadata header for ``search`` / ``query`` responses (#330).
+
+    Surfaces ``embeddings_count`` and the derived ``keyword_only`` flag so
+    consumers know whether the results came from semantic-similarity search
+    (``embeddings_count > 0``) or keyword-substring fallback. Plus
+    ``graph_last_updated`` when available. Errors are swallowed and the
+    relevant fields fall back to ``None`` -- the header is best-effort
+    metadata, never load-bearing for query correctness.
+
+    Args:
+        store: Open ``GraphStore`` (used for ``last_updated`` metadata).
+        db_path: Path to the graph DB (used to open an EmbeddingStore).
+        keyword_only: Optional explicit override (e.g. ``search`` already
+            knows whether it ran semantic vs keyword). When ``None`` the
+            flag is derived from ``embeddings_count``.
+    """
+    emb_count: int | None = None
+    if db_path is not None:
+        try:
+            backend = init_backend()
+            emb_store = EmbeddingStore(db_path, backend)
+            try:
+                emb_count = emb_store.count()
+            finally:
+                emb_store.close()
+        except Exception:
+            emb_count = None
+
+    last_updated: str | None = None
+    if store is not None:
+        try:
+            last_updated = store.get_metadata("last_updated")
+        except Exception:
+            last_updated = None
+
+    if keyword_only is None:
+        keyword_only = (emb_count is None) or (emb_count == 0)
+
+    return {
+        "embeddings_count": emb_count if emb_count is not None else 0,
+        "keyword_only": bool(keyword_only),
+        "graph_last_updated": last_updated,
+    }
+
+
 def _validate_repo_root(path: Path) -> Path:
     """Validate that a path is a plausible project root.
 
@@ -785,6 +836,7 @@ def query_graph(
             "target": target,
             "description": _QUERY_PATTERNS[pattern],
             "summary": f"Found {len(results)} result(s) for {pattern}('{target}')",
+            "header": _build_response_header(store, get_db_path(root)),
             "results": results,
             "edges": edges_out,
         }
@@ -1149,6 +1201,9 @@ def semantic_search_nodes(
                     "search_mode": search_mode,
                     "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
                     + (f" (kind={kind})" if kind else ""),
+                    "header": _build_response_header(
+                        store, db_path, keyword_only=False
+                    ),
                     "results": raw,
                 }
         finally:
@@ -1178,6 +1233,7 @@ def semantic_search_nodes(
             "search_mode": search_mode,
             "summary": f"Found {len(results)} node(s) matching '{query}'"
             + (f" (kind={kind})" if kind else ""),
+            "header": _build_response_header(store, db_path, keyword_only=True),
             "results": [node_to_dict(r) for r in results],
         }
     finally:
