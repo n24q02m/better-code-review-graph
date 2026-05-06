@@ -685,6 +685,92 @@ def _resolve_query_target(
     return node, node.qualified_name, None
 
 
+# #331: dynamic-dispatch patterns the AST `CALLS` edge does not capture.
+# When a `callers_of`/`callees_of` query targets a Function, scan the same-
+# file references for these patterns so consumers know the AST answer is a
+# lower bound, not exhaustive.
+_DYNAMIC_DISPATCH_PATTERNS_PYTHON: tuple[tuple[str, str], ...] = (
+    ("asyncio.to_thread", "asyncio.to_thread("),
+    ("asyncio.ensure_future", "asyncio.ensure_future("),
+    ("asyncio.create_task", "asyncio.create_task("),
+    ("functools.partial", "functools.partial("),
+    ("partial", "partial("),
+    ("map", "map("),
+    ("filter", "filter("),
+    ("getattr-call", "getattr("),
+)
+
+_DYNAMIC_DISPATCH_PATTERNS_JS_TS: tuple[tuple[str, str], ...] = (
+    (".bind", ".bind("),
+    ("setTimeout", "setTimeout("),
+    ("setInterval", "setInterval("),
+)
+
+
+def _scan_dynamic_dispatch_hints(
+    store: Any,
+    node: Any,
+    target_name: str,
+) -> list[dict[str, Any]]:
+    """Scan files in the graph that mention the target name via known
+    dynamic-dispatch patterns (#331).
+
+    Best-effort textual scan of the same file as the target plus any file
+    in the graph that imports it. Returns a list of ``{file, line,
+    pattern, context}`` hits suitable for surfacing in the
+    ``dynamic_dispatch_hints`` field of the ``callers_of`` response.
+    """
+    if node is None or not target_name:
+        return []
+    language = (getattr(node, "language", "") or "").lower()
+    if language == "python":
+        patterns = _DYNAMIC_DISPATCH_PATTERNS_PYTHON
+    elif language in ("javascript", "typescript"):
+        patterns = _DYNAMIC_DISPATCH_PATTERNS_JS_TS
+    else:
+        # Heuristic only implemented for Python + JS/TS today; other
+        # languages return empty rather than guessing.
+        return []
+
+    target_file = node.file_path
+    candidate_files: set[str] = {target_file}
+    # Add same-package siblings that the graph already indexed as files that
+    # import the target's file -- those are the most likely sites for
+    # asyncio.to_thread(<target>) / functools.partial(<target>).
+    try:
+        for e in store.get_edges_by_target(target_file):  # type: ignore[attr-defined]
+            if e.kind == "IMPORTS_FROM":
+                candidate_files.add(e.file_path)
+    except Exception:
+        pass
+
+    hits: list[dict[str, Any]] = []
+    for fp in candidate_files:
+        try:
+            text = Path(fp).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if target_name not in line:
+                continue
+            for label, marker in patterns:
+                if marker in line and target_name in line:
+                    # Avoid trivially flagging the function's own def line.
+                    stripped = line.lstrip()
+                    if stripped.startswith(("def ", "async def ", "class ")):
+                        continue
+                    hits.append(
+                        {
+                            "file": fp,
+                            "line": line_no,
+                            "pattern": label,
+                            "context": line.strip()[:160],
+                        }
+                    )
+                    break  # one hit per line is enough
+    return hits
+
+
 def _handle_callers_of(
     store: Any, node: Any, qn: str, results: list[dict], edges_out: list[dict]
 ) -> None:
@@ -940,6 +1026,23 @@ def query_graph(
                 f"Bare name '{target}' was auto-resolved to "
                 f"{promoted[0]}. Pass the qualified form to disambiguate."
             )
+
+        # #331: dynamic-dispatch blind-spot warning for callers_of /
+        # callees_of. Surfaces same-file references via patterns
+        # (asyncio.to_thread, functools.partial, decorator, etc.) that
+        # the AST CALLS edge does not capture.
+        if pattern in ("callers_of", "callees_of") and node is not None:
+            hits = _scan_dynamic_dispatch_hints(store, node, node.name)
+            if hits:
+                response["dynamic_dispatch_hints"] = {
+                    "target_file": node.file_path,
+                    "same_file_references": hits[:50],
+                    "note": (
+                        "These are likely additional callers the AST "
+                        "edge does not link. Grep before concluding the "
+                        "caller list is complete."
+                    ),
+                }
 
         return response
     finally:
