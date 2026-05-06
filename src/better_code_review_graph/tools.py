@@ -517,6 +517,22 @@ def _resolve_query_target(
     if not node:
         # Search by name
         candidates = store.search_nodes(target, limit=5)
+        # #316: when the pattern is call-graph oriented and the only ambiguity
+        # is between a File and a Function (common when a module name equals
+        # a function name), the File target is meaningless -- callers_of /
+        # callees_of want the Function. Auto-pick.
+        if (
+            len(candidates) > 1
+            and pattern in ("callers_of", "callees_of")
+            and "::" not in original_target
+        ):
+            functions = [c for c in candidates if c.kind == "Function"]
+            files = [c for c in candidates if c.kind == "File"]
+            non_call_kinds = [
+                c for c in candidates if c.kind not in ("Function", "File")
+            ]
+            if len(functions) == 1 and len(files) >= 1 and not non_call_kinds:
+                candidates = [functions[0]]
         if len(candidates) == 1:
             node = candidates[0]
             # Bare-name target was promoted to a qualified node; surface this
