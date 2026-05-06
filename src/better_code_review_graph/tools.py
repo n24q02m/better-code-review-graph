@@ -892,9 +892,11 @@ def _compute_untested_functions(
     are flagged untested simply because tests live in JS/TS or in
     integration test fixtures.
     """
-    test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
-    tested_qns = {e.source_qualified for e in test_edges}
-    tested_qns |= {e.target_qualified for e in test_edges}
+    tested_qns = set()
+    for e in impact["edges"]:
+        if e.kind == "TESTED_BY":
+            tested_qns.add(e.source_qualified)
+            tested_qns.add(e.target_qualified)
 
     out: list[dict[str, Any]] = []
     for n in impact["changed_nodes"]:
@@ -1040,17 +1042,24 @@ def _generate_review_guidance(
     guidance_parts = []
 
     # Check for test coverage
-    changed_funcs = [n for n in impact["changed_nodes"] if n.kind == "Function"]
-    test_edges = [e for e in impact["edges"] if e.kind == "TESTED_BY"]
-    tested_funcs = {e.source_qualified for e in test_edges}
+    tested_funcs = set()
+    inheritance_edges_count = 0
+    for e in impact["edges"]:
+        if e.kind == "TESTED_BY":
+            tested_funcs.add(e.source_qualified)
+        elif e.kind in ("INHERITS", "IMPLEMENTS"):
+            inheritance_edges_count += 1
 
-    untested = [
-        f
-        for f in changed_funcs
-        if f.qualified_name not in tested_funcs and not f.is_test
-    ]
-    if languages is not None:
-        untested = [f for f in untested if f.language in languages]
+    untested = []
+    for n in impact["changed_nodes"]:
+        if (
+            n.kind == "Function"
+            and not n.is_test
+            and n.qualified_name not in tested_funcs
+        ):
+            if languages is None or n.language in languages:
+                untested.append(n)
+
     if untested:
         guidance_parts.append(
             f"- {len(untested)} changed function(s) lack test coverage: "
@@ -1065,12 +1074,9 @@ def _generate_review_guidance(
         )
 
     # Check for inheritance changes
-    inheritance_edges = [
-        e for e in impact["edges"] if e.kind in ("INHERITS", "IMPLEMENTS")
-    ]
-    if inheritance_edges:
+    if inheritance_edges_count > 0:
         guidance_parts.append(
-            f"- {len(inheritance_edges)} inheritance/implementation relationship(s) affected. "
+            f"- {inheritance_edges_count} inheritance/implementation relationship(s) affected. "
             "Check for Liskov substitution violations."
         )
 
