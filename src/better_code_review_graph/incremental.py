@@ -422,6 +422,22 @@ def incremental_update(
     total_edges = 0
     errors = []
 
+    # #329: per-file snapshot of pre-update Function qualified_names so we can
+    # diff added / removed / modified functions for the reviewer summary.
+    pre_functions: dict[str, dict[str, str]] = {}
+    for rel_path in all_files:
+        abs_pre = (repo_root / rel_path).resolve()
+        if not abs_pre.is_relative_to(repo_root.resolve()):
+            continue
+        existing = store.get_nodes_by_file(str(abs_pre))
+        pre_functions[rel_path] = {
+            n.qualified_name: (n.file_hash or "")
+            for n in existing
+            if n.kind == "Function"
+        }
+
+    actually_updated: set[str] = set()
+
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
@@ -432,6 +448,7 @@ def incremental_update(
         if not abs_path.is_file():
             # File was deleted
             store.remove_file_data(str(abs_path))
+            actually_updated.add(rel_path)
             continue
         if abs_path_raw.is_symlink() or abs_path.is_symlink():
             continue
@@ -452,11 +469,21 @@ def incremental_update(
             )
             total_nodes += n_nodes
             total_edges += n_edges
+            actually_updated.add(rel_path)
         except (OSError, PermissionError) as e:
             errors.append({"file": rel_path, "error": str(e)})
         except Exception as e:
             logger.warning("Error parsing %s: %s", rel_path, e)
             errors.append({"file": rel_path, "error": str(e)})
+
+    # #329: build reviewer-oriented summary from pre/post Function snapshots.
+    reviewer_summary = _build_reviewer_summary(
+        store=store,
+        repo_root=repo_root,
+        pre_functions=pre_functions,
+        changed_files=list(changed_files),
+        actually_updated=actually_updated,
+    )
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "incremental")
@@ -472,6 +499,61 @@ def incremental_update(
         "changed_files": list(changed_files),
         "dependent_files": list(dependent_files),
         "errors": errors,
+        "reviewer_summary": reviewer_summary,
+    }
+
+
+def _build_reviewer_summary(
+    store: GraphStore,
+    repo_root: Path,
+    pre_functions: dict[str, dict[str, str]],
+    changed_files: list[str],
+    actually_updated: set[str],
+) -> dict:
+    """Diff pre/post Function nodes for the #329 reviewer summary.
+
+    Treats the explicitly-changed files as the "source of change":
+    a function disappearing from one of those files is ``removed``,
+    a new function appearing is ``added``, and a function whose
+    qualified_name persists across the change is ``modified``.
+    Dependent files are not analyzed here (their diffs are noise from
+    the reviewer's perspective -- they only re-parsed because their
+    callee surface shifted).
+
+    ``modules_newly_impacted`` lists files that were re-parsed but
+    were not in the user's ``changed_files`` set -- i.e. dependent
+    files pulled in by import / call edges.
+    """
+    changed_set = set(changed_files)
+    functions_added: list[str] = []
+    functions_removed: list[str] = []
+    functions_modified: list[str] = []
+    repo_resolved = repo_root.resolve()
+
+    for rel_path in changed_set:
+        if rel_path not in actually_updated:
+            continue
+        abs_path = (repo_root / rel_path).resolve()
+        if not abs_path.is_relative_to(repo_resolved):
+            continue
+        post_nodes = store.get_nodes_by_file(str(abs_path))
+        post_qns = {n.qualified_name for n in post_nodes if n.kind == "Function"}
+        pre_qns = set(pre_functions.get(rel_path, {}).keys())
+
+        functions_added.extend(sorted(post_qns - pre_qns))
+        functions_removed.extend(sorted(pre_qns - post_qns))
+        # "Modified" = present in both AND file was actually updated this run.
+        # We don't have per-function content hashes, so file-level hash change
+        # plus persistent qualified_name is our best signal.
+        functions_modified.extend(sorted(post_qns & pre_qns))
+
+    modules_newly_impacted = sorted(actually_updated - changed_set)
+
+    return {
+        "functions_added": functions_added,
+        "functions_removed": functions_removed,
+        "functions_modified": functions_modified,
+        "modules_newly_impacted": modules_newly_impacted,
     }
 
 

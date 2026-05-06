@@ -331,15 +331,28 @@ def build_or_update_graph(
                     "summary": "No changes detected. Graph is up to date.",
                     **result,
                 }
+            # #329: surface reviewer-oriented summary alongside raw counts.
+            reviewer_summary = result.get("reviewer_summary") or {}
+            summary_lines = [
+                f"Incremental update: {result['files_updated']} files re-parsed, "
+                f"{result['total_nodes']} nodes and {result['total_edges']} edges updated.",
+                f"Changed: {result['changed_files']}. "
+                f"Dependents also updated: {result['dependent_files']}.",
+            ]
+            if reviewer_summary:
+                added = reviewer_summary.get("functions_added") or []
+                removed = reviewer_summary.get("functions_removed") or []
+                modified = reviewer_summary.get("functions_modified") or []
+                impacted = reviewer_summary.get("modules_newly_impacted") or []
+                summary_lines.append(
+                    f"Reviewer summary: +{len(added)} / -{len(removed)} / "
+                    f"~{len(modified)} functions, "
+                    f"{len(impacted)} module(s) newly impacted."
+                )
             return {
                 "status": "ok",
                 "build_type": "incremental",
-                "summary": (
-                    f"Incremental update: {result['files_updated']} files re-parsed, "
-                    f"{result['total_nodes']} nodes and {result['total_edges']} edges updated. "
-                    f"Changed: {result['changed_files']}. "
-                    f"Dependents also updated: {result['dependent_files']}."
-                ),
+                "summary": " ".join(summary_lines),
                 **result,
             }
     except Exception as e:
