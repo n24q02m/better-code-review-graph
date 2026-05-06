@@ -25,6 +25,7 @@ from .tools import (
     get_review_context,
     list_graph_stats,
     query_graph,
+    renamed_in_diff,
     semantic_search_nodes,
     spot_check_last_callers,
 )
@@ -142,7 +143,8 @@ def graph(
         "Query the code knowledge graph for relationships, search, and impact analysis. "
         "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
         "large_functions (min_lines), spot_check (n -- random callsite snippets from "
-        "last callers_of/callees_of/inheritors_of/importers_of result). "
+        "last callers_of/callees_of/inheritors_of/importers_of result), "
+        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -259,6 +261,14 @@ def query(
                     context_lines=context_lines,
                 )
             )
+        case "renamed_in_diff":
+            return _json(
+                renamed_in_diff(
+                    base=base,
+                    changed_files=changed_files,
+                    repo_root=repo_root,
+                )
+            )
         case _:
             import difflib
 
@@ -266,6 +276,7 @@ def query(
                 "impact",
                 "large_functions",
                 "query",
+                "renamed_in_diff",
                 "search",
                 "spot_check",
             ]

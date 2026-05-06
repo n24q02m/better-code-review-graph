@@ -1157,6 +1157,131 @@ def spot_check_last_callers(
     }
 
 
+def renamed_in_diff(
+    base: str = "HEAD~1",
+    changed_files: list[str] | None = None,
+    repo_root: str | None = None,
+) -> dict[str, Any]:
+    """Report symbols whose callsite line numbers shifted between ``base``
+    and HEAD (#320).
+
+    Reads each file at ``base`` via ``git show <base>:<file>``, parses it
+    with the same tree-sitter pipeline as the live graph, and compares
+    Function ``line_start`` per qualified name with the current file's
+    symbols. Surfaces only symbols where the line shifted -- adds /
+    removes are out of scope (the regular ``review`` flow already covers
+    them). Useful for Stage 6 audits of large refactors where the question
+    is "did this symbol genuinely move, or did the line just slide?".
+
+    Args:
+        base: Git ref to compare against (default ``HEAD~1``).
+        changed_files: Files to check. Auto-detected from ``git diff base..HEAD``
+            when omitted.
+        repo_root: Repository root. Auto-detected if omitted.
+
+    Returns:
+        ``shifts`` list of ``{symbol, file, base_line, head_line, delta}``.
+    """
+    import subprocess
+
+    from .parser import CodeParser
+
+    store, root = _get_store(repo_root)
+    try:
+        if changed_files is None:
+            changed_files = get_changed_files(root, base)
+        if not changed_files:
+            return {
+                "status": "ok",
+                "summary": "No changed files detected.",
+                "base": base,
+                "shifts": [],
+            }
+
+        parser = CodeParser()
+        shifts: list[dict[str, Any]] = []
+        repo_resolved = root.resolve()
+
+        for rel_path in changed_files:
+            full_path_raw = root / rel_path
+            try:
+                full_path = full_path_raw.resolve()
+            except OSError:
+                continue
+            if not full_path.is_relative_to(repo_resolved):
+                continue
+            if full_path_raw.is_symlink() or full_path.is_symlink():
+                continue
+            if not full_path.is_file():
+                continue
+            if parser.detect_language(full_path) is None:
+                continue
+
+            # Fetch base-ref content via git.
+            try:
+                proc = subprocess.run(
+                    ["git", "show", f"{base}:{rel_path}"],
+                    cwd=str(root),
+                    capture_output=True,
+                    timeout=15,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            if proc.returncode != 0:
+                # File didn't exist at base (added file) -- skip.
+                continue
+            base_source = proc.stdout
+            if not base_source:
+                continue
+
+            try:
+                base_nodes, _ = parser.parse_bytes(full_path, base_source)
+                head_source = full_path.read_bytes()
+                head_nodes, _ = parser.parse_bytes(full_path, head_source)
+            except Exception:
+                continue
+
+            base_lines = {
+                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
+                for n in base_nodes
+                if n.kind == "Function" and n.line_start is not None
+            }
+            head_lines = {
+                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
+                for n in head_nodes
+                if n.kind == "Function" and n.line_start is not None
+            }
+
+            for symbol, base_line in base_lines.items():
+                head_line = head_lines.get(symbol)
+                if head_line is None:
+                    continue  # removed -- out of scope for line-drift
+                if head_line == base_line:
+                    continue
+                shifts.append(
+                    {
+                        "symbol": symbol,
+                        "file": rel_path,
+                        "base_line": base_line,
+                        "head_line": head_line,
+                        "delta": head_line - base_line,
+                    }
+                )
+
+        return {
+            "status": "ok",
+            "summary": (
+                f"Found {len(shifts)} symbol(s) whose callsite line shifted "
+                f"between {base} and HEAD."
+            ),
+            "base": base,
+            "shifts": shifts,
+        }
+    finally:
+        store.close()
+
+
 # ---------------------------------------------------------------------------
 # Tool 4: get_review_context
 # ---------------------------------------------------------------------------
