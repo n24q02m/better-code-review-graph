@@ -158,6 +158,7 @@ class TestQueryTool:
             max_results=100,
             repo_root="/test",
             base="HEAD~3",
+            max_payload_bytes=500_000,
         )
         assert result["status"] == "ok"
 

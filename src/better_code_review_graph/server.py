@@ -163,6 +163,7 @@ def query(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
     max_results: int = 500,
+    max_payload_bytes: int = 500_000,
     base: str = "HEAD~1",
     # large_functions params
     min_lines: int = 50,
@@ -231,6 +232,7 @@ def query(
                     max_results=max_results,
                     repo_root=repo_root,
                     base=base,
+                    max_payload_bytes=max_payload_bytes,
                 )
             )
         case "large_functions":

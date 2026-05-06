@@ -369,12 +369,26 @@ def build_or_update_graph(
 # ---------------------------------------------------------------------------
 
 
+_DEFAULT_IMPACT_PAYLOAD_BYTES = 500_000  # #315: ~500KB ceiling on impact JSON
+
+
+def _estimate_payload_bytes(*payloads: list[dict] | dict) -> int:
+    """Cheap upper-bound estimator for serialized JSON size.
+
+    Avoids a full ``json.dumps`` round-trip on hot paths -- str(repr) is a
+    reasonable proxy that overestimates moderately, which is the safe
+    direction for a truncation gate.
+    """
+    return sum(len(repr(p)) for p in payloads)
+
+
 def get_impact_radius(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
     max_results: int = 500,
     repo_root: str | None = None,
     base: str = "HEAD~1",
+    max_payload_bytes: int = _DEFAULT_IMPACT_PAYLOAD_BYTES,
 ) -> dict[str, Any]:
     """Analyze the blast radius of changed files.
 
@@ -386,6 +400,11 @@ def get_impact_radius(
                      Maps to the BFS max_nodes parameter.
         repo_root: Repository root path. Auto-detected if omitted.
         base: Git ref for auto-detecting changes (default: HEAD~1).
+        max_payload_bytes: Soft cap on serialized response size in bytes
+            (default 500_000). When exceeded the impacted_nodes / edges
+            arrays are truncated and ``results_truncated=True`` is set on
+            the response with a hint suggesting ``max_depth=1`` or a
+            narrower file scope. (#315.)
 
     Returns:
         Changed nodes, impacted nodes, impacted files, connecting edges,
@@ -443,7 +462,39 @@ def get_impact_radius(
                 f" ({total_impacted} total impacted)"
             )
 
-        return {
+        # #315: payload-size auto-truncation. Even with max_results=500 the
+        # impacted_nodes + edges arrays can blow past the conversation
+        # token budget for shared utils (observed: 7.6MB, 12MB). Trim
+        # iteratively until the rough JSON size fits under the soft cap.
+        results_truncated = False
+        results_truncated_reason: str | None = None
+        original_impacted_count = len(impacted_dicts)
+        original_edges_count = len(edge_dicts)
+        if max_payload_bytes and max_payload_bytes > 0:
+            estimated = _estimate_payload_bytes(
+                changed_dicts, impacted_dicts, edge_dicts
+            )
+            if estimated > max_payload_bytes:
+                results_truncated = True
+                # Halve until we fit (or down to a minimum sample of 10 each).
+                while _estimate_payload_bytes(
+                    changed_dicts, impacted_dicts, edge_dicts
+                ) > max_payload_bytes and (
+                    len(impacted_dicts) > 10 or len(edge_dicts) > 10
+                ):
+                    impacted_dicts = impacted_dicts[: max(10, len(impacted_dicts) // 2)]
+                    edge_dicts = edge_dicts[: max(10, len(edge_dicts) // 2)]
+                results_truncated_reason = (
+                    f"impact payload exceeded {max_payload_bytes} bytes "
+                    f"(was approximately {estimated})"
+                )
+                summary_parts.append(
+                    f"  - PAYLOAD TRUNCATED: kept {len(impacted_dicts)} of "
+                    f"{original_impacted_count} impacted nodes / "
+                    f"{len(edge_dicts)} of {original_edges_count} edges"
+                )
+
+        response: dict[str, Any] = {
             "status": "ok",
             "summary": "\n".join(summary_parts),
             "changed_files": changed_files,
@@ -454,6 +505,16 @@ def get_impact_radius(
             "truncated": truncated,
             "total_impacted": total_impacted,
         }
+        if results_truncated:
+            response["results_truncated"] = True
+            response["reason"] = results_truncated_reason
+            response["hint"] = (
+                "rerun with max_depth=1, narrow changed_files scope, or "
+                "raise max_payload_bytes if you can handle a larger response"
+            )
+            response["original_impacted_count"] = original_impacted_count
+            response["original_edges_count"] = original_edges_count
+        return response
     finally:
         store.close()
 
