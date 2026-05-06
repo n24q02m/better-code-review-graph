@@ -26,6 +26,7 @@ from .tools import (
     list_graph_stats,
     query_graph,
     semantic_search_nodes,
+    spot_check_last_callers,
 )
 
 _default_repo_root: str | None = None
@@ -140,7 +141,9 @@ def graph(
     description=(
         "Query the code knowledge graph for relationships, search, and impact analysis. "
         "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
-        "large_functions (min_lines). Use `help` tool for full docs."
+        "large_functions (min_lines), spot_check (n -- random callsite snippets from "
+        "last callers_of/callees_of/inheritors_of/importers_of result). "
+        "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
         title="Query",
@@ -170,6 +173,9 @@ def query(
     file_path_pattern: str | None = None,
     # tests_for params (D16)
     languages: list[str] | None = None,
+    # spot_check params (#318)
+    n: int = 3,
+    context_lines: int = 2,
     # common
     repo_root: str | None = None,
 ) -> str:
@@ -245,10 +251,24 @@ def query(
                     repo_root=repo_root,
                 )
             )
+        case "spot_check":
+            return _json(
+                spot_check_last_callers(
+                    n=n,
+                    repo_root=repo_root,
+                    context_lines=context_lines,
+                )
+            )
         case _:
             import difflib
 
-            valid_actions = ["impact", "large_functions", "query", "search"]
+            valid_actions = [
+                "impact",
+                "large_functions",
+                "query",
+                "search",
+                "spot_check",
+            ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(

@@ -534,6 +534,11 @@ _QUERY_PATTERNS = {
     "file_summary": "Get a summary of all nodes in a file",
 }
 
+# #318: cache of the last call-graph query response per repo_root so the
+# spot_check action can fetch source snippets for N random callsites
+# without re-running the query. Keyed by ``str(root.resolve())``.
+_LAST_CALLERS_RESULT: dict[str, dict[str, Any]] = {}
+
 
 def _list_kinds_in_graph(store: Any) -> list[str]:
     """Return distinct node kinds present in the graph (for D15 hints)."""
@@ -1044,9 +1049,112 @@ def query_graph(
                     ),
                 }
 
+        # #318: cache callsite-shaped results so `spot_check` can pull a
+        # random sample of N source snippets without re-running the query.
+        if pattern in (
+            "callers_of",
+            "callees_of",
+            "inheritors_of",
+            "importers_of",
+        ):
+            _LAST_CALLERS_RESULT[str(root.resolve())] = {
+                "pattern": pattern,
+                "target": target,
+                "edges": list(edges_out),
+                "results": list(results),
+            }
+
         return response
     finally:
         store.close()
+
+
+def spot_check_last_callers(
+    n: int = 3,
+    repo_root: str | None = None,
+    context_lines: int = 2,
+) -> dict[str, Any]:
+    """Return source snippets for ``n`` random callsites from the last
+    callers_of / callees_of / inheritors_of / importers_of result (#318).
+
+    Lets a reviewer enforce per-query spot-check discipline (read one
+    source line per graph result to confirm it wasn't a false positive)
+    in 1 MCP call instead of N file Reads.
+
+    Args:
+        n: Number of random callsites to sample (default 3).
+        repo_root: Repository root path. Auto-detected if omitted.
+        context_lines: Lines of context to include before/after each
+            callsite line (default 2).
+
+    Returns:
+        ``samples`` list of ``{file, line, snippet, source_qualified,
+        target_qualified}`` plus the ``pattern`` and ``target`` of the
+        cached query.
+    """
+    import random
+
+    _, root = _get_store(repo_root)
+    cached = _LAST_CALLERS_RESULT.get(str(root.resolve()))
+    if not cached:
+        return {
+            "status": "no_cache",
+            "summary": (
+                "No prior callers_of/callees_of/inheritors_of/importers_of "
+                "result cached for this repo. Run that query first."
+            ),
+            "samples": [],
+        }
+
+    edges = cached["edges"]
+    if not edges:
+        return {
+            "status": "ok",
+            "summary": "No edges in the last result to sample.",
+            "pattern": cached["pattern"],
+            "target": cached["target"],
+            "samples": [],
+        }
+
+    sample_count = min(max(1, int(n)), len(edges))
+    sampled = random.sample(edges, sample_count)
+    samples: list[dict[str, Any]] = []
+    for edge in sampled:
+        file_path = edge.get("file_path") or ""
+        line_no = int(edge.get("line") or 0)
+        snippet = ""
+        if file_path and line_no > 0:
+            try:
+                lines = (
+                    Path(file_path)
+                    .read_text(encoding="utf-8", errors="replace")
+                    .splitlines()
+                )
+                start = max(0, line_no - 1 - context_lines)
+                end = min(len(lines), line_no + context_lines)
+                snippet = "\n".join(f"{i + 1}: {lines[i]}" for i in range(start, end))
+            except OSError:
+                snippet = "(could not read file)"
+        samples.append(
+            {
+                "file": file_path,
+                "line": line_no,
+                "snippet": snippet,
+                "source_qualified": edge.get("source_qualified"),
+                "target_qualified": edge.get("target_qualified"),
+            }
+        )
+
+    return {
+        "status": "ok",
+        "summary": (
+            f"Sampled {len(samples)} of {len(edges)} callsites from last "
+            f"{cached['pattern']}('{cached['target']}')."
+        ),
+        "pattern": cached["pattern"],
+        "target": cached["target"],
+        "samples": samples,
+    }
 
 
 # ---------------------------------------------------------------------------
