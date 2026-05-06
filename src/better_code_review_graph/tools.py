@@ -1166,6 +1166,30 @@ def _generate_review_guidance(
 # ---------------------------------------------------------------------------
 
 
+def _looks_like_literal_identifier(query: str) -> bool:
+    """Heuristic for #317: would keyword-substring search on this query
+    plausibly hit the user's intent?
+
+    Single-token symbols (``foo``, ``foo_bar``, ``fooBar``,
+    ``FooBar``, ``foo.bar``, ``foo::bar``) look like identifiers and are
+    fine in keyword mode. Multi-word phrases, sentences, or queries with
+    spaces / punctuation suggest semantic intent and warrant a warning
+    when no embeddings are available.
+    """
+    q = query.strip()
+    if not q:
+        return True
+    # Anything containing whitespace or sentence punctuation is treated as
+    # a natural-language phrase (semantic intent).
+    for ch in (" ", "\t", "\n", "?", "!", ","):
+        if ch in q:
+            return False
+    # Lone allowed identifier characters: alnum, underscore, dot, hyphen,
+    # slash, double-colon (qualified-name separator).
+    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-/:")
+    return all(ch in allowed for ch in q)
+
+
 def semantic_search_nodes(
     query: str,
     kind: str | None = None,
@@ -1240,7 +1264,7 @@ def semantic_search_nodes(
         results.sort(key=score)
         results = results[:limit]
 
-        return {
+        response: dict[str, Any] = {
             "status": "ok",
             "query": query,
             "search_mode": search_mode,
@@ -1249,6 +1273,19 @@ def semantic_search_nodes(
             "header": _build_response_header(store, db_path, keyword_only=True),
             "results": [node_to_dict(r) for r in results],
         }
+
+        # #317: warn when running keyword fallback on a query that looks
+        # semantic. Users who pass single identifiers (`foo`, `foo_bar`,
+        # `Foo.bar`) are fine; users who pass phrases (`how does X work`,
+        # `firebase auth setup`) get garbage from keyword-substring match.
+        if not _looks_like_literal_identifier(query):
+            response["warning"] = (
+                "embeddings_count=0 - results are keyword-substring matches "
+                "only, not semantic similarity. Query shape suggests semantic "
+                "intent; rebuild with embeddings enabled "
+                "(graph action=embed) or reword as a literal identifier."
+            )
+        return response
     finally:
         store.close()
 
