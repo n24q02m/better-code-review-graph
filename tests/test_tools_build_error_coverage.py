@@ -1,14 +1,8 @@
 import sys
 from unittest.mock import MagicMock, patch
 
-
-# Mock dependencies before importing the module under test
-class MockModule(MagicMock):
-    def __getattr__(self, name):
-        return MagicMock()
-
-
-modules = [
+# Surgical mocking only during import to avoid poisoning CI environment
+modules_to_mock = [
     "networkx",
     "tree_sitter",
     "tree_sitter_language_pack",
@@ -33,10 +27,32 @@ modules = [
     "pygments.formatters",
 ]
 
-for mod in modules:
-    sys.modules[mod] = MockModule()
 
-from better_code_review_graph.tools import build_or_update_graph  # noqa: E402
+class MockModule(MagicMock):
+    def __getattr__(self, name):
+        return MagicMock()
+
+
+def _get_build_or_update_graph():
+    # If already available, just return it
+    try:
+        from better_code_review_graph.tools import build_or_update_graph
+
+        return build_or_update_graph
+    except (ImportError, ModuleNotFoundError):
+        # Mock only the missing ones
+        mocks = {}
+        for mod in modules_to_mock:
+            if mod not in sys.modules:
+                mocks[mod] = MockModule()
+
+        with patch.dict(sys.modules, mocks):
+            from better_code_review_graph.tools import build_or_update_graph
+
+            return build_or_update_graph
+
+
+build_or_update_graph = _get_build_or_update_graph()
 
 
 def test_build_or_update_graph_full_rebuild_error():
@@ -83,4 +99,7 @@ if __name__ == "__main__":
         print("All isolated tests passed!")
     except Exception as e:
         print(f"Tests failed: {e}")
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)
