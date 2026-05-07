@@ -605,6 +605,181 @@ class CodeParser:
             )
         return False
 
+    def _handle_solidity_emit_statement(
+        self,
+        node,
+        file_path: str,
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+        enclosing_func: str | None,
+    ) -> bool:
+        if not enclosing_func:
+            return False
+        for sub in node.children:
+            if sub.type == "expression":
+                for ident in sub.children:
+                    if ident.type == "identifier":
+                        caller = self._qualify(
+                            enclosing_func,
+                            file_path,
+                            enclosing_class,
+                        )
+                        edges.append(
+                            EdgeInfo(
+                                kind="CALLS",
+                                source=caller,
+                                target=ident.text.decode("utf-8", errors="replace"),
+                                file_path=file_path,
+                                line=node.start_point[0] + 1,
+                            )
+                        )
+        return False
+
+    def _handle_solidity_state_variable(
+        self,
+        node,
+        language: str,
+        file_path: str,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+    ) -> bool:
+        if not enclosing_class:
+            return False
+        var_name = None
+        var_visibility = None
+        var_mutability = None
+        var_type = None
+        for sub in node.children:
+            if sub.type == "identifier":
+                var_name = sub.text.decode("utf-8", errors="replace")
+            elif sub.type == "visibility":
+                var_visibility = sub.text.decode("utf-8", errors="replace")
+            elif sub.type == "type_name":
+                var_type = sub.text.decode("utf-8", errors="replace")
+            elif sub.type in ("constant", "immutable"):
+                var_mutability = sub.type
+        if var_name:
+            qualified = self._qualify(var_name, file_path, enclosing_class)
+            nodes.append(
+                NodeInfo(
+                    kind="Function",
+                    name=var_name,
+                    file_path=file_path,
+                    line_start=node.start_point[0] + 1,
+                    line_end=node.end_point[0] + 1,
+                    language=language,
+                    parent_name=enclosing_class,
+                    return_type=var_type,
+                    modifiers=var_visibility,
+                    extra={
+                        "solidity_kind": "state_variable",
+                        "mutability": var_mutability,
+                    },
+                )
+            )
+            edges.append(
+                EdgeInfo(
+                    kind="CONTAINS",
+                    source=self._qualify(
+                        enclosing_class,
+                        file_path,
+                        None,
+                    ),
+                    target=qualified,
+                    file_path=file_path,
+                    line=node.start_point[0] + 1,
+                )
+            )
+            return True
+        return False
+
+    def _handle_solidity_constant_variable(
+        self,
+        node,
+        language: str,
+        file_path: str,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+    ) -> bool:
+        var_name = None
+        var_type = None
+        for sub in node.children:
+            if sub.type == "identifier":
+                var_name = sub.text.decode("utf-8", errors="replace")
+            elif sub.type == "type_name":
+                var_type = sub.text.decode("utf-8", errors="replace")
+        if var_name:
+            qualified = self._qualify(
+                var_name,
+                file_path,
+                enclosing_class,
+            )
+            nodes.append(
+                NodeInfo(
+                    kind="Function",
+                    name=var_name,
+                    file_path=file_path,
+                    line_start=node.start_point[0] + 1,
+                    line_end=node.end_point[0] + 1,
+                    language=language,
+                    parent_name=enclosing_class,
+                    return_type=var_type,
+                    extra={"solidity_kind": "constant"},
+                )
+            )
+            container = (
+                self._qualify(enclosing_class, file_path, None)
+                if enclosing_class
+                else file_path
+            )
+            edges.append(
+                EdgeInfo(
+                    kind="CONTAINS",
+                    source=container,
+                    target=qualified,
+                    file_path=file_path,
+                    line=node.start_point[0] + 1,
+                )
+            )
+            return True
+        return False
+
+    def _handle_solidity_using_directive(
+        self,
+        node,
+        file_path: str,
+        edges: list[EdgeInfo],
+        enclosing_class: str | None,
+    ) -> bool:
+        lib_name = None
+        for sub in node.children:
+            if sub.type == "type_alias":
+                for ident in sub.children:
+                    if ident.type == "identifier":
+                        lib_name = ident.text.decode(
+                            "utf-8",
+                            errors="replace",
+                        )
+        if lib_name:
+            source_name = (
+                self._qualify(enclosing_class, file_path, None)
+                if enclosing_class
+                else file_path
+            )
+            edges.append(
+                EdgeInfo(
+                    kind="DEPENDS_ON",
+                    source=source_name,
+                    target=lib_name,
+                    file_path=file_path,
+                    line=node.start_point[0] + 1,
+                )
+            )
+            return True
+        return False
+
     def _handle_solidity_node(
         self,
         node,
@@ -620,148 +795,22 @@ class CodeParser:
             return False
 
         node_type = node.type
-        # Emit statements: emit EventName(...) → CALLS edge
-        if node_type == "emit_statement" and enclosing_func:
-            for sub in node.children:
-                if sub.type == "expression":
-                    for ident in sub.children:
-                        if ident.type == "identifier":
-                            caller = self._qualify(
-                                enclosing_func,
-                                file_path,
-                                enclosing_class,
-                            )
-                            edges.append(
-                                EdgeInfo(
-                                    kind="CALLS",
-                                    source=caller,
-                                    target=ident.text.decode("utf-8", errors="replace"),
-                                    file_path=file_path,
-                                    line=node.start_point[0] + 1,
-                                )
-                            )
-            return False
-
-        # State variable declarations → Function nodes
-        if node_type == "state_variable_declaration" and enclosing_class:
-            var_name = None
-            var_visibility = None
-            var_mutability = None
-            var_type = None
-            for sub in node.children:
-                if sub.type == "identifier":
-                    var_name = sub.text.decode("utf-8", errors="replace")
-                elif sub.type == "visibility":
-                    var_visibility = sub.text.decode("utf-8", errors="replace")
-                elif sub.type == "type_name":
-                    var_type = sub.text.decode("utf-8", errors="replace")
-                elif sub.type in ("constant", "immutable"):
-                    var_mutability = sub.type
-            if var_name:
-                qualified = self._qualify(var_name, file_path, enclosing_class)
-                nodes.append(
-                    NodeInfo(
-                        kind="Function",
-                        name=var_name,
-                        file_path=file_path,
-                        line_start=node.start_point[0] + 1,
-                        line_end=node.end_point[0] + 1,
-                        language=language,
-                        parent_name=enclosing_class,
-                        return_type=var_type,
-                        modifiers=var_visibility,
-                        extra={
-                            "solidity_kind": "state_variable",
-                            "mutability": var_mutability,
-                        },
-                    )
-                )
-                edges.append(
-                    EdgeInfo(
-                        kind="CONTAINS",
-                        source=self._qualify(
-                            enclosing_class,
-                            file_path,
-                            None,
-                        ),
-                        target=qualified,
-                        file_path=file_path,
-                        line=node.start_point[0] + 1,
-                    )
-                )
-                return True
-
-        # File-level and contract-level constant declarations
+        if node_type == "emit_statement":
+            return self._handle_solidity_emit_statement(
+                node, file_path, edges, enclosing_class, enclosing_func
+            )
+        if node_type == "state_variable_declaration":
+            return self._handle_solidity_state_variable(
+                node, language, file_path, nodes, edges, enclosing_class
+            )
         if node_type == "constant_variable_declaration":
-            var_name = None
-            var_type = None
-            for sub in node.children:
-                if sub.type == "identifier":
-                    var_name = sub.text.decode("utf-8", errors="replace")
-                elif sub.type == "type_name":
-                    var_type = sub.text.decode("utf-8", errors="replace")
-            if var_name:
-                qualified = self._qualify(
-                    var_name,
-                    file_path,
-                    enclosing_class,
-                )
-                nodes.append(
-                    NodeInfo(
-                        kind="Function",
-                        name=var_name,
-                        file_path=file_path,
-                        line_start=node.start_point[0] + 1,
-                        line_end=node.end_point[0] + 1,
-                        language=language,
-                        parent_name=enclosing_class,
-                        return_type=var_type,
-                        extra={"solidity_kind": "constant"},
-                    )
-                )
-                container = (
-                    self._qualify(enclosing_class, file_path, None)
-                    if enclosing_class
-                    else file_path
-                )
-                edges.append(
-                    EdgeInfo(
-                        kind="CONTAINS",
-                        source=container,
-                        target=qualified,
-                        file_path=file_path,
-                        line=node.start_point[0] + 1,
-                    )
-                )
-                return True
-
-        # Using directives: using LibName for Type → DEPENDS_ON edge
+            return self._handle_solidity_constant_variable(
+                node, language, file_path, nodes, edges, enclosing_class
+            )
         if node_type == "using_directive":
-            lib_name = None
-            for sub in node.children:
-                if sub.type == "type_alias":
-                    for ident in sub.children:
-                        if ident.type == "identifier":
-                            lib_name = ident.text.decode(
-                                "utf-8",
-                                errors="replace",
-                            )
-            if lib_name:
-                source_name = (
-                    self._qualify(enclosing_class, file_path, None)
-                    if enclosing_class
-                    else file_path
-                )
-                edges.append(
-                    EdgeInfo(
-                        kind="DEPENDS_ON",
-                        source=source_name,
-                        target=lib_name,
-                        file_path=file_path,
-                        line=node.start_point[0] + 1,
-                    )
-                )
-                return True
+            return self._handle_solidity_using_directive(
+                node, file_path, edges, enclosing_class
+            )
         return False
 
     def _collect_file_scope(
