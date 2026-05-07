@@ -1291,16 +1291,43 @@ def _filter_valid_paths(root: Path, changed_files: list[str]) -> list[str]:
     """Resolve and filter paths for safety and validity."""
     abs_files = []
     root_resolved = root.resolve()
+    result_cache: dict[str, str | None] = {}
+    parent_cache: dict[Path, Path | None] = {}
+
     for f in changed_files:
+        if f in result_cache:
+            if (cached := result_cache[f]) is not None:
+                abs_files.append(cached)
+            continue
+
         full_path_raw = root / f
+        parent_raw = full_path_raw.parent
+
         try:
+            if parent_raw not in parent_cache:
+                p_res = parent_raw.resolve()
+                parent_cache[parent_raw] = (
+                    p_res if p_res.is_relative_to(root_resolved) else None
+                )
+
+            parent_resolved = parent_cache[parent_raw]
+            if parent_resolved is None:
+                result_cache[f] = None
+                continue
+
             full_path = full_path_raw.resolve()
             if not full_path.is_relative_to(root_resolved):
+                result_cache[f] = None
                 continue
             if full_path_raw.is_symlink() or full_path.is_symlink():
+                result_cache[f] = None
                 continue
-            abs_files.append(str(full_path))
+
+            res = str(full_path)
+            abs_files.append(res)
+            result_cache[f] = res
         except (OSError, ValueError):
+            result_cache[f] = None
             continue
     return abs_files
 
@@ -1314,29 +1341,53 @@ def _get_source_snippets(
     """Generate source snippets for changed files."""
     snippets = {}
     root_resolved = root.resolve()
+    result_cache: dict[str, Path | None] = {}
+    parent_cache: dict[Path, Path | None] = {}
+
     for rel_path in changed_files:
-        full_path_raw = root / rel_path
-        try:
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            if full_path.is_file():
-                try:
-                    lines = full_path.read_text(errors="replace").splitlines()
-                    if len(lines) > max_lines_per_file:
-                        snippets[rel_path] = _extract_relevant_lines(
-                            lines, changed_nodes, str(full_path)
-                        )
+        if rel_path in result_cache:
+            full_path = result_cache[rel_path]
+        else:
+            full_path_raw = root / rel_path
+            parent_raw = full_path_raw.parent
+            try:
+                if parent_raw not in parent_cache:
+                    p_res = parent_raw.resolve()
+                    parent_cache[parent_raw] = (
+                        p_res if p_res.is_relative_to(root_resolved) else None
+                    )
+
+                parent_resolved = parent_cache[parent_raw]
+                if parent_resolved is None:
+                    result_cache[rel_path] = None
+                    full_path = None
+                else:
+                    full_path = full_path_raw.resolve()
+                    if not full_path.is_relative_to(root_resolved):
+                        result_cache[rel_path] = None
+                        full_path = None
+                    elif full_path_raw.is_symlink() or full_path.is_symlink():
+                        result_cache[rel_path] = None
+                        full_path = None
                     else:
-                        snippets[rel_path] = "\n".join(
-                            f"{i + 1}: {line}" for i, line in enumerate(lines)
-                        )
-                except (OSError, UnicodeDecodeError):
-                    snippets[rel_path] = "(could not read file)"
-        except (OSError, ValueError):
-            continue
+                        result_cache[rel_path] = full_path
+            except (OSError, ValueError):
+                result_cache[rel_path] = None
+                full_path = None
+
+        if full_path is not None and full_path.is_file():
+            try:
+                lines = full_path.read_text(errors="replace").splitlines()
+                if len(lines) > max_lines_per_file:
+                    snippets[rel_path] = _extract_relevant_lines(
+                        lines, changed_nodes, str(full_path)
+                    )
+                else:
+                    snippets[rel_path] = "\n".join(
+                        f"{i + 1}: {line}" for i, line in enumerate(lines)
+                    )
+            except (OSError, UnicodeDecodeError):
+                snippets[rel_path] = "(could not read file)"
     return snippets
 
 
