@@ -641,8 +641,8 @@ class GraphStore:
 
     def get_all_edges(self) -> list[GraphEdge]:
         """Return all edges in the graph."""
-        rows = self._conn.execute("SELECT * FROM edges").fetchall()
-        return [self._row_to_edge(r) for r in rows]
+        cursor = self._conn.execute("SELECT * FROM edges")
+        return [self._row_to_edge(r) for r in cursor]
 
     def get_edges_among(self, qualified_names: set[str]) -> list[GraphEdge]:
         """Return edges where both source and target are in the given set.
@@ -673,12 +673,12 @@ class GraphStore:
             g: nx.DiGraph = nx.DiGraph()
             # Bolt: Optimized to fetch only necessary columns and use generator expression
             # with add_edges_from instead of multiple add_edge calls in a Python loop.
-            rows = self._conn.execute(
+            cursor = self._conn.execute(
                 "SELECT source_qualified, target_qualified, kind FROM edges"
-            ).fetchall()
+            )
             g.add_edges_from(
                 (r["source_qualified"], r["target_qualified"], {"kind": r["kind"]})
-                for r in rows
+                for r in cursor
             )
             self._nxg_cache = g
             return g
