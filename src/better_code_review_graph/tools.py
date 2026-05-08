@@ -12,8 +12,6 @@ Exposes 9 tools:
 9. find_large_functions   - find oversized functions/classes by line count
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Any
 
