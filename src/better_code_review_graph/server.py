@@ -29,6 +29,7 @@ from .tools import (
     renamed_in_diff,
     semantic_search_nodes,
     spot_check_last_callers,
+    summarize_graph_dispatch,
 )
 
 _default_repo_root: str | None = None
@@ -76,7 +77,9 @@ mcp = FastMCP(
     description=(
         "Build and manage the code knowledge graph. "
         "Actions: build (full_rebuild, base, repo_root), update (base, repo_root), "
-        "stats (repo_root), embed (repo_root). "
+        "stats (repo_root), embed (repo_root), "
+        "export (format, output_path, repo_root), "
+        "summarize (max_nodes, repo_root). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -94,6 +97,7 @@ def graph(
     repo_root: str | None = None,
     format: str = "graphml",
     output_path: str | None = None,
+    max_nodes: int = 500,
 ) -> str:
     """Build, update, and manage the code knowledge graph.
 
@@ -105,6 +109,10 @@ def graph(
     - export (-> format='graphml', output_path=None, repo_root): Export graph
         in graphml | json-ld | dot | cypher format. Writes to output_path when
         provided, otherwise returns payload inline.
+    - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
+        Function nodes. Provider auto-detected from env (GEMINI_API_KEY >
+        GOOGLE_API_KEY > OPENAI_API_KEY); no-op when no provider configured.
+        Cost-capped via max_nodes (default 500 LLM calls per invocation).
     """
     match action:
         case "build":
@@ -131,10 +139,21 @@ def graph(
                     repo_root=repo_root, format=format, output_path=output_path
                 )
             )
+        case "summarize":
+            return _json(
+                summarize_graph_dispatch(repo_root=repo_root, max_nodes=max_nodes)
+            )
         case _:
             import difflib
 
-            valid_actions = ["build", "embed", "export", "stats", "update"]
+            valid_actions = [
+                "build",
+                "embed",
+                "export",
+                "stats",
+                "summarize",
+                "update",
+            ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(

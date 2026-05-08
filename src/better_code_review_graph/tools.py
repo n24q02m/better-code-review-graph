@@ -1939,6 +1939,57 @@ def export_graph_dispatch(
     }
 
 
+def summarize_graph_dispatch(
+    repo_root: str | None = None,
+    max_nodes: int = 500,
+) -> dict[str, Any]:
+    """Generate LLM summaries for Function nodes (Phase 1 v1.6.x).
+
+    Provider auto-detected from env (GEMINI_API_KEY > GOOGLE_API_KEY > OPENAI_API_KEY).
+    No-op when no provider configured. Cost cap via max_nodes (default 500).
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        max_nodes: Max LLM calls per invocation. Default 500.
+
+    Returns:
+        Dict with status, generated, cached, errors, provider, summary.
+    """
+    from . import summarizer
+
+    store, _ = _get_store(repo_root)
+    try:
+        try:
+            result = summarizer.batch_summarize(store, max_nodes=max_nodes)
+        except ValueError as e:
+            return {"status": "error", "error": str(e)}
+    finally:
+        store.close()
+
+    if result.skipped_no_provider:
+        return {
+            "status": "skipped",
+            "reason": "no_provider_configured",
+            "summary": (
+                "Skipped: no provider configured. Set GEMINI_API_KEY (or GOOGLE_API_KEY) "
+                "for Gemini, or OPENAI_API_KEY for OpenAI to enable LLM summaries."
+            ),
+        }
+
+    return {
+        "status": "ok",
+        "provider": result.provider,
+        "generated": result.generated,
+        "cached": result.cached,
+        "errors": result.errors,
+        "summary": (
+            f"Summarized {result.generated} new + {result.cached} cached Function "
+            f"node(s) via {result.provider}"
+            + (f"; {result.errors} error(s)." if result.errors else ".")
+        ),
+    }
+
+
 def get_docs_section(section_name: str, repo_root: str | None = None) -> dict[str, Any]:
     """Return a specific section from the LLM-optimized reference.
 
