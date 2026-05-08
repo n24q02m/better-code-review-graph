@@ -24,13 +24,13 @@ dependencies = [
     "tree-sitter-language-pack>=0.13.0,<1",
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
-    "qwen3-embed>=1.9.1",
+    "qwen3-embed>=1.9.2",
     "cohere>=6.1.0",
     "google-genai>=1.75.0",
     "openai>=2.34.0",
     "httpx",
     "pydantic-settings",
-    "n24q02m-mcp-core>=1.13.0,<2",
+    "n24q02m-mcp-core>=1.14.0,<2",
     "Pygments>=2.20.0",
 ]
 
