@@ -596,6 +596,83 @@ def test_batch_summarize_continues_after_per_node_error(tmp_path, monkeypatch):
         assert result.generated == 2
         assert result.errors == 1
         assert mock_sum.call_count == 3
+
+        # Lock per-node persistence: nodes 0 + 2 must have summaries; node 1 (raised) must not.
+        rows = store._conn.execute(
+            "SELECT id, summary FROM nodes WHERE kind='Function' ORDER BY id"
+        ).fetchall()
+        # Map by row order (node creation order matches row id order in this test).
+        summaries = [(r[1] is not None, r[1]) for r in rows]
+        # Node 0 (1st call): "First."
+        # Node 1 (2nd call): RAISED -> no persist
+        # Node 2 (3rd call): "Third."
+        assert summaries[0] == (
+            True,
+            "First.",
+        ), f"Node 0 should have summary 'First.', got {summaries[0]}"
+        assert summaries[1] == (
+            False,
+            None,
+        ), f"Node 1 should have no summary (error), got {summaries[1]}"
+        assert summaries[2] == (
+            True,
+            "Third.",
+        ), f"Node 2 should have summary 'Third.', got {summaries[2]}"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
+    tmp_path, monkeypatch
+):
+    """Empty-string stored_summary should be treated as 'no summary' and trigger regeneration.
+
+    Locks the ``if stored_summary and ...`` truthiness contract in
+    ``batch_summarize``: even if hash + provider match, a stored empty
+    string is NOT a valid cached summary and must be regenerated.
+    """
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        src = "def f(): return 1"
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        # Stored summary is empty string, hash + provider would otherwise match.
+        store._conn.execute(
+            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (src, "", "gemini", compute_source_hash(src), node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "Returns 1."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1, "Empty-string summary should NOT be a cache hit"
+        assert result.cached == 0
+        mock_sum.assert_called_once()
+        # Verify regeneration persisted.
+        row = store._conn.execute(
+            "SELECT summary FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "Returns 1."
     finally:
         store.close()
 
