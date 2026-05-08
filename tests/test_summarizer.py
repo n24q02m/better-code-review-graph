@@ -237,3 +237,82 @@ def test_summarize_node_wraps_sdk_errors():
         mock_get.return_value = mock_client
         with pytest.raises(RuntimeError, match="summarize_node failed via gemini"):
             summarize_node(node, provider="gemini", api_key="g-key")
+
+
+def test_summarize_node_gemini_empty_text_raises():
+    """Gemini ``response.text=None`` (safety filter) must raise RuntimeError directly,
+    NOT wrapped as 'summarize_node failed via gemini: ...'.
+    """
+    node = NodeNeedingSummary(
+        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
+    )
+    fake_response = MagicMock()
+    fake_response.text = None
+    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = fake_response
+        mock_get.return_value = mock_client
+        with pytest.raises(RuntimeError, match="empty/None text") as exc_info:
+            summarize_node(node, provider="gemini", api_key="g-key")
+    # Must be the explicit guard, not the SDK-wrapping path.
+    assert "summarize_node failed via gemini" not in str(exc_info.value)
+    assert "x.py::foo" in str(exc_info.value)
+
+
+def test_summarize_node_openai_no_choices_raises():
+    """OpenAI ``response.choices=[]`` must raise RuntimeError 'no choices' directly."""
+    node = NodeNeedingSummary(
+        node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
+    )
+    fake_response = MagicMock()
+    fake_response.choices = []
+    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = fake_response
+        mock_get.return_value = mock_client
+        with pytest.raises(RuntimeError, match="no choices") as exc_info:
+            summarize_node(node, provider="openai", api_key="o-key")
+    assert "summarize_node failed via openai" not in str(exc_info.value)
+    assert "x.py::bar" in str(exc_info.value)
+
+
+def test_summarize_node_openai_none_content_raises():
+    """OpenAI ``message.content=None`` (safety filter) must raise RuntimeError 'empty/None content'."""
+    node = NodeNeedingSummary(
+        node_id="x.py::baz", source_text="def baz(): pass", source_hash=None
+    )
+    fake_choice = MagicMock()
+    fake_choice.message.content = None
+    fake_response = MagicMock()
+    fake_response.choices = [fake_choice]
+    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = fake_response
+        mock_get.return_value = mock_client
+        with pytest.raises(RuntimeError, match="empty/None content") as exc_info:
+            summarize_node(node, provider="openai", api_key="o-key")
+    assert "summarize_node failed via openai" not in str(exc_info.value)
+    assert "x.py::baz" in str(exc_info.value)
+
+
+def test_summarize_node_provider_is_case_sensitive():
+    """provider arg must match the lowercase canonical form returned by resolve_summary_provider."""
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with pytest.raises(ValueError, match="Unsupported provider: 'Gemini'"):
+        summarize_node(node, provider="Gemini", api_key="k")
+
+
+def test_summarize_node_handles_braces_in_source():
+    """Function source containing { } (dict literals, f-strings) must not break prompt construction."""
+    src = 'def make_d(): return {"a": f"{x}"}'  # dict literal + f-string
+    node = NodeNeedingSummary(node_id="x", source_text=src, source_hash=None)
+    fake_response = MagicMock()
+    fake_response.text = "Returns a dict."
+    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = fake_response
+        mock_get.return_value = mock_client
+        result = summarize_node(node, provider="gemini", api_key="k")
+    assert result == "Returns a dict."
+    # Verify the source went verbatim into the prompt
+    assert src in mock_client.models.generate_content.call_args.kwargs["contents"]

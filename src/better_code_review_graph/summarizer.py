@@ -104,10 +104,10 @@ def resolve_summary_provider() -> tuple[str, str] | None:
 # Single-node LLM summarization
 # ---------------------------------------------------------------------------
 
-_PROMPT_TEMPLATE = (
+_PROMPT_PREFIX = (
     "Write a one-paragraph docstring (max 3 sentences) describing what this function does. "
     "No code, no examples, no markdown. Just the description.\n\n"
-    "Source:\n{source}"
+    "Source:\n"
 )
 
 
@@ -143,7 +143,10 @@ def summarize_node(
 
     Args:
         node: NodeNeedingSummary with source_text to summarize.
-        provider: "gemini" or "openai" (matches resolve_summary_provider() return tuple's first element).
+        provider: must be lowercase ("gemini" or "openai") -- matches
+            ``resolve_summary_provider()`` return tuple's first element.
+            No normalization is performed; the contract is explicit
+            lowercase.
         api_key: API credential for the provider.
 
     Returns:
@@ -151,7 +154,10 @@ def summarize_node(
 
     Raises:
         ValueError: if provider is not one of {"gemini", "openai"}.
-        RuntimeError: if the LLM call fails (wraps the original exception).
+        RuntimeError: if the LLM call fails (wraps the original
+            exception), or if the SDK returns an empty/None response
+            (e.g. safety filter / content policy block on Gemini, empty
+            ``choices`` or ``content=None`` on OpenAI).
 
     Cost: 1 API call per invocation. The caller is responsible for cache hit/miss
     logic (see compute_summary_cache_key in this module).
@@ -161,22 +167,46 @@ def summarize_node(
             f"Unsupported provider: {provider!r} (expected 'gemini' or 'openai')"
         )
 
-    prompt = _PROMPT_TEMPLATE.format(source=node.source_text)
+    # Concatenate rather than .format() so source code containing literal
+    # ``{`` / ``}`` (dict literals, f-strings, JSX) does not blow up
+    # ``str.format`` with KeyError/IndexError. Only one substitution slot
+    # exists, so concatenation is the cleaner contract.
+    prompt = _PROMPT_PREFIX + node.source_text
 
-    try:
-        if provider == "gemini":
+    if provider == "gemini":
+        try:
             client = _get_gemini_client(api_key)
             response = client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
             )
-            return response.text.strip()
-        # provider == "openai"
+        except Exception as exc:
+            raise RuntimeError(f"summarize_node failed via {provider}: {exc}") from exc
+        text = response.text
+        if not text or not text.strip():
+            raise RuntimeError(
+                f"summarize_node: gemini returned empty/None text "
+                f"(likely safety filter or content policy block) for node {node.node_id}"
+            )
+        return text.strip()
+
+    # provider == "openai"
+    try:
         client = _get_openai_client(api_key)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.choices[0].message.content.strip()
     except Exception as exc:
         raise RuntimeError(f"summarize_node failed via {provider}: {exc}") from exc
+    if not response.choices:
+        raise RuntimeError(
+            f"summarize_node: openai returned no choices for node {node.node_id}"
+        )
+    content = response.choices[0].message.content
+    if not content or not content.strip():
+        raise RuntimeError(
+            f"summarize_node: openai returned empty/None content "
+            f"(likely safety filter) for node {node.node_id}"
+        )
+    return content.strip()
