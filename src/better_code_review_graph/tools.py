@@ -551,6 +551,140 @@ def _list_kinds_in_graph(store: Any) -> list[str]:
         return []
 
 
+def _lookup_node_directly(store: Any, root: Any, target: str) -> Any | None:
+    """Attempt to find a node by its qualified name or file path."""
+    node = store.get_node(target)
+    if not node:
+        full_target_raw = root / target
+        try:
+            root_resolved = root.resolve()
+            full_target = full_target_raw.resolve()
+            if (
+                full_target.is_relative_to(root_resolved)
+                and not full_target_raw.is_symlink()
+                and not full_target.is_symlink()
+            ):
+                abs_target = str(full_target)
+                node = store.get_node(abs_target)
+        except (OSError, ValueError):
+            pass
+    return node
+
+
+def _resolve_search_candidates(
+    store: Any,
+    target: str,
+    pattern: str,
+    original_target: str,
+) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
+    """Search for nodes by name and handle ambiguity/promotion."""
+    candidates = store.search_nodes(target, limit=5)
+    promoted_indexed_under: list[str] = []
+
+    # #316: when the pattern is call-graph oriented and the only ambiguity
+    # is between a File and a Function (common when a module name equals
+    # a function name), the File target is meaningless -- callers_of /
+    # callees_of want the Function. Auto-pick.
+    if (
+        len(candidates) > 1
+        and pattern in ("callers_of", "callees_of")
+        and "::" not in original_target
+    ):
+        functions = [c for c in candidates if c.kind == "Function"]
+        files = [c for c in candidates if c.kind == "File"]
+        non_call_kinds = [c for c in candidates if c.kind not in ("Function", "File")]
+        if len(functions) == 1 and len(files) >= 1 and not non_call_kinds:
+            candidates = [functions[0]]
+
+    if len(candidates) == 1:
+        node = candidates[0]
+        # Bare-name target was promoted to a qualified node; surface this
+        # via the D15 advisory fields when the bare target differs from
+        # the resolved qualified_name.
+        if "::" not in original_target and "::" in node.qualified_name:
+            promoted_indexed_under = [node.qualified_name]
+        return node, node.qualified_name, None, promoted_indexed_under
+
+    if len(candidates) > 1:
+        # D15: distinguish ambiguous unqualified bare-name lookup from a
+        # genuine "not_found". Keep status="ambiguous" for backward compat
+        # but add reason="ambiguous_unqualified" + indexed_kinds + hint.
+        return (
+            None,
+            target,
+            {
+                "status": "ambiguous",
+                "reason": "ambiguous_unqualified",
+                "summary": (
+                    f"Multiple matches for {target!r}. Please use a qualified name."
+                ),
+                "candidates": [node_to_dict(c) for c in candidates],
+                "indexed_kinds": sorted({c.kind for c in candidates}),
+                "indexed_under": [c.qualified_name for c in candidates],
+                "hint": (
+                    f"Multiple symbols match {target!r}. "
+                    "Try qualifying with namespace from indexed_under."
+                ),
+            },
+            [],
+        )
+
+    return None, target, None, []
+
+
+def _resolve_path_fallback(
+    root: Any,
+    target: str,
+    pattern: str,
+) -> tuple[Any | None, str | None, dict[str, Any] | None]:
+    """Handle path-only resolution for file-centric queries."""
+    if pattern in ("file_summary", "importers_of"):
+        full_target_raw = root / target
+        try:
+            root_resolved = root.resolve()
+            full_target = full_target_raw.resolve()
+            if (
+                not full_target.is_relative_to(root_resolved)
+                or full_target_raw.is_symlink()
+                or full_target.is_symlink()
+            ):
+                return (
+                    None,
+                    target,
+                    {
+                        "status": "error",
+                        "summary": "Invalid target path",
+                    },
+                )
+            return None, str(full_target), None
+        except (OSError, ValueError):
+            return (
+                None,
+                target,
+                {
+                    "status": "error",
+                    "summary": "Invalid target path",
+                },
+            )
+    return None, None, None
+
+
+def _handle_not_found(store: Any, target: str) -> dict[str, Any]:
+    """Generate the not_found error response for D15."""
+    indexed_kinds = _list_kinds_in_graph(store)
+    return {
+        "status": "not_found",
+        "reason": "no_such_symbol",
+        "summary": f"No node found matching {target!r}.",
+        "indexed_kinds": indexed_kinds,
+        "hint": (
+            f"Symbol {target!r} not indexed in graph. "
+            "Verify name spelling or pass a qualified form "
+            "('file_path::Class.method')."
+        ),
+    }
+
+
 def _resolve_query_target(
     store: Any,
     root: Any,
@@ -563,126 +697,34 @@ def _resolve_query_target(
         tuple: (node, resolved_qn_or_path, error_response)
     """
     original_target = target
-    promoted_from_unqualified = False
+
+    # 1. Direct lookup (qualified name or absolute path)
+    node = _lookup_node_directly(store, root, target)
+
+    # 2. Search by name if not found directly
     promoted_indexed_under: list[str] = []
-    node = store.get_node(target)
     if not node:
-        full_target_raw = root / target
-        try:
-            full_target = full_target_raw.resolve()
-            if (
-                full_target.is_relative_to(root.resolve())
-                and not full_target_raw.is_symlink()
-                and not full_target.is_symlink()
-            ):
-                abs_target = str(full_target)
-                node = store.get_node(abs_target)
-        except (OSError, ValueError):
-            pass
+        node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
+            store, target, pattern, original_target
+        )
+        if error_resp:
+            return None, target, error_resp
 
+    # 3. Final fallbacks if still no node
     if not node:
-        # Search by name
-        candidates = store.search_nodes(target, limit=5)
-        # #316: when the pattern is call-graph oriented and the only ambiguity
-        # is between a File and a Function (common when a module name equals
-        # a function name), the File target is meaningless -- callers_of /
-        # callees_of want the Function. Auto-pick.
-        if (
-            len(candidates) > 1
-            and pattern in ("callers_of", "callees_of")
-            and "::" not in original_target
-        ):
-            functions = [c for c in candidates if c.kind == "Function"]
-            files = [c for c in candidates if c.kind == "File"]
-            non_call_kinds = [
-                c for c in candidates if c.kind not in ("Function", "File")
-            ]
-            if len(functions) == 1 and len(files) >= 1 and not non_call_kinds:
-                candidates = [functions[0]]
-        if len(candidates) == 1:
-            node = candidates[0]
-            # Bare-name target was promoted to a qualified node; surface this
-            # via the D15 advisory fields when the bare target differs from
-            # the resolved qualified_name.
-            if "::" not in original_target and "::" in node.qualified_name:
-                promoted_from_unqualified = True
-                promoted_indexed_under = [node.qualified_name]
-            target = node.qualified_name
-        elif len(candidates) > 1:
-            # D15: distinguish ambiguous unqualified bare-name lookup from a
-            # genuine "not_found". Keep status="ambiguous" for backward compat
-            # but add reason="ambiguous_unqualified" + indexed_kinds + hint.
-            return (
-                None,
-                target,
-                {
-                    "status": "ambiguous",
-                    "reason": "ambiguous_unqualified",
-                    "summary": (
-                        f"Multiple matches for '{target}'. Please use a qualified name."
-                    ),
-                    "candidates": [node_to_dict(c) for c in candidates],
-                    "indexed_kinds": sorted({c.kind for c in candidates}),
-                    "indexed_under": [c.qualified_name for c in candidates],
-                    "hint": (
-                        f"Multiple symbols match '{target}'. "
-                        "Try qualifying with namespace from indexed_under."
-                    ),
-                },
-            )
+        node, path_target, error_resp = _resolve_path_fallback(root, target, pattern)
+        if error_resp:
+            return None, target, error_resp
+        if path_target:
+            return None, path_target, None
 
-    if not node:
-        if pattern in ("file_summary", "importers_of"):
-            full_target_raw = root / target
-            try:
-                full_target = full_target_raw.resolve()
-                if (
-                    not full_target.is_relative_to(root.resolve())
-                    or full_target_raw.is_symlink()
-                    or full_target.is_symlink()
-                ):
-                    return (
-                        None,
-                        target,
-                        {
-                            "status": "error",
-                            "summary": "Invalid target path",
-                        },
-                    )
-                return None, str(full_target), None
-            except (OSError, ValueError):
-                return (
-                    None,
-                    target,
-                    {
-                        "status": "error",
-                        "summary": "Invalid target path",
-                    },
-                )
-        else:
-            # D15: bare not_found is ambiguous between three distinct failures.
-            # Add reason field so callers can distinguish.
-            indexed_kinds = _list_kinds_in_graph(store)
-            return (
-                None,
-                target,
-                {
-                    "status": "not_found",
-                    "reason": "no_such_symbol",
-                    "summary": f"No node found matching '{target}'.",
-                    "indexed_kinds": indexed_kinds,
-                    "hint": (
-                        f"Symbol '{target}' not indexed in graph. "
-                        "Verify name spelling or pass a qualified form "
-                        "('file_path::Class.method')."
-                    ),
-                },
-            )
+        # D15: bare not_found
+        return None, target, _handle_not_found(store, target)
 
-    if pattern == "importers_of" and node:
+    if pattern == "importers_of":
         return node, node.file_path, None
 
-    if promoted_from_unqualified:
+    if promoted_indexed_under:
         # Stash advisory info on the store object as a simple side-channel.
         # query_graph() will read and propagate to the response.
         store._d15_promoted_indexed_under = promoted_indexed_under  # type: ignore[attr-defined]
@@ -690,10 +732,6 @@ def _resolve_query_target(
     return node, node.qualified_name, None
 
 
-# #331: dynamic-dispatch patterns the AST `CALLS` edge does not capture.
-# When a `callers_of`/`callees_of` query targets a Function, scan the same-
-# file references for these patterns so consumers know the AST answer is a
-# lower bound, not exhaustive.
 _DYNAMIC_DISPATCH_PATTERNS_PYTHON: tuple[tuple[str, str], ...] = (
     ("asyncio.to_thread", "asyncio.to_thread("),
     ("asyncio.ensure_future", "asyncio.ensure_future("),
