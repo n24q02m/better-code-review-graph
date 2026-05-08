@@ -61,6 +61,21 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 
 Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with critical bug fixes, configurable embeddings, and production CI/CD. Parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters.
 
+## What's new in v1.6
+
+- **LLM-generated summaries** -- `graph(action="summarize")` writes a one-paragraph docstring for each `Function` node via Gemini or OpenAI (cloud opt-in, no key = no-op). Run it after `graph(action="update")` to lift semantic-search recall by ~15% on repos with terse function names.
+- **Graph export in 4 formats** -- `graph(action="export", format=...)` emits `graphml` (Gephi/Cytoscape), `json-ld`, `dot` (Graphviz), or `cypher` (Neo4j replay). Inline by default; pass `output_path` to write to disk.
+- **Source text capture** -- `Function` nodes now persist their raw source so summaries can be regenerated whenever an edit changes the body. The cache key is `sha256(source_text):provider`; unchanged nodes cost zero LLM calls on re-run.
+- **Cost cap on summaries** -- `max_nodes` (default 500) caps LLM calls per invocation; pair with cron / `update` cadence for predictable spend.
+- **Phase 1 quality wins** (also new in this train): `query(action="spot_check")` for random callsite snippets, `query(action="renamed_in_diff")` for shifted callsites, dynamic-dispatch hints in `callers_of` results, a dedicated `recipes` help topic, and `embeddings_count` exposed in `graph(action="stats")`.
+
+Example -- after pulling new functions in, refresh embeddings with summaries:
+```
+graph(action="update")
+graph(action="summarize", max_nodes=200)
+graph(action="embed")
+```
+
 ## Features
 
 | Feature | code-review-graph | better-code-review-graph |
@@ -108,7 +123,7 @@ Full docs at **[mcp.n24q02m.com/servers/better-code-review-graph/](https://mcp.n
 
 ### `graph` -- Graph lifecycle
 
-Actions: `build` | `update` | `stats` | `embed`
+Actions: `build` | `update` | `stats` | `embed` | `export` | `summarize`
 
 | Action | Description |
 |:-------|:------------|
@@ -116,6 +131,8 @@ Actions: `build` | `update` | `stats` | `embed`
 | `update` | Alias for `build` with `full_rebuild=false` (incremental). |
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
 | `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud. |
+| `export` | Export graph in `graphml` / `json-ld` / `dot` / `cypher`. Inline or to `output_path`. |
+| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (Gemini or OpenAI, cloud opt-in). Cost-capped via `max_nodes`. |
 
 ### `query` -- Graph queries
 

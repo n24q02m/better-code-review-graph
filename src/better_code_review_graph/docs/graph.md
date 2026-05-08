@@ -66,6 +66,67 @@ Fixed 768-dim storage. Switching backends does NOT invalidate existing vectors.
 {"action": "embed"}
 ```
 
+---
+
+## Export the graph
+
+Export the full code knowledge graph in an interoperable format. Inline by default; pass `output_path` to write to disk and return only metadata.
+
+**Parameters:**
+- `format`: `graphml` | `json-ld` | `dot` | `cypher` (default: `graphml`, case-insensitive)
+- `output_path`: Optional file path. When provided, payload is written and the response includes only `bytes` + `output_path`. When omitted, payload is returned inline under `payload`.
+- `repo_root`: Repository root path (auto-detected)
+
+**Format integration hints:**
+- `graphml` -- Imports into Gephi / Cytoscape / NetworkX for visualization and structural analysis.
+- `json-ld` -- JSON-aware tooling and linked-data pipelines; preserves node/edge typing.
+- `dot` -- Renders directly via Graphviz (`dot -Tsvg graph.dot -o graph.svg`).
+- `cypher` -- Replays into Neo4j (`MERGE` statements for nodes + edges); useful for ad-hoc graph queries.
+
+**Example:**
+```json
+{"action": "export", "format": "graphml"}
+{"action": "export", "format": "json-ld", "output_path": "g.jsonld"}
+```
+
+MCP call form:
+```
+graph(action="export", format="graphml")                          # inline
+graph(action="export", format="json-ld", output_path="g.jsonld")  # file
+```
+
+---
+
+## Generate LLM summaries
+
+Generate one-paragraph LLM docstrings for `Function` nodes that lack a stored summary or whose source has changed. Stored alongside each node and concatenated into the embedding input -- boosts semantic search recall by roughly 15% by giving the embedder higher-signal text than raw identifiers + signatures alone.
+
+**Parameters:**
+- `max_nodes`: Cost cap -- max LLM calls per invocation (default: `500`)
+- `repo_root`: Repository root path (auto-detected)
+
+**Provider auto-detection** (priority order):
+1. `GEMINI_API_KEY` (or `GOOGLE_API_KEY` alias) -- Gemini
+2. `OPENAI_API_KEY` -- OpenAI
+
+Local-only mode does **not** generate summaries. This is intentional: a small ONNX embedder running offline is the zero-cost default; summaries are an opt-in cloud upgrade. When no provider key is set, the action returns `status: "skipped", reason: "no_provider_configured"` and the graph is unchanged.
+
+**Cost cap + caching:**
+- Default cap is 500 LLM calls per invocation. Tune with `max_nodes` for tighter budgets.
+- Repeat invocations skip nodes whose `source_hash` + `summary_provider` haven't changed -- the cache key is `"{sha256(source_text)}:{provider}"`, so re-running on an unchanged repo is a no-op (cached count goes up, generated count stays at 0). Switching provider invalidates entries even when source bytes are identical.
+
+**Example:**
+```json
+{"action": "summarize", "max_nodes": 200}
+```
+
+MCP call form:
+```
+graph(action="summarize", max_nodes=200)
+```
+
+**When to re-run:** after `graph(action="update")` brings new functions in, or after large refactors where many `source_hash` values change. Edits to existing function bodies invalidate their cached summary automatically -- the next `summarize` call regenerates only the changed nodes.
+
 ## Supported Languages
 
 Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
