@@ -12,6 +12,7 @@ import logging
 import shutil
 import subprocess
 import threading
+from typing import Any
 import time
 from pathlib import Path
 
@@ -357,46 +358,33 @@ def full_build(repo_root: Path, store: GraphStore) -> dict:
     }
 
 
-def incremental_update(
+def _get_effective_base_and_changed_files(
     repo_root: Path,
     store: GraphStore,
-    base: str = "HEAD~1",
-    changed_files: list[str] | None = None,
-) -> dict:
-    """Incremental update: re-parse changed + dependent files only.
-
-    When ``base`` is the default ``"HEAD~1"`` and the store records a
-    ``last_built_head`` SHA that is still reachable, the diff range is
-    widened to ``last_built_head..HEAD`` so local-only commits that
-    accumulated since the last build are all picked up (fixes #328).
-    """
-    parser = CodeParser()
-    ignore_patterns = _load_ignore_patterns(repo_root)
-
-    # Widen default base to cover every local commit since the last build.
+    base: str,
+    changed_files: list[str] | None,
+) -> tuple[str, list[str]]:
+    """Widen default base and determine changed files."""
     effective_base = base
     if changed_files is None and base == "HEAD~1":
         last_head = store.get_metadata("last_built_head")
         if last_head and is_valid_commit(repo_root, last_head):
             current_head = get_head_sha(repo_root)
-            # Only widen when the index is actually behind HEAD
             if current_head and current_head != last_head:
                 effective_base = last_head
 
-    # Determine changed files
     if changed_files is None:
         changed_files = get_changed_files(repo_root, effective_base)
 
-    if not changed_files:
-        return {
-            "files_updated": 0,
-            "total_nodes": 0,
-            "total_edges": 0,
-            "changed_files": [],
-            "dependent_files": [],
-        }
+    return effective_base, changed_files
 
-    # Find dependent files (files that import from changed files)
+
+def _get_dependent_files(
+    repo_root: Path,
+    store: GraphStore,
+    changed_files: list[str],
+) -> set[str]:
+    """Find dependent files (files that import from changed files)."""
     dependent_files: set[str] = set()
     repo_resolved = repo_root.resolve()
     for rel_path in changed_files:
@@ -409,25 +397,24 @@ def incremental_update(
 
         deps = find_dependents(store, str(full_path))
         for d in deps:
-            # Convert back to relative path if needed
             try:
                 dependent_files.add(str(Path(d).relative_to(repo_root)))
             except ValueError:
                 dependent_files.add(d)
+    return dependent_files
 
-    # Combine changed + dependent
-    all_files = set(changed_files) | dependent_files
 
-    total_nodes = 0
-    total_edges = 0
-    errors = []
-
-    # #329: per-file snapshot of pre-update Function qualified_names so we can
-    # diff added / removed / modified functions for the reviewer summary.
+def _snapshot_pre_functions(
+    repo_root: Path,
+    store: GraphStore,
+    all_files: set[str],
+) -> dict[str, dict[str, str]]:
+    """Create per-file snapshot of pre-update Function qualified_names."""
     pre_functions: dict[str, dict[str, str]] = {}
+    repo_resolved = repo_root.resolve()
     for rel_path in all_files:
         abs_pre = (repo_root / rel_path).resolve()
-        if not abs_pre.is_relative_to(repo_root.resolve()):
+        if not abs_pre.is_relative_to(repo_resolved):
             continue
         existing = store.get_nodes_by_file(str(abs_pre))
         pre_functions[rel_path] = {
@@ -435,18 +422,31 @@ def incremental_update(
             for n in existing
             if n.kind == "Function"
         }
+    return pre_functions
 
+
+def _update_files_in_store(
+    repo_root: Path,
+    store: GraphStore,
+    parser: CodeParser,
+    all_files: set[str],
+    ignore_patterns: list[str],
+) -> tuple[int, int, set[str], list[dict[str, Any]]]:
+    """Process file updates (deletions and re-parsing)."""
+    total_nodes = 0
+    total_edges = 0
     actually_updated: set[str] = set()
+    errors = []
+    repo_resolved = repo_root.resolve()
 
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
         abs_path_raw = repo_root / rel_path
         abs_path = abs_path_raw.resolve()
-        if not abs_path.is_relative_to(repo_root.resolve()):
+        if not abs_path.is_relative_to(repo_resolved):
             continue
         if not abs_path.is_file():
-            # File was deleted
             store.remove_file_data(str(abs_path))
             actually_updated.add(rel_path)
             continue
@@ -456,12 +456,10 @@ def incremental_update(
             continue
 
         try:
-            # Check if file actually changed (compare against stored file_hash column)
             source_preview = abs_path.read_bytes()
             fhash = hashlib.sha256(source_preview).hexdigest()
             existing_nodes = store.get_nodes_by_file(str(abs_path))
             if existing_nodes and existing_nodes[0].file_hash == fhash:
-                # Skip unchanged files (hash match)
                 continue
 
             n_nodes, n_edges = _update_single_file(
@@ -476,7 +474,56 @@ def incremental_update(
             logger.warning("Error parsing %s: %s", rel_path, e)
             errors.append({"file": rel_path, "error": str(e)})
 
-    # #329: build reviewer-oriented summary from pre/post Function snapshots.
+    return total_nodes, total_edges, actually_updated, errors
+
+
+def _finalize_incremental_metadata(repo_root: Path, store: GraphStore) -> None:
+    """Update store metadata and commit changes."""
+    store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
+    store.set_metadata("last_build_type", "incremental")
+    current_head = get_head_sha(repo_root)
+    if current_head:
+        store.set_metadata("last_built_head", current_head)
+    store.commit()
+
+
+def incremental_update(
+    repo_root: Path,
+    store: GraphStore,
+    base: str = "HEAD~1",
+    changed_files: list[str] | None = None,
+) -> dict:
+    """Incremental update: re-parse changed + dependent files only."""
+    parser = CodeParser()
+    ignore_patterns = _load_ignore_patterns(repo_root)
+
+    # 1. Determine changed files
+    effective_base, changed_files = _get_effective_base_and_changed_files(
+        repo_root, store, base, changed_files
+    )
+
+    if not changed_files:
+        return {
+            "files_updated": 0,
+            "total_nodes": 0,
+            "total_edges": 0,
+            "changed_files": [],
+            "dependent_files": [],
+        }
+
+    # 2. Find dependent files
+    dependent_files = _get_dependent_files(repo_root, store, changed_files)
+    all_files = set(changed_files) | dependent_files
+
+    # 3. Snapshot pre-update functions
+    pre_functions = _snapshot_pre_functions(repo_root, store, all_files)
+
+    # 4. Process updates
+    total_nodes, total_edges, actually_updated, errors = _update_files_in_store(
+        repo_root, store, parser, all_files, ignore_patterns
+    )
+
+    # 5. Build reviewer summary
     reviewer_summary = _build_reviewer_summary(
         store=store,
         repo_root=repo_root,
@@ -485,12 +532,8 @@ def incremental_update(
         actually_updated=actually_updated,
     )
 
-    store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
-    store.set_metadata("last_build_type", "incremental")
-    current_head = get_head_sha(repo_root)
-    if current_head:
-        store.set_metadata("last_built_head", current_head)
-    store.commit()
+    # 6. Finalize metadata and commit
+    _finalize_incremental_metadata(repo_root, store)
 
     return {
         "files_updated": len(all_files),
@@ -501,7 +544,6 @@ def incremental_update(
         "errors": errors,
         "reviewer_summary": reviewer_summary,
     }
-
 
 def _build_reviewer_summary(
     store: GraphStore,
