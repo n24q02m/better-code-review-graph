@@ -159,3 +159,149 @@ def test_export_dot_escapes_quotes_in_labels(tmp_path):
         assert 'label="say\\"hi\\""' in out
     finally:
         store.close()
+
+
+def test_export_cypher_handles_numeric_props(tmp_path):
+    """Cypher exporter must format int/float/bool props without quotes."""
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=42,
+                line_end=99,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        out = export_cypher(store)
+        # Numeric line_start/line_end should appear unquoted
+        assert "line_start: 42" in out
+        assert "line_end: 99" in out
+    finally:
+        store.close()
+
+
+def test_export_cypher_skips_none_props(tmp_path):
+    """_cypher_props must skip None values (line 48 branch)."""
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        # line_start/line_end = None → cypher must skip them
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="nulls",
+                file_path="x.py",
+                line_start=None,
+                line_end=None,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        out = export_cypher(store)
+        # None props must NOT be emitted (no `line_start: None` or `line_start: `)
+        assert "line_start" not in out
+        assert "line_end" not in out
+        # But the remaining string props still appear
+        assert "name: 'nulls'" in out
+        assert "language: 'python'" in out
+    finally:
+        store.close()
+
+
+def test_export_graphml_skips_empty_string_attributes(tmp_path):
+    """GraphML exporter must omit data elements when value is empty string (not just None)."""
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        # NodeInfo with language="" — should be skipped in graphml output
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="",
+            ),
+            file_hash="h",
+        )
+        out = export_graphml(store)
+        # The empty-string language data element should NOT appear
+        assert '<data key="language">' not in out
+        # But other attributes should still be present
+        assert '<data key="kind">Function</data>' in out
+    finally:
+        store.close()
+
+
+def test_export_graphml_skips_none_line_attrs(tmp_path):
+    """GraphML node loop must skip line_start/line_end when None (line 111 branch)."""
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=None,
+                line_end=None,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        out = export_graphml(store)
+        # None line_start/line_end → no data element emitted
+        assert '<data key="line_start">' not in out
+        assert '<data key="line_end">' not in out
+        # But kind/language still emitted
+        assert '<data key="kind">Function</data>' in out
+        assert '<data key="language">python</data>' in out
+    finally:
+        store.close()
+
+
+def test_export_graphml_skips_empty_edge_attrs(tmp_path):
+    """GraphML edge loop must skip edge_file when empty (line 123 branch)."""
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="a",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="b",
+                file_path="x.py",
+                line_start=4,
+                line_end=5,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        # Edge with empty file_path → graphml must skip the edge_file data element
+        store.upsert_edge(
+            EdgeInfo(
+                kind="CALLS",
+                source="x.py::a",
+                target="x.py::b",
+                file_path="",
+                line=1,
+            )
+        )
+        out = export_graphml(store)
+        # Empty edge_file must be skipped
+        assert '<data key="edge_file">' not in out
+        # But edge_kind still emitted
+        assert '<data key="edge_kind">CALLS</data>' in out
+    finally:
+        store.close()

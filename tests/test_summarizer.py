@@ -318,6 +318,47 @@ def test_summarize_node_handles_braces_in_source():
     assert src in mock_client.models.generate_content.call_args.kwargs["contents"]
 
 
+def test_get_gemini_client_constructs_with_api_key():
+    """Lazy-import path in _get_gemini_client must call genai.Client(api_key=...)."""
+    from better_code_review_graph.summarizer import _get_gemini_client
+
+    fake_client = MagicMock()
+    with patch("google.genai.Client", return_value=fake_client) as mock_ctor:
+        result = _get_gemini_client("g-key")
+    assert result is fake_client
+    mock_ctor.assert_called_once_with(api_key="g-key")
+
+
+def test_get_openai_client_constructs_with_api_key():
+    """Lazy-import path in _get_openai_client must call openai.OpenAI(api_key=...)."""
+    from better_code_review_graph.summarizer import _get_openai_client
+
+    fake_client = MagicMock()
+    with patch("openai.OpenAI", return_value=fake_client) as mock_ctor:
+        result = _get_openai_client("o-key")
+    assert result is fake_client
+    mock_ctor.assert_called_once_with(api_key="o-key")
+
+
+def test_summarize_node_openai_create_failure_wraps_runtimeerror():
+    """OpenAI client.chat.completions.create() raising must be wrapped in RuntimeError (lines 203-204)."""
+    node = NodeNeedingSummary(
+        node_id="x.py::boom", source_text="def boom(): pass", source_hash=None
+    )
+    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = RuntimeError(
+            "openai upstream 503"
+        )
+        mock_get.return_value = mock_client
+        with pytest.raises(
+            RuntimeError, match="summarize_node failed via openai"
+        ) as exc_info:
+            summarize_node(node, provider="openai", api_key="o-key")
+    # Original cause chained via "from exc"
+    assert "openai upstream 503" in str(exc_info.value)
+
+
 # ---------------------------------------------------------------------------
 # update_summary + batch_summarize (Task 5)
 # ---------------------------------------------------------------------------
