@@ -5,8 +5,6 @@ edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_O
 Supports impact-radius queries and subgraph extraction.
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 import threading
@@ -131,7 +129,7 @@ class GraphStore:
         self._nxg_cache: nx.DiGraph | None = None
         self._cache_lock = threading.Lock()
 
-    def __enter__(self) -> GraphStore:
+    def __enter__(self) -> "GraphStore":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
