@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     updated_at REAL NOT NULL,
     summary TEXT,
     summary_provider TEXT,
-    source_hash TEXT
+    source_hash TEXT,
+    source_text TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -74,7 +75,12 @@ CREATE INDEX IF NOT EXISTS idx_edges_file ON edges(file_path);
 # Phase 1 v1.6.x: nullable columns added to existing `nodes` tables via
 # idempotent ALTER TABLE checks. Fresh DBs already get these via _SCHEMA_SQL;
 # this list drives backfill for DBs created before v1.6.
-_SUMMARY_COLUMNS: tuple[str, ...] = ("summary", "summary_provider", "source_hash")
+_SUMMARY_COLUMNS: tuple[str, ...] = (
+    "summary",
+    "summary_provider",
+    "source_hash",
+    "source_text",
+)
 
 
 @dataclass
@@ -262,6 +268,29 @@ class GraphStore:
             ),
         )
         return self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    def update_summary(
+        self,
+        node_id: int,
+        *,
+        summary: str,
+        provider: str,
+        source_hash: str,
+    ) -> None:
+        """Persist LLM-generated summary metadata for a node.
+
+        Args:
+            node_id: The integer primary key of the node row in the nodes table.
+            summary: Generated docstring text.
+            provider: Provider name (e.g. "gemini" or "openai").
+            source_hash: SHA-256 of the source_text used to generate the summary.
+                Used as cache key on subsequent batch_summarize calls.
+        """
+        self._conn.execute(
+            "UPDATE nodes SET summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (summary, provider, source_hash, node_id),
+        )
+        self._conn.commit()
 
     def remove_file_data(self, file_path: str) -> None:
         """Remove all nodes and edges associated with a file."""

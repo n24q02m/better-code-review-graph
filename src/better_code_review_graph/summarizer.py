@@ -28,9 +28,12 @@ when only the cache-key helpers are exercised (precommit, T0 smoke).
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -210,3 +213,114 @@ def summarize_node(
             f"(likely safety filter) for node {node.node_id}"
         )
     return content.strip()
+
+
+# ---------------------------------------------------------------------------
+# Batch orchestration (Task 5)
+# ---------------------------------------------------------------------------
+
+# Default cap on per-run LLM calls. Override per-call via the max_nodes parameter.
+DEFAULT_MAX_NODES_PER_RUN = 500
+
+
+@dataclass(frozen=True)
+class BatchSummarizeResult:
+    """Outcome counts from a batch_summarize run."""
+
+    generated: int  # nodes whose summary was newly generated this run
+    cached: int  # nodes whose stored summary was still valid (cache hit)
+    skipped_no_provider: bool = False  # True iff no provider env var was set
+    provider: str | None = None  # provider used (None if skipped)
+    errors: int = 0  # nodes where summarize_node raised; counted but logged + skipped
+
+
+def batch_summarize(
+    store: Any, *, max_nodes: int = DEFAULT_MAX_NODES_PER_RUN
+) -> BatchSummarizeResult:
+    """Generate summaries for Function nodes that lack a current cache entry.
+
+    Iteration scope: at most ``max_nodes`` Function-kind nodes whose
+    ``source_text`` is non-null. For each candidate:
+
+    - If stored summary + ``summary_provider`` + ``source_hash`` all match
+      the live provider + freshly-computed source hash, it's a cache hit
+      and we skip.
+    - Otherwise call :func:`summarize_node` and persist via
+      :meth:`GraphStore.update_summary`.
+
+    Errors from :func:`summarize_node` are logged via the module logger and
+    counted in :class:`BatchSummarizeResult.errors`; the batch continues so
+    a single transient provider hiccup doesn't kill an entire run. Caller
+    can re-run later — failed nodes will retry next time because their
+    stored ``source_hash`` still doesn't match the live one.
+
+    Returns counts. No-op (``skipped_no_provider=True``) when no provider
+    env var is configured.
+    """
+    if max_nodes < 1:
+        raise ValueError(f"max_nodes must be >= 1, got {max_nodes}")
+
+    resolved = resolve_summary_provider()
+    if resolved is None:
+        return BatchSummarizeResult(
+            generated=0,
+            cached=0,
+            skipped_no_provider=True,
+            provider=None,
+            errors=0,
+        )
+    provider, api_key = resolved
+
+    rows = store._conn.execute(
+        "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
+        "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
+        (max_nodes,),
+    ).fetchall()
+
+    generated = 0
+    cached = 0
+    errors = 0
+
+    for row in rows:
+        row_id = row[0]
+        src = row[1]
+        stored_hash = row[2]
+        stored_summary = row[3]
+        stored_provider = row[4]
+
+        live_hash = compute_source_hash(src)
+
+        if stored_summary and stored_hash == live_hash and stored_provider == provider:
+            cached += 1
+            continue
+
+        try:
+            summary = summarize_node(
+                NodeNeedingSummary(
+                    node_id=str(row_id),
+                    source_text=src,
+                    source_hash=live_hash,
+                ),
+                provider=provider,
+                api_key=api_key,
+            )
+        except Exception as exc:
+            logger.warning("summarize_node failed for id=%d: %s", row_id, exc)
+            errors += 1
+            continue
+
+        store.update_summary(
+            row_id,
+            summary=summary,
+            provider=provider,
+            source_hash=live_hash,
+        )
+        generated += 1
+
+    return BatchSummarizeResult(
+        generated=generated,
+        cached=cached,
+        skipped_no_provider=False,
+        provider=provider,
+        errors=errors,
+    )

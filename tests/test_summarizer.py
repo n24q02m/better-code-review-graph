@@ -316,3 +316,334 @@ def test_summarize_node_handles_braces_in_source():
     assert result == "Returns a dict."
     # Verify the source went verbatim into the prompt
     assert src in mock_client.models.generate_content.call_args.kwargs["contents"]
+
+
+# ---------------------------------------------------------------------------
+# update_summary + batch_summarize (Task 5)
+# ---------------------------------------------------------------------------
+
+
+def test_update_summary_persists_to_db(tmp_path):
+    """GraphStore.update_summary should write summary + provider + source_hash atomically."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store.update_summary(
+            node_id, summary="A summary.", provider="gemini", source_hash="abc123"
+        )
+        row = store._conn.execute(
+            "SELECT summary, summary_provider, source_hash FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "A summary."
+        assert row[1] == "gemini"
+        assert row[2] == "abc123"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_skips_when_no_provider(tmp_path, monkeypatch):
+    """Without env vars set, batch_summarize returns skipped_no_provider=True without calling LLM."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        result = batch_summarize(store, max_nodes=10)
+        assert result.skipped_no_provider is True
+        assert result.generated == 0
+        assert result.cached == 0
+        assert result.provider is None
+    finally:
+        store.close()
+
+
+def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
+    """Function nodes without summary should be sent to LLM and result persisted."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        # Set source_text directly since NodeInfo doesn't carry it
+        store._conn.execute(
+            "UPDATE nodes SET source_text=? WHERE id=?",
+            ("def f(): return 1", node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "Returns 1."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.cached == 0
+        assert result.provider == "gemini"
+        # Verify persisted
+        row = store._conn.execute(
+            "SELECT summary, summary_provider, source_hash FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "Returns 1."
+        assert row[1] == "gemini"
+        assert row[2] == compute_source_hash("def f(): return 1")
+    finally:
+        store.close()
+
+
+def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkeypatch):
+    """Pre-existing summary + matching source_hash + matching provider => cache hit, no LLM call."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        src = "def f(): return 1"
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store._conn.execute(
+            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (src, "Cached summary.", "gemini", compute_source_hash(src), node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.cached == 1
+        assert result.generated == 0
+        mock_sum.assert_not_called()
+    finally:
+        store.close()
+
+
+def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
+    """If stored hash != live hash, treat as stale and regenerate."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        # Stored summary corresponds to OLD source; live source is new
+        store._conn.execute(
+            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (
+                "def f(): return 2",
+                "Old summary for return 1.",
+                "gemini",
+                "stale_hash",
+                node_id,
+            ),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "Returns 2."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.cached == 0
+        # Verify summary updated
+        row = store._conn.execute(
+            "SELECT summary FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "Returns 2."
+    finally:
+        store.close()
+
+
+def test_batch_summarize_respects_max_nodes_cap(tmp_path, monkeypatch):
+    """max_nodes=2 with 5 candidate nodes should generate at most 2."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        for i in range(5):
+            nid = store.upsert_node(
+                NodeInfo(
+                    kind="Function",
+                    name=f"f{i}",
+                    file_path="x.py",
+                    line_start=i,
+                    line_end=i + 1,
+                    language="python",
+                ),
+                file_hash="h",
+            )
+            store._conn.execute(
+                "UPDATE nodes SET source_text=? WHERE id=?",
+                (f"def f{i}(): return {i}", nid),
+            )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "Stub."
+            result = batch_summarize(store, max_nodes=2)
+
+        assert result.generated == 2
+        assert mock_sum.call_count == 2
+    finally:
+        store.close()
+
+
+def test_batch_summarize_continues_after_per_node_error(tmp_path, monkeypatch):
+    """If summarize_node raises for one node, batch should count error + continue with others."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        for i in range(3):
+            nid = store.upsert_node(
+                NodeInfo(
+                    kind="Function",
+                    name=f"f{i}",
+                    file_path="x.py",
+                    line_start=i,
+                    line_end=i + 1,
+                    language="python",
+                ),
+                file_hash="h",
+            )
+            store._conn.execute(
+                "UPDATE nodes SET source_text=? WHERE id=?",
+                (f"def f{i}(): return {i}", nid),
+            )
+        store._conn.commit()
+
+        # 2nd call raises, 1st + 3rd succeed
+        side_effects = ["First.", RuntimeError("boom"), "Third."]
+        with patch(
+            "better_code_review_graph.summarizer.summarize_node",
+            side_effect=side_effects,
+        ) as mock_sum:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 2
+        assert result.errors == 1
+        assert mock_sum.call_count == 3
+    finally:
+        store.close()
+
+
+def test_batch_summarize_invalid_max_nodes_raises():
+    """max_nodes <= 0 should raise ValueError before any DB query."""
+    from better_code_review_graph.summarizer import batch_summarize
+
+    with pytest.raises(ValueError, match="max_nodes must be"):
+        batch_summarize(MagicMock(), max_nodes=0)
+    with pytest.raises(ValueError, match="max_nodes must be"):
+        batch_summarize(MagicMock(), max_nodes=-1)
+
+
+def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
+    """Class/Type/Test nodes are not summarized — kind='Function' filter."""
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        for kind in ("Class", "Type", "Test"):
+            nid = store.upsert_node(
+                NodeInfo(
+                    kind=kind,
+                    name=f"{kind}_x",
+                    file_path="x.py",
+                    line_start=1,
+                    line_end=2,
+                    language="python",
+                ),
+                file_hash="h",
+            )
+            store._conn.execute(
+                "UPDATE nodes SET source_text=? WHERE id=?",
+                ("class X: pass", nid),
+            )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 0
+        mock_sum.assert_not_called()
+    finally:
+        store.close()
