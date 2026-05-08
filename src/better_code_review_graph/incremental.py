@@ -12,9 +12,9 @@ import logging
 import shutil
 import subprocess
 import threading
-from typing import Any
 import time
 from pathlib import Path
+from typing import Any
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -544,6 +544,7 @@ def incremental_update(
         "errors": errors,
         "reviewer_summary": reviewer_summary,
     }
+
 
 def _build_reviewer_summary(
     store: GraphStore,
