@@ -54,17 +54,18 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 >
 > All plugins share the same architecture -- install once, learn pattern transfers.
 
-## Setup
+## Documentation
 
-- **Stdio mode** (default) -- local SQLite graph store, optional API keys (`JINA_AI_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `COHERE_API_KEY`). See [setup-manual.md](docs/setup-manual.md).
-- **HTTP mode** (optional) -- multi-user, browser-based API key setup via paste-token relay form. See [setup-manual.md](docs/setup-manual.md).
+Full docs at **[mcp.n24q02m.com/servers/better-code-review-graph/](https://mcp.n24q02m.com/servers/better-code-review-graph/)**:
 
-**With AI Agent** -- copy and send this to your AI agent:
+- [Setup](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
+- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
 
-> Please set up better-code-review-graph for me. Follow this guide:
-> https://raw.githubusercontent.com/n24q02m/better-code-review-graph/main/docs/setup-with-agent.md
+**Install with AI agent** -- paste this to your AI coding agent:
 
-**Manual Setup** -- follow [docs/setup-manual.md](docs/setup-manual.md)
+> Install MCP server `better-code-review-graph` following the steps at
+> https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-code-review-graph/setup-with-agent.md
 
 ## Tools
 
