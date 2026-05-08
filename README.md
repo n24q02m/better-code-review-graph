@@ -41,6 +41,18 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 </details>
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
 
+## Table of contents
+
+- [Features](#features)
+- [Status](#status)
+- [Documentation](#documentation)
+- [Tools](#tools)
+- [Security](#security)
+- [Build from Source](#build-from-source)
+- [Trust Model](#trust-model)
+- [License](#license)
+
+
 
 <!-- Glama badge -->
 <a href="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph">
