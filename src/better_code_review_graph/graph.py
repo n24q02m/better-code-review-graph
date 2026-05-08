@@ -656,6 +656,11 @@ class GraphStore:
         cursor = self._conn.execute("SELECT * FROM edges")
         return [self._row_to_edge(r) for r in cursor]
 
+    def get_all_nodes(self) -> list[GraphNode]:
+        """Return all nodes in the graph."""
+        cursor = self._conn.execute("SELECT * FROM nodes")
+        return [self._row_to_node(r) for r in cursor]
+
     def get_edges_among(self, qualified_names: set[str]) -> list[GraphEdge]:
         """Return edges where both source and target are in the given set.
 

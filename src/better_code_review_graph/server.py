@@ -19,6 +19,7 @@ from .incremental import get_db_path
 from .tools import (
     build_or_update_graph,
     embed_graph,
+    export_graph_dispatch,
     find_large_functions,
     get_docs_section,
     get_impact_radius,
@@ -91,6 +92,8 @@ def graph(
     full_rebuild: bool = False,
     base: str = "HEAD~1",
     repo_root: str | None = None,
+    format: str = "graphml",
+    output_path: str | None = None,
 ) -> str:
     """Build, update, and manage the code knowledge graph.
 
@@ -99,6 +102,9 @@ def graph(
     - update (-> base="HEAD~1", repo_root): Incremental update (alias for build)
     - stats (-> repo_root): Node/edge counts, languages, embedding status
     - embed (-> repo_root): Compute vector embeddings for semantic search
+    - export (-> format='graphml', output_path=None, repo_root): Export graph
+        in graphml | json-ld | dot | cypher format. Writes to output_path when
+        provided, otherwise returns payload inline.
     """
     match action:
         case "build":
@@ -119,10 +125,16 @@ def graph(
             result = embed_graph(repo_root=repo_root)
             result = _maybe_include_setup_hint(result)
             return _json(result)
+        case "export":
+            return _json(
+                export_graph_dispatch(
+                    repo_root=repo_root, format=format, output_path=output_path
+                )
+            )
         case _:
             import difflib
 
-            valid_actions = ["build", "embed", "stats", "update"]
+            valid_actions = ["build", "embed", "export", "stats", "update"]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
             return _json(

@@ -1889,6 +1889,56 @@ def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def export_graph_dispatch(
+    repo_root: str | None = None,
+    format: str = "graphml",
+    output_path: str | None = None,
+) -> dict[str, Any]:
+    """Export the code knowledge graph in an interoperable format.
+
+    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher.
+    GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into Neo4j;
+    JSON-LD drives JSON-aware tooling; DOT renders via Graphviz.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        format: One of graphml | json-ld | dot | cypher (case-insensitive).
+        output_path: When provided, payload is written to this path and only
+            metadata is returned. When None, payload is returned inline.
+
+    Returns:
+        Dict with status + format + bytes; payload field included only when
+        output_path is None.
+    """
+    from .exporter import export_graph
+
+    store, _ = _get_store(repo_root)
+    try:
+        payload = export_graph(store, format=format)
+    except ValueError as e:
+        return {"status": "error", "error": str(e)}
+
+    fmt = format.lower()
+    byte_count = len(payload.encode("utf-8"))
+
+    if output_path:
+        Path(output_path).write_text(payload, encoding="utf-8")
+        return {
+            "status": "ok",
+            "format": fmt,
+            "output_path": output_path,
+            "bytes": byte_count,
+            "summary": f"Exported graph to {output_path} ({byte_count:,} bytes, {fmt}).",
+        }
+
+    return {
+        "status": "ok",
+        "format": fmt,
+        "bytes": byte_count,
+        "payload": payload,
+    }
+
+
 def get_docs_section(section_name: str, repo_root: str | None = None) -> dict[str, Any]:
     """Return a specific section from the LLM-optimized reference.
 
