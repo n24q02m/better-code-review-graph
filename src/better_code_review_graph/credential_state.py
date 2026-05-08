@@ -159,12 +159,25 @@ def _sub_data_dir(sub: str) -> Path:
     ``graph.db`` (per-user code knowledge graph) so credentials and graph
     state never leak across users sharing the same deployment.
     """
+    # sub must be a single path component to prevent traversal.
+    # JWT 'sub' should be a string like 'user-123' or a UUID, never a path.
+    if (
+        not sub
+        or sub in (".", "..")
+        or "/" in sub
+        or "\\" in sub
+        or os.path.sep in sub
+        or (os.path.altsep and os.path.altsep in sub)
+    ):
+        raise ValueError(f"Invalid subject (must be a single path component): {sub}")
+
     base = Path(os.environ.get("CRG_DATA_DIR", str(Path.home() / ".crg")))
     subs_base = (base / "subs").resolve()
 
-    d = (base / "subs" / sub).resolve()
-    if not d.is_relative_to(subs_base):
-        raise ValueError(f"Invalid subject (path traversal detected): {sub}")
+    # defense-in-depth: still verify the resolved path stays within subs_base
+    d = (subs_base / sub).resolve()
+    if not d.is_relative_to(subs_base) or d == subs_base:
+        raise ValueError(f"Invalid subject: {sub}")
 
     d.mkdir(parents=True, exist_ok=True)
     return d
