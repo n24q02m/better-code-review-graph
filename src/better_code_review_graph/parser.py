@@ -42,6 +42,11 @@ class NodeInfo:
     modifiers: str | None = None
     is_test: bool = False
     extra: dict = field(default_factory=dict)
+    # Raw source slice for Function-kind nodes (line_start..line_end inclusive).
+    # Populated by the parser only for kind == "Function" so batch_summarize has
+    # candidates without re-reading files. Class/Type/Test/File leave this None
+    # to avoid bloating the DB with content that is irrelevant for LLM summaries.
+    source_text: str | None = None
 
 
 @dataclass
@@ -214,6 +219,27 @@ def file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _extract_source_span(source_lines: list[str], start: int, end: int) -> str:
+    """Return the joined slice of ``source_lines`` between 1-indexed
+    ``start`` and ``end`` (both inclusive).
+
+    ``source_lines`` is the file split on ``"\n"``. ``start`` / ``end``
+    follow the same 1-indexed convention used by NodeInfo (Tree-sitter
+    ``start_point[0] + 1``). Out-of-range bounds clamp to the available
+    range so a malformed ``end`` (e.g. past EOF) returns whatever lines
+    do exist instead of crashing. An empty ``source_lines`` returns an
+    empty string.
+    """
+    if not source_lines:
+        return ""
+    # Clamp to valid 1-indexed range; tolerate inverted/None-like bounds.
+    lo = max(1, start) if start else 1
+    hi = min(len(source_lines), end) if end else len(source_lines)
+    if hi < lo:
+        return ""
+    return "\n".join(source_lines[lo - 1 : hi])
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -225,6 +251,11 @@ class CodeParser:
     def __init__(self) -> None:
         self._parsers: dict[str, object] = {}
         self._module_file_cache: dict[str, str | None] = {}
+        # Per-parse scratchpad: the file currently being parsed split on "\n".
+        # Set in parse_bytes(), read by _handle_function_node() to populate
+        # NodeInfo.source_text. Reset to None between parses so a stale
+        # buffer can never leak across files.
+        self._current_source_lines: list[str] | None = None
 
     def _get_parser(self, language: str):
         if language not in self._parsers:
@@ -272,36 +303,46 @@ class CodeParser:
         edges: list[EdgeInfo] = []
         file_path_str = str(path)
 
-        # File node
-        nodes.append(
-            NodeInfo(
-                kind="File",
-                name=file_path_str,
-                file_path=file_path_str,
-                line_start=1,
-                line_end=source.count(b"\n") + 1,
-                language=language,
+        # Decode + split the file once so _handle_function_node can populate
+        # NodeInfo.source_text without re-reading bytes per Function. The
+        # scratchpad is cleared at the end so stale lines never leak into the
+        # next parse_bytes call.
+        source_text_full = source.decode("utf-8", errors="replace")
+        self._current_source_lines = source_text_full.split("\n")
+
+        try:
+            # File node
+            nodes.append(
+                NodeInfo(
+                    kind="File",
+                    name=file_path_str,
+                    file_path=file_path_str,
+                    line_start=1,
+                    line_end=source.count(b"\n") + 1,
+                    language=language,
+                )
             )
-        )
 
-        # Pre-scan for import mappings and defined names
-        import_map, defined_names = self._collect_file_scope(
-            tree.root_node,
-            language,
-            source,
-        )
+            # Pre-scan for import mappings and defined names
+            import_map, defined_names = self._collect_file_scope(
+                tree.root_node,
+                language,
+                source,
+            )
 
-        # Walk the tree
-        self._extract_from_tree(
-            tree.root_node,
-            source,
-            language,
-            file_path_str,
-            nodes,
-            edges,
-            import_map=import_map,
-            defined_names=defined_names,
-        )
+            # Walk the tree
+            self._extract_from_tree(
+                tree.root_node,
+                source,
+                language,
+                file_path_str,
+                nodes,
+                edges,
+                import_map=import_map,
+                defined_names=defined_names,
+            )
+        finally:
+            self._current_source_lines = None
 
         return nodes, edges
 
@@ -486,17 +527,28 @@ class CodeParser:
         params = self._get_params(node, language, source)
         ret_type = self._get_return_type(node, language, source)
 
+        line_start = node.start_point[0] + 1
+        line_end = node.end_point[0] + 1
+        # Only Function-kind nodes carry source_text — Test/Class skip to keep
+        # batch_summarize's candidate set focused and the DB compact.
+        source_text: str | None = None
+        if kind == "Function" and self._current_source_lines is not None:
+            source_text = _extract_source_span(
+                self._current_source_lines, line_start, line_end
+            )
+
         node_info = NodeInfo(
             kind=kind,
             name=name,
             file_path=file_path,
-            line_start=node.start_point[0] + 1,
-            line_end=node.end_point[0] + 1,
+            line_start=line_start,
+            line_end=line_end,
             language=language,
             parent_name=enclosing_class,
             params=params,
             return_type=ret_type,
             is_test=is_test,
+            source_text=source_text,
         )
         nodes.append(node_info)
 
