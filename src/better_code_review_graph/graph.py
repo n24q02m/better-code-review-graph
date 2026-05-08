@@ -425,9 +425,23 @@ class GraphStore:
         reverse call tracing (callers_of) works even when qualified-name lookup
         returns nothing.
         """
+        return self.search_edges_by_target_names([name], kind=kind)
+
+    def search_edges_by_target_names(
+        self, names: list[str], kind: str = "CALLS"
+    ) -> list[GraphEdge]:
+        """Batch search for edges where target_qualified matches any of the given names.
+
+        Bolt: Optimized to prevent N+1 queries when resolving multiple targets
+        to their callers (issue #342).
+        """
+        if not names:
+            return []
+
+        unique_names = list(set(names))
         rows = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified = ? AND kind = ?",
-            (name, kind),
+            "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?)) AND kind = ?",
+            (json.dumps(unique_names), kind),
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 

@@ -815,17 +815,18 @@ def _scan_dynamic_dispatch_hints(
 def _handle_callers_of(
     store: Any, node: Any, qn: str, results: list[dict], edges_out: list[dict]
 ) -> None:
-    qns = []
-    for e in store.get_edges_by_target(qn):
-        if e.kind == "CALLS":
-            qns.append(e.source_qualified)
-            edges_out.append(edge_to_dict(e))
+    # Bolt: Use batched search to avoid N+1 queries when resolving callers (issue #342).
+    # We look for CALLS edges targeting either the qualified name or the bare name.
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
 
-    # Fallback: CALLS edges store unqualified target names
-    if not qns and node:
-        for e in store.search_edges_by_target_name(node.name):
-            qns.append(e.source_qualified)
-            edges_out.append(edge_to_dict(e))
+    edges = store.search_edges_by_target_names(search_targets, kind="CALLS")
+
+    qns = []
+    for e in edges:
+        qns.append(e.source_qualified)
+        edges_out.append(edge_to_dict(e))
 
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns)
