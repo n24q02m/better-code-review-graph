@@ -1,9 +1,9 @@
-"""LLM summary cache-key derivation + provider env-var detection.
+"""LLM summary cache-key derivation + provider env-var detection + per-node call.
 
 Phase 1 v1.6.x foundation for cached LLM-enhanced node summaries. This
-module is intentionally minimal -- it owns the *what to cache under which
-key* contract; the actual provider client calls + batching live in later
-tasks of the same phase.
+module owns the *what to cache under which key* contract plus the
+single-node LLM call that generates a summary; batching + cache lookup
+live in later tasks of the same phase.
 
 Cache key shape: ``"{sha256_hex}:{provider}"``. Switching provider
 invalidates the cached summary because the provider tag is part of the
@@ -19,6 +19,10 @@ embedding backend's Gemini-over-OpenAI sub-ordering in
 ``embeddings.py`` (full embedding order: jina > gemini > openai >
 cohere). Jina + Cohere are intentionally excluded here because they
 don't expose chat-completion APIs.
+
+LLM SDK imports (``google-genai``, ``openai``) are deferred into
+private ``_get_*_client`` helpers so ``import summarizer`` stays cheap
+when only the cache-key helpers are exercised (precommit, T0 smoke).
 """
 
 from __future__ import annotations
@@ -26,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -93,3 +98,85 @@ def resolve_summary_provider() -> tuple[str, str] | None:
     if openai_key:
         return ("openai", openai_key)
     return None
+
+
+# ---------------------------------------------------------------------------
+# Single-node LLM summarization
+# ---------------------------------------------------------------------------
+
+_PROMPT_TEMPLATE = (
+    "Write a one-paragraph docstring (max 3 sentences) describing what this function does. "
+    "No code, no examples, no markdown. Just the description.\n\n"
+    "Source:\n{source}"
+)
+
+
+def _get_gemini_client(api_key: str) -> Any:
+    """Return a configured ``google-genai`` client.
+
+    Imported lazily so the SDK isn't loaded for callers that only use
+    the cache-key helpers (e.g. precommit smoke tests).
+    """
+    from google import genai
+
+    return genai.Client(api_key=api_key)
+
+
+def _get_openai_client(api_key: str) -> Any:
+    """Return a configured ``openai`` client.
+
+    Imported lazily so the SDK isn't loaded for callers that only use
+    the cache-key helpers (e.g. precommit smoke tests).
+    """
+    import openai
+
+    return openai.OpenAI(api_key=api_key)
+
+
+def summarize_node(
+    node: NodeNeedingSummary,
+    *,
+    provider: str,
+    api_key: str,
+) -> str:
+    """Generate a one-paragraph docstring summary for a single node.
+
+    Args:
+        node: NodeNeedingSummary with source_text to summarize.
+        provider: "gemini" or "openai" (matches resolve_summary_provider() return tuple's first element).
+        api_key: API credential for the provider.
+
+    Returns:
+        The generated summary text, stripped of leading/trailing whitespace.
+
+    Raises:
+        ValueError: if provider is not one of {"gemini", "openai"}.
+        RuntimeError: if the LLM call fails (wraps the original exception).
+
+    Cost: 1 API call per invocation. The caller is responsible for cache hit/miss
+    logic (see compute_summary_cache_key in this module).
+    """
+    if provider not in {"gemini", "openai"}:
+        raise ValueError(
+            f"Unsupported provider: {provider!r} (expected 'gemini' or 'openai')"
+        )
+
+    prompt = _PROMPT_TEMPLATE.format(source=node.source_text)
+
+    try:
+        if provider == "gemini":
+            client = _get_gemini_client(api_key)
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            return response.text.strip()
+        # provider == "openai"
+        client = _get_openai_client(api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as exc:
+        raise RuntimeError(f"summarize_node failed via {provider}: {exc}") from exc

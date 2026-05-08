@@ -1,15 +1,20 @@
 """Tests for the LLM summary cache + provider helpers (Phase 1 v1.6.x).
 
-Covers the four pure-Python helpers in
-``better_code_review_graph.summarizer`` -- hash derivation, cache-key
-composition, and provider auto-detection from environment variables.
-The module deliberately holds no LLM client code yet (Tasks 4-5).
+Covers ``better_code_review_graph.summarizer`` -- hash derivation,
+cache-key composition, provider auto-detection from environment
+variables, and the single-node ``summarize_node`` LLM call (Gemini /
+OpenAI paths, error wrapping, unknown-provider validation). All LLM
+client interactions are mocked via ``unittest.mock.patch`` against the
+private ``_get_gemini_client`` / ``_get_openai_client`` helpers, so no
+network traffic is generated. Batch + cache-lookup wiring lives in
+Task 5.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import hashlib
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,6 +23,7 @@ from better_code_review_graph.summarizer import (
     compute_source_hash,
     compute_summary_cache_key,
     resolve_summary_provider,
+    summarize_node,
 )
 
 # ---------------------------------------------------------------------------
@@ -169,3 +175,65 @@ def test_resolve_provider_all_empty_returns_none(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
     assert resolve_summary_provider() is None
+
+
+# ---------------------------------------------------------------------------
+# summarize_node (single-node LLM summary)
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_node_gemini_returns_text():
+    node = NodeNeedingSummary(
+        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
+    )
+    fake_response = MagicMock()
+    fake_response.text = (
+        "  Returns nothing — placeholder function.  "  # whitespace must be stripped
+    )
+    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value = fake_response
+        mock_get.return_value = mock_client
+        result = summarize_node(node, provider="gemini", api_key="g-key")
+    assert result == "Returns nothing — placeholder function."
+    mock_get.assert_called_once_with("g-key")
+    mock_client.models.generate_content.assert_called_once()
+    call_kwargs = mock_client.models.generate_content.call_args.kwargs
+    assert call_kwargs["model"] == "gemini-2.5-flash"
+    assert "def foo(): pass" in call_kwargs["contents"]
+
+
+def test_summarize_node_openai_returns_text():
+    node = NodeNeedingSummary(
+        node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
+    )
+    fake_choice = MagicMock()
+    fake_choice.message.content = "\nEmpty stub function.\n"
+    fake_response = MagicMock()
+    fake_response.choices = [fake_choice]
+    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = fake_response
+        mock_get.return_value = mock_client
+        result = summarize_node(node, provider="openai", api_key="o-key")
+    assert result == "Empty stub function."
+    mock_client.chat.completions.create.assert_called_once()
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["model"] == "gpt-4o-mini"
+    assert call_kwargs["messages"][0]["role"] == "user"
+
+
+def test_summarize_node_unknown_provider_raises():
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with pytest.raises(ValueError, match="Unsupported provider"):
+        summarize_node(node, provider="anthropic", api_key="k")
+
+
+def test_summarize_node_wraps_sdk_errors():
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("API timeout")
+        mock_get.return_value = mock_client
+        with pytest.raises(RuntimeError, match="summarize_node failed via gemini"):
+            summarize_node(node, provider="gemini", api_key="g-key")
