@@ -14,8 +14,11 @@ also gives subtle "rehash drift" bugs if the caller passes a normalised
 form of the source).
 
 Provider priority: Gemini wins over OpenAI when both keys are set, and
-``GOOGLE_API_KEY`` is treated as a Gemini alias (matches the embedding
-backend convention in ``embeddings.py``).
+``GOOGLE_API_KEY`` is treated as a Gemini alias. This matches the
+embedding backend's Gemini-over-OpenAI sub-ordering in
+``embeddings.py`` (full embedding order: jina > gemini > openai >
+cohere). Jina + Cohere are intentionally excluded here because they
+don't expose chat-completion APIs.
 """
 
 from __future__ import annotations
@@ -78,6 +81,10 @@ def resolve_summary_provider() -> tuple[str, str] | None:
     1. ``GEMINI_API_KEY`` (Gemini, primary)
     2. ``GOOGLE_API_KEY`` (Gemini, alias)
     3. ``OPENAI_API_KEY`` (OpenAI)
+
+    Mirrors the Gemini-over-OpenAI sub-ordering used by
+    ``embeddings.py``. Jina + Cohere are intentionally excluded because
+    those providers don't expose chat-completion APIs.
     """
     gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if gemini_key:

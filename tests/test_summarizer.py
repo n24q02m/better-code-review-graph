@@ -8,7 +8,10 @@ The module deliberately holds no LLM client code yet (Tasks 4-5).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
+
+import pytest
 
 from better_code_review_graph.summarizer import (
     NodeNeedingSummary,
@@ -31,6 +34,30 @@ def test_compute_source_hash_is_sha256():
     assert len(actual) == 64
     assert all(c in "0123456789abcdef" for c in actual)
     assert actual == expected
+
+
+def test_compute_source_hash_empty_string():
+    """Empty input must produce sha256 of empty bytes -- well-defined contract."""
+    assert (
+        compute_source_hash("")
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+
+
+def test_compute_source_hash_handles_unicode():
+    """Unicode source code (non-ASCII) must hash via UTF-8 encoding."""
+    src = "def greet(): return 'café'"
+    expected = hashlib.sha256(src.encode("utf-8")).hexdigest()
+    assert compute_source_hash(src) == expected
+    # Also verify it's not the latin-1 hash (which would be different)
+    assert compute_source_hash(src) != hashlib.sha256(src.encode("latin-1")).hexdigest()
+
+
+def test_node_needing_summary_is_frozen():
+    """NodeNeedingSummary must be immutable for safe use as cache key input."""
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        node.node_id = "z"  # type: ignore[misc]
 
 
 def test_cache_key_combines_source_hash_and_provider():
@@ -125,3 +152,20 @@ def test_resolve_provider_returns_none_when_no_key(monkeypatch):
     result = resolve_summary_provider()
 
     assert result is None
+
+
+def test_resolve_provider_empty_gemini_falls_through_to_google(monkeypatch):
+    """Empty GEMINI_API_KEY should fall through to GOOGLE_API_KEY (per docstring contract)."""
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+    assert resolve_summary_provider() == ("gemini", "google-key")
+
+
+def test_resolve_provider_all_empty_returns_none(monkeypatch):
+    """All env vars set to empty strings should be treated as unset."""
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("GOOGLE_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    assert resolve_summary_provider() is None
