@@ -38,7 +38,10 @@ CREATE TABLE IF NOT EXISTS nodes (
     is_test INTEGER DEFAULT 0,
     file_hash TEXT,
     extra TEXT DEFAULT '{}',
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    summary TEXT,
+    summary_provider TEXT,
+    source_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -60,11 +63,18 @@ CREATE TABLE IF NOT EXISTS metadata (
 CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file_path);
 CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
 CREATE INDEX IF NOT EXISTS idx_nodes_qualified ON nodes(qualified_name);
+-- idx_nodes_source_hash is created in _ensure_summary_columns() so legacy
+-- databases (created before v1.6) get the column added before the index.
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_qualified);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_qualified);
 CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
 CREATE INDEX IF NOT EXISTS idx_edges_file ON edges(file_path);
 """
+
+# Phase 1 v1.6.x: nullable columns added to existing `nodes` tables via
+# idempotent ALTER TABLE checks. Fresh DBs already get these via _SCHEMA_SQL;
+# this list drives backfill for DBs created before v1.6.
+_SUMMARY_COLUMNS: tuple[str, ...] = ("summary", "summary_provider", "source_hash")
 
 
 @dataclass
@@ -137,6 +147,30 @@ class GraphStore:
 
     def _init_schema(self) -> None:
         self._conn.executescript(_SCHEMA_SQL)
+        self._conn.commit()
+        self._ensure_summary_columns()
+
+    def _ensure_summary_columns(self) -> None:
+        """Backfill Phase 1 v1.6.x summary columns on pre-existing DBs.
+
+        Fresh DBs receive these columns via ``_SCHEMA_SQL``; databases created
+        before v1.6 are missing them, so we read ``PRAGMA table_info(nodes)``
+        and ``ALTER TABLE`` for any column that is not present. The ``source_hash``
+        index is also created here so legacy DBs gain the cache lookup index
+        without requiring a fresh build. Idempotent — safe to call on every
+        connect.
+        """
+        existing = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
+        for column in _SUMMARY_COLUMNS:
+            if column not in existing:
+                # Static column names from the module-level allowlist; safe
+                # against SQL injection (Bandit B608).
+                self._conn.execute(f"ALTER TABLE nodes ADD COLUMN {column} TEXT")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash)"
+        )
         self._conn.commit()
 
     def _invalidate_cache(self) -> None:
