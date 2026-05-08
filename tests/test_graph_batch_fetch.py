@@ -112,3 +112,67 @@ def test_get_edges_by_targets_large_batch(store):
     assert len(edges) == 500
     returned_targets = {e.target_qualified for e in edges}
     assert len(returned_targets) == 500
+
+
+def test_get_nodes_by_files_empty(store):
+    assert store.get_nodes_by_files([]) == []
+
+
+def test_get_nodes_by_files_basic(store):
+    node1 = NodeInfo(
+        kind="Function", name="f1", file_path="a.py", line_start=1, line_end=5
+    )
+    node2 = NodeInfo(
+        kind="Function", name="f2", file_path="b.py", line_start=1, line_end=5
+    )
+    node3 = NodeInfo(
+        kind="Function", name="f3", file_path="a.py", line_start=6, line_end=10
+    )
+    store.upsert_node(node1)
+    store.upsert_node(node2)
+    store.upsert_node(node3)
+    store.commit()
+
+    nodes = store.get_nodes_by_files(["a.py", "b.py", "nonexistent.py"])
+    assert len(nodes) == 3
+    file_paths = {n.file_path for n in nodes}
+    assert file_paths == {"a.py", "b.py"}
+
+    qns = {n.qualified_name for n in nodes}
+    assert qns == {"a.py::f1", "b.py::f2", "a.py::f3"}
+
+
+def test_get_nodes_by_files_duplicates(store):
+    node1 = NodeInfo(
+        kind="Function", name="f1", file_path="a.py", line_start=1, line_end=5
+    )
+    store.upsert_node(node1)
+    store.commit()
+
+    nodes = store.get_nodes_by_files(["a.py", "a.py", "a.py"])
+    assert len(nodes) == 1
+    assert nodes[0].file_path == "a.py"
+
+
+def test_get_nodes_by_files_large_batch(store):
+    # Create nodes in 500 different files
+    expected_files = []
+    for i in range(500):
+        file_path = f"file_{i}.py"
+        node = NodeInfo(
+            kind="Function",
+            name="func",
+            file_path=file_path,
+            line_start=1,
+            line_end=2,
+        )
+        store.upsert_node(node)
+        expected_files.append(file_path)
+    store.commit()
+
+    nodes = store.get_nodes_by_files(expected_files)
+    assert len(nodes) == 500
+    returned_files = {n.file_path for n in nodes}
+    assert len(returned_files) == 500
+    for f in expected_files:
+        assert f in returned_files
