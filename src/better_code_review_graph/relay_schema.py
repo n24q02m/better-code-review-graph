@@ -8,8 +8,6 @@ runtime, but older wheels of `n24q02m-mcp-core` ship a stricter
 mcp-core catches up; see tracker: see docs/migration-from-mcp-relay-core.md.
 """
 
-from __future__ import annotations
-
 from typing import Any
 
 RELAY_SCHEMA: dict[str, Any] = {
