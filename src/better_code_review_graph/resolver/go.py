@@ -28,13 +28,14 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._types import TargetRepo  # re-exported for backwards compatibility
 
-@dataclass(frozen=True)
-class TargetRepo:
-    """Per-target descriptor: ``repo_id`` plus its filesystem root."""
-
-    repo_id: str
-    root: Path
+__all__ = [
+    "GoImport",
+    "GoResolver",
+    "TargetRepo",
+    "parse_import_statement",
+]
 
 
 @dataclass(frozen=True)
