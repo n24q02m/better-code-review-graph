@@ -14,13 +14,16 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .graph import GraphStore
 from .parser import CodeParser
+
+if TYPE_CHECKING:
+    from .federation import RepoRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -477,13 +480,34 @@ def _update_files_in_store(
     return total_nodes, total_edges, actually_updated, errors
 
 
-def _finalize_incremental_metadata(repo_root: Path, store: GraphStore) -> None:
-    """Update store metadata and commit changes."""
+def _finalize_incremental_metadata(
+    repo_root: Path,
+    store: GraphStore,
+    repo_registry: RepoRegistry | None = None,
+) -> None:
+    """Update store metadata and commit changes.
+
+    When ``repo_registry`` is provided and ``repo_root`` is a git
+    repo, the registry's ``last_indexed_sha`` for the matching
+    ``repo_id`` is bumped to the current HEAD. Non-git directories and
+    callers who don't pass a registry skip the SHA refresh silently —
+    federation works without git.
+    """
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "incremental")
     current_head = get_head_sha(repo_root)
     if current_head:
         store.set_metadata("last_built_head", current_head)
+        if repo_registry is not None:
+            try:
+                repo_id = repo_registry.assign(repo_root)
+            except ValueError:
+                # Repo not registered — nothing to update. The caller
+                # is responsible for ``registry.add(repo_root)`` before
+                # incremental_update if they want SHA tracking.
+                repo_id = None
+            if repo_id is not None:
+                repo_registry.update_last_indexed_sha(repo_id, current_head)
     store.commit()
 
 
@@ -492,8 +516,22 @@ def incremental_update(
     store: GraphStore,
     base: str = "HEAD~1",
     changed_files: list[str] | None = None,
+    *,
+    repo_registry: RepoRegistry | None = None,
 ) -> dict:
-    """Incremental update: re-parse changed + dependent files only."""
+    """Incremental update: re-parse changed + dependent files only.
+
+    Parameters
+    ----------
+    repo_registry:
+        Phase 2 Task 9 — when provided, the registry's
+        ``last_indexed_sha`` for the repo matching ``repo_root`` is
+        bumped to the current ``HEAD`` once indexing completes. The
+        registry is currently only used for the SHA refresh; per-node
+        federation tagging on the parser path is handled by
+        ``CodeParser.parse_file`` callers (Task 10 wires this into the
+        full build).
+    """
     parser = CodeParser()
     ignore_patterns = _load_ignore_patterns(repo_root)
 
@@ -503,6 +541,18 @@ def incremental_update(
     )
 
     if not changed_files:
+        # Even on a no-op pass, refresh ``last_indexed_sha`` so a
+        # registry that's just been bootstrapped reflects HEAD instead
+        # of staying stuck on ``None``.
+        if repo_registry is not None:
+            head = get_head_sha(repo_root)
+            if head:
+                try:
+                    rid = repo_registry.assign(repo_root)
+                except ValueError:
+                    rid = None
+                if rid is not None:
+                    repo_registry.update_last_indexed_sha(rid, head)
         return {
             "files_updated": 0,
             "total_nodes": 0,
@@ -533,7 +583,7 @@ def incremental_update(
     )
 
     # 6. Finalize metadata and commit
-    _finalize_incremental_metadata(repo_root, store)
+    _finalize_incremental_metadata(repo_root, store, repo_registry=repo_registry)
 
     return {
         "files_updated": len(all_files),

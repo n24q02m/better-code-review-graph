@@ -290,3 +290,174 @@ class TestIncrementalUpdateFromHook:
         # Verify graph was created
         db_path = tmp_path / ".code-review-graph" / "graph.db"
         assert db_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 9: incremental_update refreshes repos.last_indexed_sha
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalUpdateRefreshesLastIndexedSha:
+    def _git_init_with_commit(self, repo_root):
+        """Init a git repo with one committed file and return the HEAD SHA."""
+        subprocess.run(["git", "init"], cwd=repo_root, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.com"],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "T"],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+        )
+        (repo_root / "sample.py").write_text("def foo():\n    pass\n")
+        subprocess.run(
+            ["git", "add", "."], cwd=repo_root, capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+        )
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return head.stdout.strip()
+
+    def test_refreshes_last_indexed_sha_in_git_repo(self, tmp_path):
+        """When repo_registry is provided + git is available, write HEAD SHA."""
+        from better_code_review_graph.federation import RepoRegistry
+
+        head_sha = self._git_init_with_commit(tmp_path)
+
+        db_path = tmp_path / "graph.db"
+        store = GraphStore(db_path)
+        try:
+            registry = RepoRegistry(store)
+            rid = registry.add(tmp_path)
+
+            incremental_update(
+                tmp_path,
+                store,
+                changed_files=["sample.py"],
+                repo_registry=registry,
+            )
+
+            row = store._conn.execute(
+                "SELECT last_indexed_sha FROM repos WHERE repo_id = ?", (rid,)
+            ).fetchone()
+            assert row is not None
+            assert row["last_indexed_sha"] == head_sha
+        finally:
+            store.close()
+
+    def test_skips_sha_refresh_when_no_registry(self, tmp_path):
+        """Without a repo_registry, last_indexed_sha is left unchanged."""
+        # Plain incremental_update (existing callers) is unaffected.
+        py_file = tmp_path / "mod.py"
+        py_file.write_text("def greet():\n    return 'hi'\n")
+
+        db_path = tmp_path / "graph.db"
+        store = GraphStore(db_path)
+        try:
+            result = incremental_update(tmp_path, store, changed_files=["mod.py"])
+            assert result["files_updated"] >= 1
+        finally:
+            store.close()
+
+    def test_skips_sha_refresh_without_git(self, tmp_path):
+        """Non-git directory: no SHA available, last_indexed_sha stays None."""
+        from better_code_review_graph.federation import RepoRegistry
+
+        # NOTE: tmp_path has NO .git directory.
+        py_file = tmp_path / "mod.py"
+        py_file.write_text("def greet():\n    return 'hi'\n")
+
+        db_path = tmp_path / "graph.db"
+        store = GraphStore(db_path)
+        try:
+            registry = RepoRegistry(store)
+            rid = registry.add(tmp_path)
+
+            # Should not raise even though git is unavailable.
+            incremental_update(
+                tmp_path,
+                store,
+                changed_files=["mod.py"],
+                repo_registry=registry,
+            )
+
+            row = store._conn.execute(
+                "SELECT last_indexed_sha FROM repos WHERE repo_id = ?", (rid,)
+            ).fetchone()
+            assert row is not None
+            assert row["last_indexed_sha"] is None
+        finally:
+            store.close()
+
+    def test_no_changes_path_still_refreshes_sha_with_registry(self, tmp_path):
+        """Even on the early-return ``no changes`` path, SHA is refreshed."""
+        from better_code_review_graph.federation import RepoRegistry
+
+        head_sha = self._git_init_with_commit(tmp_path)
+
+        db_path = tmp_path / "graph.db"
+        store = GraphStore(db_path)
+        try:
+            registry = RepoRegistry(store)
+            rid = registry.add(tmp_path)
+
+            # Pass an empty changed_files list -> the function returns
+            # early. With a registry wired in, last_indexed_sha should
+            # still be bumped to HEAD.
+            result = incremental_update(
+                tmp_path,
+                store,
+                changed_files=[],
+                repo_registry=registry,
+            )
+            assert result["files_updated"] == 0
+
+            row = store._conn.execute(
+                "SELECT last_indexed_sha FROM repos WHERE repo_id = ?", (rid,)
+            ).fetchone()
+            assert row is not None
+            assert row["last_indexed_sha"] == head_sha
+        finally:
+            store.close()
+
+    def test_no_changes_path_skips_sha_refresh_when_repo_not_registered(self, tmp_path):
+        """Early-return path with registry but unregistered root: silent skip."""
+        from better_code_review_graph.federation import RepoRegistry
+
+        self._git_init_with_commit(tmp_path)
+
+        # Build a registry that is NOT pointed at tmp_path.
+        elsewhere = tmp_path.parent / (tmp_path.name + "-other")
+        elsewhere.mkdir(exist_ok=True)
+
+        db_path = tmp_path / "graph.db"
+        store = GraphStore(db_path)
+        try:
+            registry = RepoRegistry(store)
+            registry.add(elsewhere)
+
+            # Should not raise — registry.assign(tmp_path) yields ValueError
+            # which the helper swallows.
+            result = incremental_update(
+                tmp_path,
+                store,
+                changed_files=[],
+                repo_registry=registry,
+            )
+            assert result["files_updated"] == 0
+        finally:
+            store.close()
