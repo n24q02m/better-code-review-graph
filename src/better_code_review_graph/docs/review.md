@@ -10,12 +10,14 @@ Generate focused, token-efficient review context for code changes. Combines impa
 - `max_lines_per_file`: Max source lines per file (default: 200)
 - `base`: Git ref for change detection (default: HEAD~1)
 - `repo_root`: Repository root path (auto-detected)
+- `repo`: Federated repo filter (Phase 2). When non-empty, scopes the impact subgraph and untested-function audit to nodes whose `repo_id` matches. Default `""` includes every federated repo, so cross-repo callers/importers contribute to the review context. Useful when a PR touches one repo in a federated graph but you only want review guidance about that repo. See `graph.md` "Federation: cross-repo graphs" for `repo_id` discovery.
 
 ## Example
 
 ```json
 {"changed_files": ["src/auth.py"]}
 {"include_source": false, "base": "main"}
+{"changed_files": ["src/auth.py"], "repo": "repo_a-3f2a91bc"}
 ```
 
 ## What It Returns

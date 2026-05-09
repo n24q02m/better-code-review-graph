@@ -99,6 +99,25 @@ Returns: blast radius, untested-function list, wide-blast flags, and
 
 ---
 
+## Cross-repo federation
+
+Index multiple repos into a single graph and scope queries to one of them
+via the `repo='<repo_id>'` filter on `query` / `review`:
+
+```json
+{"tool": "graph", "action": "build", "repo_root": "./repo_a", "roots": ["./repo_b"]}
+{"tool": "query", "action": "query", "pattern": "callers_of",
+ "target": "src/auth.py::authenticate", "repo": "repo_a-3f2a91bc"}
+```
+
+`repo_id`s are derived as `<basename>-<sha256[:8]>` of the absolute path,
+so they're stable across runs. See `graph.md` section
+"Federation: cross-repo graphs" for full recipes (including cross-language
+Python + TypeScript federation) and the cross-repo `IMPORTS_FROM`
+qualified-name format.
+
+---
+
 ## Tips
 
 - `query.action="callers_of"` auto-resolves the bare-name File+Function
