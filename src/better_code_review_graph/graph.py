@@ -30,22 +30,44 @@ def _resolve_migrations_dir() -> Path:
     * **Editable / source checkout**: walk up from this file to the repo
       root and use ``./migrations``.
 
-    Falling back silently is fine — the test suite exercises the source
-    layout and the Docker build exercises the installed-wheel layout.
+    On total failure (neither layout resolves to an existing ``env.py``),
+    raise :class:`RuntimeError` with both attempted paths in the message
+    so the failure is observable rather than silently degrading to a
+    junk path that alembic would later reject.
     """
+    attempted: list[str] = []
+
+    # Layout 1: installed wheel — force-included as a top-level resource
+    # directory.  ``importlib.resources.files`` returns a ``MultiplexedPath``
+    # whose ``__str__`` is the *repr* (not a real filesystem path), so we
+    # must NOT do ``Path(str(ref))``.  Instead, ``ref.joinpath("env.py")``
+    # returns a real ``pathlib.Path`` for filesystem-backed force-included
+    # resources, and ``.parent`` gives us the on-disk directory directly
+    # without the temp-directory copy that ``importlib.resources.as_file``
+    # would otherwise materialise (and tear down on context-manager exit).
     try:
         from importlib.resources import files as _files
 
         ref = _files("better_code_review_graph_migrations")
-        candidate = Path(str(ref))
-        if (candidate / "env.py").is_file():
-            return candidate
-    except (ModuleNotFoundError, FileNotFoundError, TypeError):
-        pass
+        env_py = ref.joinpath("env.py")
+        if isinstance(env_py, Path) and env_py.is_file():
+            return Path(env_py).parent
+        attempted.append(
+            f"installed package: env.py not found via importlib.resources at {ref!r}"
+        )
+    except ModuleNotFoundError as exc:
+        attempted.append(f"installed package import failed: {exc}")
 
-    # Source checkout fallback: src/better_code_review_graph/graph.py ->
-    # repo_root/migrations.
-    return Path(__file__).resolve().parent.parent.parent / "migrations"
+    # Layout 2: editable / source checkout. src/better_code_review_graph/
+    # graph.py -> repo_root/migrations.
+    src_fallback = Path(__file__).resolve().parent.parent.parent / "migrations"
+    if (src_fallback / "env.py").is_file():
+        return src_fallback
+    attempted.append(f"source checkout: {src_fallback} (env.py missing)")
+
+    raise RuntimeError(
+        "Could not locate alembic migrations directory. Tried: " + "; ".join(attempted)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +218,7 @@ class GraphStore:
     def _run_alembic_upgrade(self) -> None:
         """Bring ``self.db_path`` to alembic head before legacy bootstrap.
 
-        Three cases are handled:
+        Four cases are handled:
 
         * Empty DB (no tables) — alembic creates everything from scratch.
         * Legacy DB created by Phase 1's ``executescript(_SCHEMA_SQL)`` +
@@ -205,12 +227,19 @@ class GraphStore:
           revision ``002`` before upgrading so the baseline ``CREATE TABLE``
           statements are skipped.
         * DB already managed by alembic — ``upgrade("head")`` is a no-op.
+        * DB recorded at a revision the package does not ship (user
+          fast-forwarded by hand, or the package was downgraded).  We
+          re-raise as a :class:`RuntimeError` with a human-readable
+          recovery hint instead of leaking an opaque
+          ``alembic.util.exc.CommandError``.
 
         Imported lazily so ``alembic`` (and its SQLAlchemy dependency) are
         only loaded when a ``GraphStore`` is actually instantiated.
         """
         from alembic import command
         from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from alembic.util.exc import CommandError
 
         migrations_dir = _resolve_migrations_dir()
         cfg = Config()
@@ -241,7 +270,28 @@ class GraphStore:
             if needs_stamp:
                 command.stamp(cfg, "002")
 
-        command.upgrade(cfg, "head")
+        try:
+            command.upgrade(cfg, "head")
+        except CommandError as exc:
+            # Most likely cause: ``alembic_version`` references a revision
+            # this package does not ship.  Re-raise with the unknown
+            # revision and the local head spelt out so the operator knows
+            # whether to downgrade the package or recreate the DB.
+            recorded: str | None
+            try:
+                row = self._conn.execute(
+                    "SELECT version_num FROM alembic_version"
+                ).fetchone()
+                recorded = row[0] if row else None
+            except sqlite3.Error:
+                recorded = None
+            head = ScriptDirectory.from_config(cfg).get_current_head()
+            raise RuntimeError(
+                f"Graph DB at {self.db_path} reports alembic revision "
+                f"{recorded!r} which is not shipped with this version of "
+                f"better-code-review-graph (head={head!r}). Either downgrade "
+                "the package or recreate the DB."
+            ) from exc
 
     def _ensure_summary_columns(self) -> None:
         """Backfill Phase 1 v1.6.x summary columns on pre-existing DBs.
