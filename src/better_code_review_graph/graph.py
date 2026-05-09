@@ -17,6 +17,37 @@ import networkx as nx
 
 from .parser import EdgeInfo, NodeInfo
 
+
+def _resolve_migrations_dir() -> Path:
+    """Locate the ``migrations`` directory shipped with this package.
+
+    Two layouts are supported:
+
+    * **Installed wheel**: the directory is force-included as the
+      top-level ``better_code_review_graph_migrations`` package via Hatch
+      ``shared-data`` (see ``pyproject.toml``). We resolve it through
+      ``importlib.resources``.
+    * **Editable / source checkout**: walk up from this file to the repo
+      root and use ``./migrations``.
+
+    Falling back silently is fine — the test suite exercises the source
+    layout and the Docker build exercises the installed-wheel layout.
+    """
+    try:
+        from importlib.resources import files as _files
+
+        ref = _files("better_code_review_graph_migrations")
+        candidate = Path(str(ref))
+        if (candidate / "env.py").is_file():
+            return candidate
+    except (ModuleNotFoundError, FileNotFoundError, TypeError):
+        pass
+
+    # Source checkout fallback: src/better_code_review_graph/graph.py ->
+    # repo_root/migrations.
+    return Path(__file__).resolve().parent.parent.parent / "migrations"
+
+
 # ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
@@ -152,9 +183,65 @@ class GraphStore:
         self.close()
 
     def _init_schema(self) -> None:
+        # Alembic is now authoritative on fresh DBs (Phase 2 Task 0).
+        # ``_SCHEMA_SQL`` remains as a smoke comparator + safety net for
+        # one release, and ``_ensure_summary_columns`` is the defensive
+        # idempotent guard for any DB created between Phase 1 ship and
+        # alembic adoption. Both are intentionally retained.
+        self._run_alembic_upgrade()
         self._conn.executescript(_SCHEMA_SQL)
         self._conn.commit()
         self._ensure_summary_columns()
+
+    def _run_alembic_upgrade(self) -> None:
+        """Bring ``self.db_path`` to alembic head before legacy bootstrap.
+
+        Three cases are handled:
+
+        * Empty DB (no tables) — alembic creates everything from scratch.
+        * Legacy DB created by Phase 1's ``executescript(_SCHEMA_SQL)`` +
+          ``_ensure_summary_columns`` (so it already has ``nodes``/``edges``/
+          ``metadata`` but no ``alembic_version`` table) — we stamp it to
+          revision ``002`` before upgrading so the baseline ``CREATE TABLE``
+          statements are skipped.
+        * DB already managed by alembic — ``upgrade("head")`` is a no-op.
+
+        Imported lazily so ``alembic`` (and its SQLAlchemy dependency) are
+        only loaded when a ``GraphStore`` is actually instantiated.
+        """
+        from alembic import command
+        from alembic.config import Config
+
+        migrations_dir = _resolve_migrations_dir()
+        cfg = Config()
+        cfg.set_main_option("script_location", str(migrations_dir))
+        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
+
+        # Detect "legacy DB": pre-existing structural tables but alembic
+        # has not yet recorded a head revision. Two sub-cases:
+        #   1. ``alembic_version`` table is missing entirely.
+        #   2. ``alembic_version`` exists but has no row (an interrupted
+        #      prior run, or a test fixture that touched the DB before
+        #      alembic was wired up).
+        # In both cases we stamp at ``002`` so the baseline ``CREATE
+        # TABLE`` is skipped on the subsequent ``upgrade("head")``.
+        existing = {
+            row[0]
+            for row in self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "nodes" in existing:
+            needs_stamp = "alembic_version" not in existing
+            if not needs_stamp:
+                row = self._conn.execute(
+                    "SELECT COUNT(*) FROM alembic_version"
+                ).fetchone()
+                needs_stamp = row[0] == 0
+            if needs_stamp:
+                command.stamp(cfg, "002")
+
+        command.upgrade(cfg, "head")
 
     def _ensure_summary_columns(self) -> None:
         """Backfill Phase 1 v1.6.x summary columns on pre-existing DBs.
