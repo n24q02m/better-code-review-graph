@@ -30,13 +30,14 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._types import TargetRepo  # re-exported for backwards compatibility
 
-@dataclass(frozen=True)
-class TargetRepo:
-    """Per-target descriptor: ``repo_id`` plus its filesystem root."""
-
-    repo_id: str
-    root: Path
+__all__ = [
+    "RustResolver",
+    "RustUse",
+    "TargetRepo",
+    "parse_use_statement",
+]
 
 
 @dataclass(frozen=True)
