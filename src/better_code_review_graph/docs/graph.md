@@ -11,11 +11,13 @@ Full or incremental graph build. Parses source files with Tree-sitter, extracts 
 - `full_rebuild`: Re-parse all files (default: false, incremental)
 - `base`: Git ref for incremental diff (default: HEAD~1)
 - `repo_root`: Repository root path (auto-detected)
+- `roots`: Optional list of additional repo roots for federated build (Phase 2). When provided, runs a full federated rebuild over `repo_root` plus every entry in `roots`. Each root is registered in the `repos` table with a stable `repo_id` derived from its path. Omit (default `null`) for a single-repo build that preserves the legacy behaviour. See "Federation: cross-repo graphs" below for the full recipe.
 
 **Example:**
 ```json
 {"action": "build", "full_rebuild": true}
 {"action": "build", "base": "main"}
+{"action": "build", "roots": ["../shared-lib", "../web-app"]}
 ```
 
 ---
@@ -127,6 +129,81 @@ graph(action="summarize", max_nodes=200)
 
 **When to re-run:** after `graph(action="update")` brings new functions in, or after large refactors where many `source_hash` values change. Edits to existing function bodies invalidate their cached summary automatically -- the next `summarize` call regenerates only the changed nodes.
 
+## Federation: cross-repo graphs (Phase 2 v1.7+)
+
+A single graph DB can index multiple repository roots and resolve imports between them. Pass a `roots` list to `graph(action="build")` and each root is registered in the `repos` registry table with a stable `repo_id`. Subsequent `query` and `review` actions accept a `repo='<repo_id>'` filter to scope results to one federated repo (see `query.md` / `review.md`).
+
+**`repo_id` derivation:** `<basename>-<sha256-prefix-8>` of the absolute, resolved path. Filesystem-root basenames (`/`, `C:\`) normalise to `root-<hash>`. The id is deterministic across machines for the same absolute path -- pass the same `roots` list and you get the same ids. Empty / `.` / `..` basenames also normalise to `root`.
+
+**Single-repo backwards compat:** Omitting `roots` (or passing `roots=[]` / `null`) runs the existing single-root build path. Existing graphs created before Phase 2 keep working; the migration adds a `repo_id` column with a NULL default and a `repos` table without forcing a re-build. Federation is purely opt-in.
+
+**Cross-repo edges:** When the parser resolves an `IMPORTS_FROM` edge whose target lives in a different registered repo, the edge's `target_qualified` is written as `<other_repo_id>:<file>::<symbol>` (note the leading `<repo_id>:` prefix -- single-repo edges keep the legacy `<file>::<symbol>` shape). Per-language resolvers cover Python, TypeScript, Go, Rust, and Java; remaining tier-2 languages fall back to a generic dispatcher that performs basename matching against registered roots.
+
+**`last_indexed_sha`:** `graph(action="update")` records the current git HEAD per repo into `repos.last_indexed_sha` when git is available, so federated incremental updates can later diff per-root against the last indexed commit.
+
+### Recipe 1 -- Federated multi-repo Python build
+
+Two Python repos that import each other; build them into one graph and query a single repo.
+
+```json
+{"tool": "graph", "action": "build",
+ "repo_root": "./repo_a",
+ "roots": ["./repo_b"]}
+```
+
+Response (abridged):
+```json
+{
+  "status": "ok",
+  "build_type": "full_federated",
+  "summary": "Federated build over 2 root(s): parsed 87 files, created 612 nodes and 941 edges.",
+  "files_parsed": 87,
+  "total_nodes": 612,
+  "total_edges": 941,
+  "roots": ["/abs/path/repo_a", "/abs/path/repo_b"]
+}
+```
+
+The derived `repo_id`s for these roots will look like `repo_a-3f2a91bc` / `repo_b-1d4e87aa`. Inspect `repos` in the SQLite DB (or capture them from `RepoRegistry.entries()` if you embed the library) to copy-paste them into a scoped query:
+
+```json
+{"tool": "query", "action": "query",
+ "pattern": "callers_of",
+ "target": "src/auth.py::authenticate",
+ "repo": "repo_a-3f2a91bc"}
+```
+
+Only callers whose nodes belong to `repo_a` are returned -- callers in `repo_b` are filtered out, even if `repo_b` imports `authenticate`.
+
+### Recipe 2 -- Cross-language federation (Python lib + TypeScript app)
+
+A Python library + a TypeScript app that consumes its compiled artefacts. Each language's per-language resolver runs first; the dispatcher falls back to basename matching for any tier-2 file under either root.
+
+```json
+{"tool": "graph", "action": "build",
+ "repo_root": "./py-core",
+ "roots": ["./ts-app"]}
+```
+
+After build, an import in `ts-app/src/api.ts` that resolves to a Python symbol in `py-core/src/core/auth.py::authenticate` materialises an `IMPORTS_FROM` edge whose `target_qualified` reads:
+
+```
+py_core-9a8b7c6d:src/core/auth.py::authenticate
+```
+
+Use the cross-repo qualified name to walk back across the boundary:
+
+```json
+{"tool": "query", "action": "query",
+ "pattern": "importers_of",
+ "target": "src/core/auth.py::authenticate",
+ "repo": "py_core-9a8b7c6d"}
+```
+
+Importers in both repos appear, and each result row carries its own `repo_id` so you can tell which side the call lives on. Drop the `repo` filter to see every importer regardless of repo, including the TypeScript ones.
+
+---
+
 ## Supported Languages
 
 Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++
@@ -136,4 +213,4 @@ Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/
 **Node types:** File, Class, Function, Type, Test
 **Edge types:** CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON
 
-Qualified names use `file_path::name` format (e.g. `src/auth.py::authenticate`).
+Qualified names use `file_path::name` format (e.g. `src/auth.py::authenticate`). Cross-repo edges produced by federation prefix the target with the owning `repo_id`: `<repo_id>:<file_path>::<symbol>` (see "Federation: cross-repo graphs" above).

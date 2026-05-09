@@ -19,12 +19,14 @@ Run predefined graph queries to explore code relationships.
   - `file_summary`: Get all nodes in a file
 - `target` (required): Node name, qualified name, or file path
 - `repo_root`: Repository root path (auto-detected)
+- `repo`: Federated repo filter (Phase 2). When non-empty, restricts results to nodes whose `repo_id` matches. Default `""` queries every registered repo (legacy behaviour). Useful to disambiguate same-named symbols across federated repos. Discover available `repo_id`s by inspecting the `repos` table in the graph DB after a federated `graph(action="build", roots=[...])`; see `graph.md` "Federation: cross-repo graphs" for the derivation rule.
 
 **Example:**
 ```json
 {"action": "query", "pattern": "callers_of", "target": "authenticate"}
 {"action": "query", "pattern": "file_summary", "target": "src/auth.py"}
 {"action": "query", "pattern": "tests_for", "target": "UserService"}
+{"action": "query", "pattern": "callers_of", "target": "authenticate", "repo": "repo_a-3f2a91bc"}
 ```
 
 Multi-word search uses AND-logic: `"firebase auth"` matches nodes containing both words.
@@ -40,6 +42,7 @@ Search for code entities by name, keyword, or semantic similarity.
 - `kind`: Filter by node type: File, Class, Function, Type, or Test
 - `limit`: Maximum results (default: 20)
 - `repo_root`: Repository root path (auto-detected)
+- `repo`: Federated repo filter (Phase 2). When non-empty, restricts results to nodes whose `repo_id` matches. Default `""` searches across every registered repo. Vector hits are cross-checked against the SQL `repo_id` column so semantic-mode results are filtered consistently with keyword-mode. See `graph.md` "Federation: cross-repo graphs" for `repo_id` discovery.
 
 Uses vector embeddings for semantic search when available (run `graph action=embed` first). Falls back to keyword matching otherwise.
 
@@ -60,11 +63,13 @@ Analyze the blast radius of changed files. Shows which functions, classes, and f
 - `max_results`: Maximum impacted nodes to return (default: 500)
 - `base`: Git ref for auto-detecting changes (default: HEAD~1)
 - `repo_root`: Repository root path (auto-detected)
+- `repo`: Federated repo filter (Phase 2). When non-empty, scopes the BFS to nodes whose `repo_id` matches. Default `""` traverses across every federated repo, so cross-repo `IMPORTS_FROM` edges count toward the blast radius. See `graph.md` "Federation: cross-repo graphs" for `repo_id` discovery.
 
 **Example:**
 ```json
 {"action": "impact", "changed_files": ["src/auth.py", "src/models.py"]}
 {"action": "impact", "max_depth": 3, "base": "main"}
+{"action": "impact", "changed_files": ["src/auth.py"], "repo": "repo_a-3f2a91bc"}
 ```
 
 ---
@@ -78,9 +83,11 @@ Find functions, classes, or files exceeding a line-count threshold. Useful for d
 - `file_path_pattern`: Filter by file path substring (e.g. "components/")
 - `limit`: Maximum results (default: 50)
 - `repo_root`: Repository root path (auto-detected)
+- `repo`: Federated repo filter (Phase 2). When non-empty, restricts oversized-node results to nodes whose `repo_id` matches. Default `""` returns large nodes across every federated repo. See `graph.md` "Federation: cross-repo graphs" for `repo_id` discovery.
 
 **Example:**
 ```json
 {"action": "large_functions", "min_lines": 100, "kind": "Function"}
 {"action": "large_functions", "file_path_pattern": "src/", "limit": 20}
+{"action": "large_functions", "min_lines": 100, "repo": "repo_a-3f2a91bc"}
 ```
