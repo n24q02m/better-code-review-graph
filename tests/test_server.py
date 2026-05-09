@@ -57,7 +57,7 @@ class TestGraphTool:
         mock_fn.return_value = {"status": "ok", "build_type": "full"}
         result = json.loads(graph(action="build", full_rebuild=True, repo_root="/test"))
         mock_fn.assert_called_once_with(
-            full_rebuild=True, repo_root="/test", base="HEAD~1"
+            full_rebuild=True, repo_root="/test", base="HEAD~1", roots=None
         )
         assert result["status"] == "ok"
 
@@ -103,7 +103,11 @@ class TestQueryTool:
             query(action="query", pattern="callers_of", target="foo", repo_root="/test")
         )
         mock_fn.assert_called_once_with(
-            pattern="callers_of", target="foo", repo_root="/test", languages=None
+            pattern="callers_of",
+            target="foo",
+            repo_root="/test",
+            languages=None,
+            repo="",
         )
         assert result["status"] == "ok"
 
@@ -130,7 +134,7 @@ class TestQueryTool:
             )
         )
         mock_fn.assert_called_once_with(
-            query="auth", kind="Class", limit=5, repo_root="/test"
+            query="auth", kind="Class", limit=5, repo_root="/test", repo=""
         )
         assert result["status"] == "ok"
 
@@ -159,6 +163,7 @@ class TestQueryTool:
             repo_root="/test",
             base="HEAD~3",
             max_payload_bytes=500_000,
+            repo="",
         )
         assert result["status"] == "ok"
 
@@ -181,6 +186,7 @@ class TestQueryTool:
             file_path_pattern="src/",
             limit=10,
             repo_root="/test",
+            repo="",
         )
         assert result["status"] == "ok"
 
@@ -217,6 +223,7 @@ class TestReviewTool:
             repo_root="/test",
             base="main",
             languages=None,
+            repo="",
         )
         assert result["status"] == "ok"
 
@@ -232,6 +239,7 @@ class TestReviewTool:
             repo_root=None,
             base="HEAD~1",
             languages=None,
+            repo="",
         )
         assert result["status"] == "ok"
 

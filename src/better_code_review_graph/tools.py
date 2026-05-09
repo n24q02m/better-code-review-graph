@@ -12,6 +12,8 @@ Exposes 9 tools:
 9. find_large_functions   - find oversized functions/classes by line count
 """
 
+import hashlib
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from .embeddings import (
 )
 from .graph import GraphStore, edge_to_dict, node_to_dict
 from .incremental import (
+    collect_all_files,
     find_project_root,
     full_build,
     get_changed_files,
@@ -295,6 +298,7 @@ def build_or_update_graph(
     full_rebuild: bool = False,
     repo_root: str | None = None,
     base: str = "HEAD~1",
+    roots: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build or incrementally update the code knowledge graph.
 
@@ -303,12 +307,20 @@ def build_or_update_graph(
                       only re-parse files changed since `base`.
         repo_root: Path to the repository root. Auto-detected if omitted.
         base: Git ref for incremental diff (default: HEAD~1).
+        roots: Phase 2 Task 10 — optional list of additional repo roots
+            to register and parse alongside ``repo_root``. Each entry is
+            registered with :class:`RepoRegistry` and contributes nodes
+            tagged with that repo's ``repo_id``. ``None`` (default) =
+            single-root build using only ``repo_root``.
 
     Returns:
         Summary with files_parsed/updated, node/edge counts, and errors.
     """
     store, root = _get_store(repo_root)
     try:
+        if roots:
+            return _full_build_federated(store, root, [Path(r) for r in roots])
+
         if full_rebuild:
             result = full_build(root, store)
             return {
@@ -362,6 +374,87 @@ def build_or_update_graph(
         store.close()
 
 
+def _full_build_federated(
+    store: GraphStore, primary_root: Path, roots: list[Path]
+) -> dict[str, Any]:
+    """Federated full build over multiple registered roots (Task 10).
+
+    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
+    nodes/edges parsed under it inherit the matching ``repo_id``. The
+    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
+    the DB) is registered too so its files don't fall outside every
+    root and lose their ``repo_id``.
+    """
+    from .federation import RepoRegistry
+    from .parser import CodeParser
+
+    registry = RepoRegistry(store)
+    # Register primary first so it's always present, then each extra
+    # root supplied by the caller. ``add`` is idempotent on re-add.
+    registry.add(primary_root)
+    for r in roots:
+        registry.add(r)
+
+    parser = CodeParser()
+    total_files = 0
+    total_nodes = 0
+    total_edges = 0
+    errors: list[dict[str, Any]] = []
+
+    visited_files: set[Path] = set()
+    for r in [primary_root, *roots]:
+        r_resolved = r.resolve()
+        try:
+            files = collect_all_files(r)
+        except Exception as e:
+            errors.append({"root": str(r), "error": str(e)})
+            continue
+        for rel_path in files:
+            full_path = (r / rel_path).resolve()
+            if not full_path.is_relative_to(r_resolved):
+                continue
+            if full_path in visited_files:
+                # A child root inside the primary would otherwise be
+                # parsed twice; the registry's longest-match-wins means
+                # the child wins for assign(), so we skip on the second
+                # encounter.
+                continue
+            visited_files.add(full_path)
+            try:
+                source = full_path.read_bytes()
+                fhash = hashlib.sha256(source).hexdigest()
+                nodes, edges = parser.parse_bytes(
+                    full_path, source, repo_registry=registry
+                )
+                store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
+                total_nodes += len(nodes)
+                total_edges += len(edges)
+                total_files += 1
+            except (OSError, PermissionError) as e:
+                errors.append({"file": str(full_path), "error": str(e)})
+            except Exception as e:
+                errors.append({"file": str(full_path), "error": str(e)})
+
+    store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
+    store.set_metadata("last_build_type", "full_federated")
+    store.commit()
+
+    return {
+        "status": "ok",
+        "build_type": "full_federated",
+        "summary": (
+            f"Federated build over {len(roots) + 1} root(s): parsed "
+            f"{total_files} files, created {total_nodes} nodes and "
+            f"{total_edges} edges."
+        ),
+        "files_parsed": total_files,
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "roots": [str(r) for r in [primary_root, *roots]],
+        "errors": errors,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tool 2: get_impact_radius
 # ---------------------------------------------------------------------------
@@ -387,6 +480,7 @@ def get_impact_radius(
     repo_root: str | None = None,
     base: str = "HEAD~1",
     max_payload_bytes: int = _DEFAULT_IMPACT_PAYLOAD_BYTES,
+    repo: str = "",
 ) -> dict[str, Any]:
     """Analyze the blast radius of changed files.
 
@@ -403,6 +497,9 @@ def get_impact_radius(
             arrays are truncated and ``results_truncated=True`` is set on
             the response with a hint suggesting ``max_depth=1`` or a
             narrower file scope. (#315.)
+        repo: Phase 2 Task 10 — when non-empty, scope the BFS to nodes
+            belonging to the given ``repo_id``. Empty (default) =
+            traverse across every federated repo.
 
     Returns:
         Changed nodes, impacted nodes, impacted files, connecting edges,
@@ -439,7 +536,7 @@ def get_impact_radius(
             abs_files.append(str(full_path))
 
         result = store.get_impact_radius(
-            abs_files, max_depth=max_depth, max_nodes=max_results
+            abs_files, max_depth=max_depth, max_nodes=max_results, repo=repo
         )
 
         changed_dicts = [node_to_dict(n) for n in result["changed_nodes"]]
@@ -574,9 +671,10 @@ def _resolve_search_candidates(
     target: str,
     pattern: str,
     original_target: str,
+    repo: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
     """Search for nodes by name and handle ambiguity/promotion."""
-    candidates = store.search_nodes(target, limit=5)
+    candidates = store.search_nodes(target, limit=5, repo=repo)
     promoted_indexed_under: list[str] = []
 
     # #316: when the pattern is call-graph oriented and the only ambiguity
@@ -688,6 +786,7 @@ def _resolve_query_target(
     root: Any,
     target: str,
     pattern: str,
+    repo: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None]:
     """Resolve the query target to a node or path.
 
@@ -698,12 +797,22 @@ def _resolve_query_target(
 
     # 1. Direct lookup (qualified name or absolute path)
     node = _lookup_node_directly(store, root, target)
+    # Phase 2 Task 10: drop direct hits that don't belong to the
+    # requested repo so the search-by-name fallback below can pick a
+    # repo-scoped candidate instead of returning the cross-repo match.
+    if node is not None and repo:
+        row = store._conn.execute(
+            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+            (node.qualified_name,),
+        ).fetchone()
+        if row is None or (row["repo_id"] or "") != repo:
+            node = None
 
     # 2. Search by name if not found directly
     promoted_indexed_under: list[str] = []
     if not node:
         node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
-            store, target, pattern, original_target
+            store, target, pattern, original_target, repo=repo
         )
         if error_resp:
             return None, target, error_resp
@@ -968,6 +1077,7 @@ def query_graph(
     target: str,
     repo_root: str | None = None,
     languages: list[str] | None = None,
+    repo: str = "",
 ) -> dict[str, Any]:
     """Run a predefined graph query.
 
@@ -980,6 +1090,10 @@ def query_graph(
             applies to ``tests_for`` (filters returned test nodes by language).
             Allowed values: python, typescript, javascript, go, rust, java,
             csharp, ruby, kotlin, swift, php, c, cpp, solidity.
+        repo: Phase 2 Task 10 — when non-empty, restrict the result set
+            to nodes whose ``repo_id`` matches. Default ``""`` searches
+            across every registered repo (legacy behaviour). Used to
+            disambiguate same-named symbols across federated repos.
 
     Returns:
         Matching nodes and edges for the query.
@@ -1022,7 +1136,7 @@ def query_graph(
             }
 
         node, resolved_qn_or_path, error_resp = _resolve_query_target(
-            store, root, target, pattern
+            store, root, target, pattern, repo=repo
         )
         if error_resp:
             return error_resp
@@ -1047,6 +1161,39 @@ def query_graph(
         # D16: filter tests_for results by language if requested.
         if pattern == "tests_for" and languages is not None:
             results = [r for r in results if r.get("language") in languages]
+
+        # Phase 2 Task 10: post-filter results + edges to the requested
+        # repo. The handlers (callers_of/callees_of/etc.) ride on
+        # qualified-name lookups that don't carry repo_id, so the
+        # narrowing happens here against the ``repo_id`` column on the
+        # nodes table. Edges are scoped indirectly: only edges whose
+        # source AND target survive the node filter remain.
+        if repo:
+            kept_qns: set[str] = set()
+            filtered_results = []
+            for r in results:
+                qn = r.get("qualified_name")
+                if qn is None:
+                    # importers_of / imports_of dicts use ``importer`` /
+                    # ``import_target`` keys instead of ``qualified_name``.
+                    # Fall back to the most likely qualified field.
+                    qn = r.get("importer") or r.get("import_target")
+                if qn is None:
+                    filtered_results.append(r)
+                    continue
+                row = store._conn.execute(
+                    "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+                    (qn,),
+                ).fetchone()
+                if row is not None and (row["repo_id"] or "") == repo:
+                    kept_qns.add(qn)
+                    filtered_results.append(r)
+            results = filtered_results
+            edges_out = [
+                e
+                for e in edges_out
+                if e.get("source") in kept_qns or e.get("target") in kept_qns
+            ]
 
         response: dict[str, Any] = {
             "status": "ok",
@@ -1469,6 +1616,7 @@ def get_review_context(
     repo_root: str | None = None,
     base: str = "HEAD~1",
     languages: list[str] | None = None,
+    repo: str = "",
 ) -> dict[str, Any]:
     """Generate a focused review context from changed files.
 
@@ -1487,6 +1635,9 @@ def get_review_context(
             re-derived from the filtered list. Allowed values: python,
             typescript, javascript, go, rust, java, csharp, ruby, kotlin,
             swift, php, c, cpp, solidity. (D16, fixes #340.)
+        repo: Phase 2 Task 10 — when non-empty, scope the impact subgraph
+            to nodes whose ``repo_id`` matches. Empty (default) leaves
+            the cross-repo behaviour unchanged.
 
     Returns:
         Structured review context with subgraph, source snippets, and review guidance.
@@ -1510,7 +1661,7 @@ def get_review_context(
             }
 
         abs_files = _filter_valid_paths(root, changed_files)
-        impact = store.get_impact_radius(abs_files, max_depth=max_depth)
+        impact = store.get_impact_radius(abs_files, max_depth=max_depth, repo=repo)
 
         untested_functions = _compute_untested_functions(impact, languages=languages)
 
@@ -1681,6 +1832,7 @@ def semantic_search_nodes(
     kind: str | None = None,
     limit: int = 20,
     repo_root: str | None = None,
+    repo: str = "",
 ) -> dict[str, Any]:
     """Search for nodes by name, keyword, or semantic similarity.
 
@@ -1693,6 +1845,9 @@ def semantic_search_nodes(
         kind: Optional filter by node kind (File, Class, Function, Type, Test).
         limit: Maximum results to return (default: 20).
         repo_root: Repository root path. Auto-detected if omitted.
+        repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
+            ``repo_id`` matches. Default ``""`` searches across every
+            registered repo.
 
     Returns:
         Ranked list of matching nodes.
@@ -1717,6 +1872,21 @@ def semantic_search_nodes(
                 raw = semantic_search(query, store, emb_store, limit=limit * 2)
                 if kind:
                     raw = [r for r in raw if r.get("kind") == kind]
+                if repo:
+                    # The vector store has no repo_id column; cross-check
+                    # each hit against the SQL row and drop misses.
+                    filtered = []
+                    for r in raw:
+                        qn = r.get("qualified_name")
+                        if qn is None:
+                            continue
+                        row = store._conn.execute(
+                            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+                            (qn,),
+                        ).fetchone()
+                        if row is not None and (row["repo_id"] or "") == repo:
+                            filtered.append(r)
+                    raw = filtered
                 raw = raw[:limit]
                 return {
                     "status": "ok",
@@ -1733,7 +1903,7 @@ def semantic_search_nodes(
             emb_store.close()
 
         # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2)
+        results = store.search_nodes(query, limit=limit * 2, repo=repo)
 
         if kind:
             results = [r for r in results if r.kind == kind]
@@ -2066,6 +2236,7 @@ def find_large_functions(
     file_path_pattern: str | None = None,
     limit: int = 50,
     repo_root: str | None = None,
+    repo: str = "",
 ) -> dict[str, Any]:
     """Find functions, classes, or files exceeding a line-count threshold.
 
@@ -2078,6 +2249,9 @@ def find_large_functions(
         file_path_pattern: Filter by file path substring (e.g. "components/").
         limit: Maximum results (default: 50).
         repo_root: Repository root path. Auto-detected if omitted.
+        repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
+            ``repo_id`` matches. Default ``""`` returns large nodes
+            across every federated repo.
 
     Returns:
         Oversized nodes with line counts, ordered largest first.
@@ -2089,6 +2263,7 @@ def find_large_functions(
             kind=kind,
             file_path_pattern=file_path_pattern,
             limit=limit,
+            repo=repo,
         )
 
         results = []

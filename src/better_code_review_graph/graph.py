@@ -727,12 +727,20 @@ class GraphStore:
         return [r["file_path"] for r in rows]
 
     def search_nodes(
-        self, query: str, kind: str | None = None, limit: int = 20
+        self,
+        query: str,
+        kind: str | None = None,
+        limit: int = 20,
+        repo: str = "",
     ) -> list[GraphNode]:
         """Keyword search across node names and qualified names.
 
         Multi-word queries require ALL words to match (AND logic).  Each word
         must appear in either the node name or the qualified name.
+
+        Phase 2 Task 10: when ``repo`` is non-empty the result set is
+        scoped to nodes whose ``repo_id`` equals it. Empty ``repo``
+        (default) preserves the legacy unscoped behaviour.
         """
         words = query.lower().split()
         if not words:
@@ -751,16 +759,21 @@ class GraphStore:
                    OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
               AND (? IS NULL OR kind = ?)
+              AND (? = '' OR repo_id = ?)
             ORDER BY name LIMIT ?
             """,
-            [json.dumps(words), json.dumps(words), kind, kind, limit],
+            [json.dumps(words), json.dumps(words), kind, kind, repo, repo, limit],
         ).fetchall()
         return [self._row_to_node(r) for r in rows]
 
     # --- Impact / Graph traversal ---
 
     def get_impact_radius(
-        self, changed_files: list[str], max_depth: int = 2, max_nodes: int = 500
+        self,
+        changed_files: list[str],
+        max_depth: int = 2,
+        max_nodes: int = 500,
+        repo: str = "",
     ) -> dict[str, Any]:
         """BFS from changed files to find all impacted nodes within depth N.
 
@@ -771,11 +784,31 @@ class GraphStore:
           - edges: connecting edges
           - truncated: True if BFS was stopped early due to max_nodes limit
           - total_impacted: total number of impacted nodes found before truncation
+
+        Phase 2 Task 10: when ``repo`` is non-empty the seed set, BFS
+        frontier, returned nodes, and connecting edges are filtered to
+        the matching ``repo_id``. Empty ``repo`` (default) preserves
+        legacy cross-repo behaviour.
         """
         nxg = self._build_networkx_graph()
 
-        # Seed: all qualified names in changed files (batched to avoid N+1)
-        seeds = {n.qualified_name for n in self.get_nodes_by_files(changed_files)}
+        # Seed: all qualified names in changed files (batched to avoid N+1).
+        # When ``repo`` is set, drop seed nodes that don't belong to it.
+        seed_nodes = self.get_nodes_by_files(changed_files)
+        if repo:
+            seed_nodes = [n for n in seed_nodes if self._node_repo_id(n) == repo]
+        seeds = {n.qualified_name for n in seed_nodes}
+
+        # Pre-compute the set of qualified_names belonging to ``repo`` so
+        # the BFS expansion can prune cross-repo neighbours. Skipped when
+        # ``repo == ""`` to keep the legacy hot path zero-overhead.
+        repo_qns: set[str] | None = None
+        if repo:
+            rows = self._conn.execute(
+                "SELECT qualified_name FROM nodes WHERE repo_id = ?",
+                (repo,),
+            ).fetchall()
+            repo_qns = {r["qualified_name"] for r in rows}
 
         # BFS outward through all edge types
         visited: set[str] = set()
@@ -791,15 +824,21 @@ class GraphStore:
                 # Forward edges (things this node affects)
                 if qn in nxg:
                     for neighbor in nxg.neighbors(qn):
-                        if neighbor not in visited:
-                            next_frontier.add(neighbor)
-                            impacted.add(neighbor)
+                        if neighbor in visited:
+                            continue
+                        if repo_qns is not None and neighbor not in repo_qns:
+                            continue
+                        next_frontier.add(neighbor)
+                        impacted.add(neighbor)
                 # Reverse edges (things that depend on this node)
                 if qn in nxg:
                     for pred in nxg.predecessors(qn):
-                        if pred not in visited:
-                            next_frontier.add(pred)
-                            impacted.add(pred)
+                        if pred in visited:
+                            continue
+                        if repo_qns is not None and pred not in repo_qns:
+                            continue
+                        next_frontier.add(pred)
+                        impacted.add(pred)
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True
@@ -813,6 +852,14 @@ class GraphStore:
         # Resolve to full node info using batch fetch to prevent N+1 queries
         changed_nodes = self.get_nodes_by_qualified_names(list(seeds))
         impacted_nodes = self.get_nodes_by_qualified_names(list(impacted - seeds))
+
+        # Defensive re-filter (qualified_name set above is already
+        # repo-scoped, but get_nodes_by_qualified_names is repo-blind).
+        if repo:
+            changed_nodes = [n for n in changed_nodes if self._node_repo_id(n) == repo]
+            impacted_nodes = [
+                n for n in impacted_nodes if self._node_repo_id(n) == repo
+            ]
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
@@ -830,6 +877,21 @@ class GraphStore:
             "truncated": truncated,
             "total_impacted": total_impacted,
         }
+
+    def _node_repo_id(self, node: GraphNode) -> str:
+        """Look up a GraphNode's persisted ``repo_id`` (column not on dataclass).
+
+        ``GraphNode`` is the public dataclass, frozen at the v1.6 shape;
+        the federation column lives on the SQL row only. This is a
+        cheap fallback used by the repo-filter helpers — single-row
+        lookup keyed by ``id`` so it stays O(1) even on large graphs.
+        """
+        row = self._conn.execute(
+            "SELECT repo_id FROM nodes WHERE id = ?", (node.id,)
+        ).fetchone()
+        if row is None:
+            return ""
+        return row["repo_id"] or ""
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
@@ -886,6 +948,7 @@ class GraphStore:
         kind: str | None = None,
         file_path_pattern: str | None = None,
         limit: int = 50,
+        repo: str = "",
     ) -> list[GraphNode]:
         """Find nodes within a line-count range, ordered largest first.
 
@@ -895,6 +958,8 @@ class GraphStore:
             kind: Filter by node kind (Function, Class, File, etc.).
             file_path_pattern: SQL LIKE pattern to filter by file path.
             limit: Maximum results to return.
+            repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
+                ``repo_id`` matches. Empty (default) = no filter.
 
         Returns:
             List of GraphNode objects, ordered by line count descending.
@@ -909,6 +974,7 @@ class GraphStore:
               AND (? IS NULL OR (line_end - line_start + 1) <= ?)
               AND (? IS NULL OR kind = ?)
               AND (? IS NULL OR file_path LIKE '%' || ? || '%')
+              AND (? = '' OR repo_id = ?)
             ORDER BY (line_end - line_start + 1) DESC LIMIT ?
             """,
             [
@@ -919,6 +985,8 @@ class GraphStore:
                 kind,
                 file_path_pattern,
                 file_path_pattern,
+                repo,
+                repo,
                 limit,
             ],
         ).fetchall()
