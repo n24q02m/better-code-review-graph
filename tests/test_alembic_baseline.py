@@ -395,13 +395,20 @@ def test_unknown_alembic_revision_raises_runtime_error(tmp_path: Path) -> None:
 
 
 def test_schema_sql_matches_alembic_migrations(tmp_path: Path) -> None:
-    """``_SCHEMA_SQL`` and the alembic migration chain MUST stay in sync.
+    """``_SCHEMA_SQL`` is equivalent to the alembic state at revision ``002``.
 
     Builds two SQLite files: one via ``executescript(_SCHEMA_SQL)`` only,
-    one via ``command.upgrade(cfg, "head")`` only.  For each application
+    one via ``command.upgrade(cfg, "002")`` only.  For each application
     table, asserts ``PRAGMA table_info`` and ``PRAGMA index_list`` rows
-    match.  This is the parity gate that catches anyone who later adds a
-    column to ``_SCHEMA_SQL`` without bumping the migration chain.
+    match.
+
+    The comparison is intentionally pinned at ``002`` rather than
+    ``head``: ``_SCHEMA_SQL`` is the legacy in-code bootstrap frozen at
+    the v1.6 release line, and any new schema (Phase 2 federation
+    onwards) goes through alembic only. ``003_federation`` adds
+    ``repo_id`` columns + a ``repos`` table that ``_SCHEMA_SQL`` does
+    NOT carry — by design — so comparing against ``head`` would
+    spuriously fail for every future additive migration.
 
     Documented exception: ``idx_nodes_source_hash`` is created by the
     legacy ``_ensure_summary_columns`` helper, not by either path here, so
@@ -416,7 +423,7 @@ def test_schema_sql_matches_alembic_migrations(tmp_path: Path) -> None:
         conn.commit()
 
     cfg = _alembic_config_for(alembic_db)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "002")
 
     for table in sorted(EXPECTED_TABLES):
         sql_info = _table_info(schema_sql_db, table)
