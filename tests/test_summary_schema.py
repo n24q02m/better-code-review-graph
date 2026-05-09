@@ -39,7 +39,15 @@ def test_source_hash_index_exists(tmp_path):
 
 
 def test_legacy_db_migration_preserves_rows(tmp_path):
-    """A nodes table created without the v1.6 columns should be migrated in place."""
+    """A nodes table created without the v1.6 columns should be migrated in place.
+
+    Real legacy DBs created by the v1.5 bootstrap always have both the
+    ``nodes`` and ``edges`` tables (the bootstrap script always created
+    both). The fixture mirrors that — the alembic auto-stamp logic in
+    ``_run_alembic_upgrade`` triggers when ``nodes`` is present without
+    an ``alembic_version`` row, and any subsequent migration (e.g.
+    003_federation adding ``edges.repo_id``) needs ``edges`` to exist.
+    """
     db_path = tmp_path / "legacy.db"
     # Create a v1.5-style nodes table missing summary/summary_provider/source_hash.
     # Use a minimal compatible subset of columns that GraphStore upsert_node populates.
@@ -62,6 +70,19 @@ def test_legacy_db_migration_preserves_rows(tmp_path):
             file_hash TEXT,
             extra TEXT,
             updated_at REAL
+        )"""
+    )
+    # Real v1.5 bootstrap also creates the ``edges`` table.
+    conn.execute(
+        """CREATE TABLE edges(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL,
+            source_qualified TEXT NOT NULL,
+            target_qualified TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            line INTEGER DEFAULT 0,
+            extra TEXT DEFAULT '{}',
+            updated_at REAL NOT NULL
         )"""
     )
     conn.execute(
