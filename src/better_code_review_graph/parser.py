@@ -18,6 +18,9 @@ import tree_sitter_language_pack as tslp
 if TYPE_CHECKING:
     from tree_sitter_language_pack import SupportedLanguage
 
+    from .federation import RepoRegistry
+    from .resolver import TargetRepo
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -47,6 +50,11 @@ class NodeInfo:
     # candidates without re-reading files. Class/Type/Test/File leave this None
     # to avoid bloating the DB with content that is irrelevant for LLM summaries.
     source_text: str | None = None
+    # Phase 2 Task 9: federation scoping. Empty string is the single-repo
+    # default and matches the SQLite ``DEFAULT ''`` on the ``nodes.repo_id``
+    # column added in alembic revision ``003_federation``. The federation
+    # driver populates this via ``RepoRegistry.assign(path)``.
+    repo_id: str = ""
 
 
 @dataclass
@@ -57,6 +65,10 @@ class EdgeInfo:
     file_path: str
     line: int = 0
     extra: dict = field(default_factory=dict)
+    # Phase 2 Task 9: federation scoping. Same shape and rationale as
+    # ``NodeInfo.repo_id``; for cross-repo edges this is the *source*
+    # repo's id (the edge originates in that repo).
+    repo_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -274,21 +286,58 @@ class CodeParser:
     def detect_language(self, path: Path) -> str | None:
         return EXTENSION_TO_LANGUAGE.get(path.suffix.lower())
 
-    def parse_file(self, path: Path) -> tuple[list[NodeInfo], list[EdgeInfo]]:
-        """Parse a single file and return extracted nodes and edges."""
+    def parse_file(
+        self,
+        path: Path,
+        *,
+        repo_registry: RepoRegistry | None = None,
+        target_repos: list[TargetRepo] | None = None,
+    ) -> tuple[list[NodeInfo], list[EdgeInfo]]:
+        """Parse a single file and return extracted nodes and edges.
+
+        Parameters
+        ----------
+        path:
+            Filesystem path to the file to parse.
+        repo_registry:
+            Phase 2 Task 9 — when provided, every emitted ``NodeInfo``
+            and ``EdgeInfo`` has its ``repo_id`` populated from
+            ``repo_registry.assign(path)``. Single-repo callers (the
+            default) get the legacy behaviour with empty ``repo_id``.
+        target_repos:
+            Phase 2 Task 9 — when both this and ``repo_registry`` are
+            provided, ``IMPORTS_FROM`` edges whose target can be
+            resolved across the federated targets are rewritten to
+            ``<other_repo_id>:<file>::<symbol>`` via
+            :func:`better_code_review_graph.resolver.resolve_cross_repo_imports`.
+            Unresolved imports keep their original within-repo target.
+        """
         try:
             source = path.read_bytes()
         except (OSError, PermissionError):
             return [], []
-        return self.parse_bytes(path, source)
+        return self.parse_bytes(
+            path,
+            source,
+            repo_registry=repo_registry,
+            target_repos=target_repos,
+        )
 
     def parse_bytes(
-        self, path: Path, source: bytes
+        self,
+        path: Path,
+        source: bytes,
+        *,
+        repo_registry: RepoRegistry | None = None,
+        target_repos: list[TargetRepo] | None = None,
     ) -> tuple[list[NodeInfo], list[EdgeInfo]]:
         """Parse pre-read bytes and return extracted nodes and edges.
 
         This avoids re-reading the file from disk, eliminating TOCTOU gaps
         when the caller has already read the bytes (e.g. for hashing).
+
+        See :meth:`parse_file` for the ``repo_registry`` / ``target_repos``
+        federation kwargs.
         """
         language = self.detect_language(path)
         if not language:
@@ -344,7 +393,133 @@ class CodeParser:
         finally:
             self._current_source_lines = None
 
+        # Phase 2 Task 9: federation post-processing. Single-repo callers
+        # (no registry) skip this entirely so behaviour is unchanged.
+        if repo_registry is not None:
+            self._apply_federation(
+                path=path,
+                language=language,
+                nodes=nodes,
+                edges=edges,
+                repo_registry=repo_registry,
+                target_repos=target_repos,
+            )
+
         return nodes, edges
+
+    def _apply_federation(
+        self,
+        *,
+        path: Path,
+        language: str,
+        nodes: list[NodeInfo],
+        edges: list[EdgeInfo],
+        repo_registry: RepoRegistry,
+        target_repos: list[TargetRepo] | None,
+    ) -> None:
+        """Stamp ``repo_id`` on nodes/edges and resolve cross-repo imports.
+
+        Tagging is unconditional once a registry is wired in (every node
+        belongs to *some* repo, even in single-repo federation mode);
+        cross-repo IMPORTS_FROM rewrites are best-effort and only run
+        when ``target_repos`` is non-empty.
+        """
+        # Resolve once, reuse for every node/edge in this file.
+        try:
+            source_repo_id = repo_registry.assign(path)
+        except ValueError:
+            # File lives outside every registered root — leave repo_id
+            # empty so the row is still writeable; the caller decides
+            # whether to register the path before retrying.
+            return
+
+        for node in nodes:
+            node.repo_id = source_repo_id
+        for edge in edges:
+            edge.repo_id = source_repo_id
+
+        if not target_repos:
+            return
+
+        # Cross-repo IMPORTS_FROM rewrite. Lazy import keeps the
+        # resolver's tomllib/regex cost off the hot path for callers
+        # that don't pass target_repos.
+        from .resolver import resolve_cross_repo_imports  # noqa: PLC0415
+
+        # Look up the source repo's filesystem root (registry knows it)
+        # so the resolver can read its ``pyproject.toml`` /
+        # ``Cargo.toml`` / ``go.mod`` etc. ``RepoRegistry.entries()``
+        # gives us the canonical mapping.
+        source_root: Path | None = None
+        for entry in repo_registry.entries():
+            if entry.repo_id == source_repo_id:
+                source_root = entry.path
+                break
+        if source_root is None:
+            return
+
+        for edge in edges:
+            if edge.kind != "IMPORTS_FROM":
+                continue
+            # Prefer the original import line (captured into
+            # ``extra["import_stmt"]`` by ``_handle_import_node``) so
+            # the resolvers see the imported symbol name. Fall back to
+            # a synthesised statement built from the bare target —
+            # this keeps the path working for legacy callers that
+            # construct EdgeInfo by hand without ``extra``.
+            stmt = (edge.extra or {}).get("import_stmt") or self._build_resolver_stmt(
+                language, edge.target
+            )
+            try:
+                resolved = resolve_cross_repo_imports(
+                    stmt,
+                    language,
+                    source_root,
+                    source_repo_id,
+                    target_repos,
+                )
+            except Exception:
+                # The resolver may touch the filesystem; treat any
+                # error as "no cross-repo match" rather than aborting
+                # the whole parse. Single-repo mode is preserved.
+                resolved = None
+            if resolved is not None:
+                edge.target = resolved
+
+    @staticmethod
+    def _build_resolver_stmt(language: str, target: str) -> str:
+        """Synthesise an import statement from the parser's bare target.
+
+        The parser stores per-language extracted forms (Python: dotted
+        module, JS/TS: module path string, Go: quoted path, Rust: full
+        ``use`` line, Java/Kotlin/C#: dotted name, Solidity/Ruby:
+        quoted path). The cross-repo resolvers re-parse these strings
+        with their own regexes so the round-trip is lossy in edge
+        cases (e.g. Python's imported symbol name is dropped because
+        we only keep the module). For Phase 2 Task 9 this is the
+        documented trade-off: cross-repo qualified names use the
+        module's basename when the imported symbol name is not
+        threaded through the parser-extracted target.
+        """
+        lang = language.lower()
+        if lang == "python":
+            return f"import {target}"
+        if lang in ("javascript", "typescript", "tsx"):
+            # TypeScript resolver matches the module string anywhere on the line.
+            return f'import "{target}"'
+        if lang == "go":
+            return f'import "{target}"'
+        if lang == "rust":
+            # Rust resolver expects ``use ...;`` shape; the target is
+            # already the full path-with-`::`.
+            stripped = target.strip().rstrip(";")
+            if stripped.startswith("use "):
+                return target
+            return f"use {stripped};"
+        if lang in ("java", "kotlin"):
+            return f"import {target};"
+        # Fallback / tier-2 languages: pass through verbatim.
+        return target
 
     def _extract_from_tree(
         self,
@@ -612,6 +787,11 @@ class CodeParser:
         edges: list[EdgeInfo],
     ) -> bool:
         imports = self._extract_import(node, language, source)
+        # Phase 2 Task 9: stash the raw import line on the edge so the
+        # federation post-processing can hand the full statement (with
+        # the imported symbol name intact) to the cross-repo resolvers.
+        # Single-repo callers ignore this field entirely.
+        raw_stmt = node.text.decode("utf-8", errors="replace").strip()
         for imp_target in imports:
             edges.append(
                 EdgeInfo(
@@ -620,6 +800,7 @@ class CodeParser:
                     target=imp_target,
                     file_path=file_path,
                     line=node.start_point[0] + 1,
+                    extra={"import_stmt": raw_stmt},
                 )
             )
         return True

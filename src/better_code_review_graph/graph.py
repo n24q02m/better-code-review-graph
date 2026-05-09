@@ -214,6 +214,7 @@ class GraphStore:
         self._conn.executescript(_SCHEMA_SQL)
         self._conn.commit()
         self._ensure_summary_columns()
+        self._ensure_federation_columns()
 
     def _run_alembic_upgrade(self) -> None:
         """Bring ``self.db_path`` to alembic head before legacy bootstrap.
@@ -293,6 +294,61 @@ class GraphStore:
                 "the package or recreate the DB."
             ) from exc
 
+    def _ensure_federation_columns(self) -> None:
+        """Backfill Phase 2 Task 1 federation columns on legacy / in-memory DBs.
+
+        Mirrors ``_ensure_summary_columns`` for the
+        ``003_federation`` migration. Two cases land here:
+
+        * In-memory ``:memory:`` databases — alembic creates the schema
+          in a separate in-memory connection (per the
+          ``sqlite:///:memory:`` URL semantics), so the migration never
+          touches ``self._conn``. The legacy ``_SCHEMA_SQL`` is frozen
+          at v1.6 and intentionally does not include ``repo_id``, so
+          we add the column here to keep ``upsert_node`` /
+          ``upsert_edge`` working without forcing every test to use a
+          file-backed DB.
+        * File-backed databases created before alembic adoption —
+          ``_run_alembic_upgrade`` already brings them to head, so
+          this is a no-op for them. The ``IF NOT EXISTS`` guard on
+          the index plus the column-presence check make this safe to
+          call unconditionally on every connect.
+        """
+        node_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
+        if "repo_id" not in node_cols:
+            self._conn.execute(
+                "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
+            )
+        edge_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(edges)").fetchall()
+        }
+        if "repo_id" not in edge_cols:
+            self._conn.execute(
+                "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
+            )
+        # Repos registry table — created by migration 003 on disk-backed
+        # DBs. Mirror it here for in-memory connections so RepoRegistry
+        # works against ``:memory:`` GraphStores too.
+        self._conn.execute(
+            """CREATE TABLE IF NOT EXISTS repos (
+                repo_id TEXT PRIMARY KEY NOT NULL,
+                path TEXT NOT NULL,
+                remote_url TEXT,
+                last_indexed_sha TEXT,
+                first_indexed_at INTEGER NOT NULL,
+                last_indexed_at INTEGER NOT NULL
+            )"""
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo_id, kind)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_edges_repo ON edges(repo_id)"
+        )
+        self._conn.commit()
+
     def _ensure_summary_columns(self) -> None:
         """Backfill Phase 1 v1.6.x summary columns on pre-existing DBs.
 
@@ -330,14 +386,20 @@ class GraphStore:
         """Insert or update a node. Returns the node ID."""
         now = time.time()
         qualified = self._make_qualified(node)
-        extra = json.dumps(node.extra) if node.extra else "{}"
+        # Tolerate dict / Mapping that don't survive ``if node.extra``
+        # (e.g. a stand-in object from a pre-Phase-2 caller).
+        extra_obj = getattr(node, "extra", None) or {}
+        extra = json.dumps(extra_obj) if extra_obj else "{}"
+        # Phase 2 Task 9 — fall back to "" for callers passing legacy
+        # NodeInfo objects without the federation field.
+        repo_id = getattr(node, "repo_id", "") or ""
 
         self._conn.execute(
             """INSERT INTO nodes
                (kind, name, qualified_name, file_path, line_start, line_end,
                 language, parent_name, params, return_type, modifiers, is_test,
-                file_hash, extra, updated_at, source_text)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                file_hash, extra, updated_at, source_text, repo_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(qualified_name) DO UPDATE SET
                  kind=excluded.kind, name=excluded.name,
                  file_path=excluded.file_path, line_start=excluded.line_start,
@@ -346,7 +408,7 @@ class GraphStore:
                  return_type=excluded.return_type, modifiers=excluded.modifiers,
                  is_test=excluded.is_test, file_hash=excluded.file_hash,
                  extra=excluded.extra, updated_at=excluded.updated_at,
-                 source_text=excluded.source_text
+                 source_text=excluded.source_text, repo_id=excluded.repo_id
             """,
             (
                 node.kind,
@@ -364,7 +426,8 @@ class GraphStore:
                 file_hash,
                 extra,
                 now,
-                node.source_text,
+                getattr(node, "source_text", None),
+                repo_id,
             ),
         )
         row = self._conn.execute(
@@ -375,7 +438,10 @@ class GraphStore:
     def upsert_edge(self, edge: EdgeInfo) -> int:
         """Insert or update an edge."""
         now = time.time()
-        extra = json.dumps(edge.extra) if edge.extra else "{}"
+        extra_obj = getattr(edge, "extra", None) or {}
+        extra = json.dumps(extra_obj) if extra_obj else "{}"
+        # Phase 2 Task 9 — same legacy fallback as ``upsert_node``.
+        repo_id = getattr(edge, "repo_id", "") or ""
 
         # Check for existing edge (include line so multiple call sites are preserved)
         existing = self._conn.execute(
@@ -387,15 +453,15 @@ class GraphStore:
 
         if existing:
             self._conn.execute(
-                "UPDATE edges SET line=?, extra=?, updated_at=? WHERE id=?",
-                (edge.line, extra, now, existing["id"]),
+                "UPDATE edges SET line=?, extra=?, updated_at=?, repo_id=? WHERE id=?",
+                (edge.line, extra, now, repo_id, existing["id"]),
             )
             return existing["id"]
 
         self._conn.execute(
             """INSERT INTO edges
-               (kind, source_qualified, target_qualified, file_path, line, extra, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (kind, source_qualified, target_qualified, file_path, line, extra, updated_at, repo_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 edge.kind,
                 edge.source,
@@ -404,6 +470,7 @@ class GraphStore:
                 edge.line,
                 extra,
                 now,
+                repo_id,
             ),
         )
         return self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -452,7 +519,8 @@ class GraphStore:
             node_data = []
             for node in nodes:
                 qualified = self._make_qualified(node)
-                extra = json.dumps(node.extra) if node.extra else "{}"
+                extra_obj = getattr(node, "extra", None) or {}
+                extra = json.dumps(extra_obj) if extra_obj else "{}"
                 node_data.append(
                     (
                         node.kind,
@@ -470,7 +538,8 @@ class GraphStore:
                         fhash,
                         extra,
                         now,
-                        node.source_text,
+                        getattr(node, "source_text", None),
+                        getattr(node, "repo_id", "") or "",
                     )
                 )
 
@@ -478,8 +547,8 @@ class GraphStore:
                 """INSERT INTO nodes
                    (kind, name, qualified_name, file_path, line_start, line_end,
                     language, parent_name, params, return_type, modifiers, is_test,
-                    file_hash, extra, updated_at, source_text)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    file_hash, extra, updated_at, source_text, repo_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(qualified_name) DO UPDATE SET
                      kind=excluded.kind, name=excluded.name,
                      file_path=excluded.file_path, line_start=excluded.line_start,
@@ -488,7 +557,7 @@ class GraphStore:
                      return_type=excluded.return_type, modifiers=excluded.modifiers,
                      is_test=excluded.is_test, file_hash=excluded.file_hash,
                      extra=excluded.extra, updated_at=excluded.updated_at,
-                     source_text=excluded.source_text
+                     source_text=excluded.source_text, repo_id=excluded.repo_id
                 """,
                 node_data,
             )
@@ -500,7 +569,8 @@ class GraphStore:
                 key = (edge.kind, edge.source, edge.target, edge.file_path, edge.line)
                 if key not in seen:
                     seen.add(key)
-                    extra = json.dumps(edge.extra) if edge.extra else "{}"
+                    extra_obj = getattr(edge, "extra", None) or {}
+                    extra = json.dumps(extra_obj) if extra_obj else "{}"
                     edge_data.append(
                         (
                             edge.kind,
@@ -510,13 +580,14 @@ class GraphStore:
                             edge.line,
                             extra,
                             now,
+                            getattr(edge, "repo_id", "") or "",
                         )
                     )
 
             self._conn.executemany(
                 """INSERT INTO edges
-                   (kind, source_qualified, target_qualified, file_path, line, extra, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (kind, source_qualified, target_qualified, file_path, line, extra, updated_at, repo_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 edge_data[::-1],
             )
 
