@@ -98,11 +98,17 @@ def graph(
     format: str = "graphml",
     output_path: str | None = None,
     max_nodes: int = 500,
+    roots: list[str] | None = None,
 ) -> str:
     """Build, update, and manage the code knowledge graph.
 
     Actions (required params -> optional):
-    - build (-> full_rebuild=false, base="HEAD~1", repo_root): Parse source and build graph
+    - build (-> full_rebuild=false, base="HEAD~1", repo_root, roots): Parse source and build graph.
+        ``roots`` (Phase 2 Task 10) optionally federates additional repo
+        directories into the same graph DB; each is registered in the
+        :class:`RepoRegistry` and its files are tagged with the
+        corresponding ``repo_id``. Pair with ``query`` action's ``repo``
+        kwarg to scope subsequent queries.
     - update (-> base="HEAD~1", repo_root): Incremental update (alias for build)
     - stats (-> repo_root): Node/edge counts, languages, embedding status
     - embed (-> repo_root): Compute vector embeddings for semantic search
@@ -118,7 +124,10 @@ def graph(
         case "build":
             return _json(
                 build_or_update_graph(
-                    full_rebuild=full_rebuild, repo_root=repo_root, base=base
+                    full_rebuild=full_rebuild,
+                    repo_root=repo_root,
+                    base=base,
+                    roots=roots,
                 )
             )
         case "update":
@@ -211,16 +220,21 @@ def query(
     context_lines: int = 2,
     # common
     repo_root: str | None = None,
+    # Phase 2 Task 10 — cross-cutting repo filter
+    repo: str = "",
 ) -> str:
     """Query the code knowledge graph for relationships, search, and impact analysis.
 
     Actions (required params -> optional):
-    - query (pattern, target -> repo_root, languages): Predefined graph queries
+    - query (pattern, target -> repo_root, languages, repo): Predefined graph queries
       pattern: callers_of | callees_of | imports_of | importers_of | children_of | tests_for | inheritors_of | file_summary
       languages: filter `tests_for` results to listed languages (D16, fixes #340)
-    - search (search_query -> kind, limit=20, repo_root): Search nodes by name/keyword/vector
-    - impact (-> changed_files, max_depth=2, max_results=500, base="HEAD~1", repo_root): Blast radius analysis
-    - large_functions (-> min_lines=50, kind, file_path_pattern, limit=20, repo_root): Find oversized functions
+      repo: Phase 2 Task 10 — when non-empty, scope to that ``repo_id``
+        (e.g. ``repo='repo_a-aaaaaaaa'``). Default ``""`` queries every
+        federated repo.
+    - search (search_query -> kind, limit=20, repo_root, repo): Search nodes by name/keyword/vector
+    - impact (-> changed_files, max_depth=2, max_results=500, base="HEAD~1", repo_root, repo): Blast radius analysis
+    - large_functions (-> min_lines=50, kind, file_path_pattern, limit=20, repo_root, repo): Find oversized functions
 
     For `query` action with `callers_of`/`callees_of`, the `not_found` response
     includes a `reason` field (`no_such_symbol` | `symbol_not_indexed` |
@@ -253,13 +267,18 @@ def query(
                     target=target,
                     repo_root=repo_root,
                     languages=languages,
+                    repo=repo,
                 )
             )
         case "search":
             if not search_query:
                 return _json({"error": "search_query is required for search action"})
             result = semantic_search_nodes(
-                query=search_query, kind=kind, limit=limit, repo_root=repo_root
+                query=search_query,
+                kind=kind,
+                limit=limit,
+                repo_root=repo_root,
+                repo=repo,
             )
             result = _maybe_include_setup_hint(result)
             return _json(result)
@@ -272,6 +291,7 @@ def query(
                     repo_root=repo_root,
                     base=base,
                     max_payload_bytes=max_payload_bytes,
+                    repo=repo,
                 )
             )
         case "large_functions":
@@ -282,6 +302,7 @@ def query(
                     file_path_pattern=file_path_pattern,
                     limit=limit,
                     repo_root=repo_root,
+                    repo=repo,
                 )
             )
         case "spot_check":
@@ -350,6 +371,7 @@ def review(
     base: str = "HEAD~1",
     repo_root: str | None = None,
     languages: list[str] | None = None,
+    repo: str = "",
 ) -> str:
     """Generate focused review context for code changes.
 
@@ -367,6 +389,10 @@ def review(
             scope the ``untested_functions`` list. Excludes functions whose
             language doesn't match. Fixes false positives on cross-language
             repos (D16, fixes #340).
+        repo: Phase 2 Task 10 — when non-empty, scope the impact subgraph
+            to nodes whose ``repo_id`` matches (e.g.
+            ``repo='repo_a-aaaaaaaa'``). Default ``""`` includes every
+            federated repo.
     """
     return _json(
         get_review_context(
@@ -377,6 +403,7 @@ def review(
             repo_root=repo_root,
             base=base,
             languages=languages,
+            repo=repo,
         )
     )
 
