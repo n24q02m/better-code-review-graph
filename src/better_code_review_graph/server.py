@@ -18,6 +18,7 @@ from .embeddings import EmbeddingStore, init_backend, resolve_backend
 from .incremental import get_db_path
 from .tools import (
     build_or_update_graph,
+    diff_graph,
     embed_graph,
     export_graph_dispatch,
     find_large_functions,
@@ -188,7 +189,8 @@ def graph(
         "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
         "large_functions (min_lines), spot_check (n -- random callsite snippets from "
         "last callers_of/callees_of/inheritors_of/importers_of result), "
-        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref). "
+        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref), "
+        "diff (from_sha, to_sha -- nodes added/removed/modified between two commit SHAs). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -226,6 +228,10 @@ def query(
     repo_root: str | None = None,
     # Phase 2 Task 10 — cross-cutting repo filter
     repo: str = "",
+    # Phase 3 Task 9 — temporal cross-cutting params
+    as_of: str = "",
+    from_sha: str = "",
+    to_sha: str = "",
 ) -> str:
     """Query the code knowledge graph for relationships, search, and impact analysis.
 
@@ -272,6 +278,7 @@ def query(
                     repo_root=repo_root,
                     languages=languages,
                     repo=repo,
+                    as_of=as_of,
                 )
             )
         case "search":
@@ -283,6 +290,7 @@ def query(
                 limit=limit,
                 repo_root=repo_root,
                 repo=repo,
+                as_of=as_of,
             )
             result = _maybe_include_setup_hint(result)
             return _json(result)
@@ -296,6 +304,7 @@ def query(
                     base=base,
                     max_payload_bytes=max_payload_bytes,
                     repo=repo,
+                    as_of=as_of,
                 )
             )
         case "large_functions":
@@ -325,10 +334,20 @@ def query(
                     repo_root=repo_root,
                 )
             )
+        case "diff":
+            return _json(
+                diff_graph(
+                    repo_root=repo_root,
+                    from_sha=from_sha,
+                    to_sha=to_sha,
+                    repo=repo,
+                )
+            )
         case _:
             import difflib
 
             valid_actions = [
+                "diff",
                 "impact",
                 "large_functions",
                 "query",

@@ -108,6 +108,7 @@ class TestQueryTool:
             repo_root="/test",
             languages=None,
             repo="",
+            as_of="",
         )
         assert result["status"] == "ok"
 
@@ -134,7 +135,12 @@ class TestQueryTool:
             )
         )
         mock_fn.assert_called_once_with(
-            query="auth", kind="Class", limit=5, repo_root="/test", repo=""
+            query="auth",
+            kind="Class",
+            limit=5,
+            repo_root="/test",
+            repo="",
+            as_of="",
         )
         assert result["status"] == "ok"
 
@@ -164,6 +170,7 @@ class TestQueryTool:
             base="HEAD~3",
             max_payload_bytes=500_000,
             repo="",
+            as_of="",
         )
         assert result["status"] == "ok"
 
