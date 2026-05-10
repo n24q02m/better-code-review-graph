@@ -387,6 +387,7 @@ def _full_build_federated(
     """
     from .federation import RepoRegistry
     from .parser import CodeParser
+    from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
     # Register primary first so it's always present, then each extra
@@ -394,6 +395,17 @@ def _full_build_federated(
     registry.add(primary_root)
     for r in roots:
         registry.add(r)
+
+    # Phase 2 Task 12: build ``target_repos`` from the registry so the
+    # parser's cross-repo IMPORTS_FROM rewrite actually fires. Without
+    # this, ``_apply_federation`` early-returns at the ``if not
+    # target_repos`` guard and edges stay as bare local references
+    # (e.g. ``py_lib.retry``) instead of resolving to
+    # ``<repo_id>:src/py_lib/retry.py::retry``.
+    target_repos = [
+        TargetRepo(repo_id=entry.repo_id, root=entry.path)
+        for entry in registry.entries()
+    ]
 
     parser = CodeParser()
     total_files = 0
@@ -424,7 +436,10 @@ def _full_build_federated(
                 source = full_path.read_bytes()
                 fhash = hashlib.sha256(source).hexdigest()
                 nodes, edges = parser.parse_bytes(
-                    full_path, source, repo_registry=registry
+                    full_path,
+                    source,
+                    repo_registry=registry,
+                    target_repos=target_repos,
                 )
                 store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
                 total_nodes += len(nodes)
