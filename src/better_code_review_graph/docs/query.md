@@ -91,3 +91,86 @@ Find functions, classes, or files exceeding a line-count threshold. Useful for d
 {"action": "large_functions", "file_path_pattern": "src/", "limit": 20}
 {"action": "large_functions", "min_lines": 100, "repo": "repo_a-3f2a91bc"}
 ```
+
+---
+
+## Temporal queries (Phase 3 v2.0+)
+
+Every `query` / `search` / `impact` action accepts an optional
+`as_of: str = ""` cross-cutting param for snapshot semantics. Default
+(`""`) returns currently-valid rows only -- the SQL filter is
+`WHERE valid_to_sha IS NULL`. The temporal columns are populated by
+the v2 ingest path (alembic revision `005_temporal_columns`), which
+auto-applies on first `GraphStore` open and seeds `valid_from_sha`
+from `git rev-parse HEAD`.
+
+### `as_of`
+
+When set, returns rows that were valid at the given commit SHA. MVP
+scope: matches rows where `valid_from_sha == as_of` OR
+`valid_to_sha == as_of`. Useful for "show me what `authenticate`
+looked like three commits ago" style queries.
+
+**Example:**
+```json
+{"action": "query", "pattern": "callers_of",
+ "target": "src/auth.py::authenticate",
+ "as_of": "abc12345"}
+```
+
+```json
+{"action": "search", "search_query": "authenticate",
+ "as_of": "abc12345"}
+```
+
+### `diff` action
+
+`query(action="diff", from_sha=X, to_sha=Y)` returns three buckets
+identifying nodes that changed between two commit SHAs. The diff is
+computed entirely from the temporal columns -- the parser does NOT
+re-run.
+
+| Bucket | Meaning |
+|---|---|
+| `added` | Introduced at `to_sha` (no prior row with same `qualified_name`). |
+| `removed` | Closed at `to_sha` with no replacement. |
+| `modified` | Superseded at `to_sha` -- one row closed AND a new row opened (function body changed). |
+
+**Parameters:**
+- `from_sha` (required): Earlier commit SHA.
+- `to_sha` (required): Later commit SHA.
+- `repo`: Optional `repo_id` filter.
+- `repo_root`: Repository root path (auto-detected).
+
+**Example:**
+```json
+{"action": "diff", "from_sha": "abc12345", "to_sha": "def67890"}
+```
+
+**Returns:**
+```json
+{
+  "from_sha": "abc12345",
+  "to_sha": "def67890",
+  "added": [
+    {"id": 17, "qualified_name": "src/auth.py::login_v2", "kind": "Function"}
+  ],
+  "removed": [
+    {"id": 4, "qualified_name": "src/auth.py::login_legacy", "kind": "Function"}
+  ],
+  "modified": [
+    {"qualified_name": "src/auth.py::authenticate"}
+  ]
+}
+```
+
+### Recipe -- audit a refactor commit
+
+```json
+{"tool": "query", "action": "diff",
+ "from_sha": "abc12345", "to_sha": "def67890"}
+```
+
+Pair with `review(action="delta", show_line_shifts=true, ...)` (see
+`review.md`) when you want callsite-line shifts on top of the
+add/remove/modify buckets.
