@@ -1,0 +1,18 @@
+rules:
+  - id: crg-cwe-89-python-format-execute
+    languages: [python]
+    severity: ERROR
+    message: Possible SQL injection via Python f-string in cursor.execute()
+    pattern: cursor.execute(f"$STR")
+  - id: crg-cwe-78-python-shell-true
+    languages: [python]
+    severity: ERROR
+    message: subprocess called with shell=True
+    pattern: |
+      subprocess.$FN(..., shell=True, ...)
+  - id: crg-cwe-95-python-dynamic-eval-input
+    languages: [python]
+    severity: ERROR
+    message: dynamic-evaluation builtin applied to user-controlled input()
+    pattern: |
+      $EVAL(input(...))
