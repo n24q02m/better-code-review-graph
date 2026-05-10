@@ -77,10 +77,24 @@ depends_on: str | Sequence[str] | None = None
 
 
 # Recognized SQLite URL shapes that ``GraphStore`` and the test helpers
-# build via ``Config.set_main_option("sqlalchemy.url", ...)``. We accept
-# both 3-slash absolute URLs (``sqlite:///C:/path/g.db`` on Windows or
-# ``sqlite:////tmp/g.db`` on POSIX) and the 4-slash POSIX absolute form.
-_SQLITE_URL_RE = re.compile(r"^sqlite:/{2,4}(?P<path>.+)$")
+# build via ``Config.set_main_option("sqlalchemy.url", ...)``. The
+# SQLAlchemy convention is always exactly 3 slashes after ``sqlite:``:
+#
+# * ``sqlite:///C:/path/g.db`` — Windows absolute (path = ``C:/path/g.db``)
+# * ``sqlite:////tmp/g.db`` — POSIX absolute (path = ``/tmp/g.db``; the
+#   4th slash is the leading slash of the absolute path, NOT part of
+#   the prefix)
+# * ``sqlite:///rel/path/g.db`` — relative (path = ``rel/path/g.db``)
+#
+# A previous version of this regex used ``{2,4}`` for the slash count,
+# which is greedy and silently swallowed the leading ``/`` on POSIX
+# absolute URLs (turning ``sqlite:////tmp/g.db`` into the relative
+# path ``tmp/g.db``). On Linux/macOS CI runners that resolved against
+# the pytest CWD (= project workspace), so the walk-up in
+# :func:`_find_repo_root` ended at the project's ``.git`` instead of
+# the test fixture's tmp_path ``.git``. Pinning to exactly 3 slashes
+# preserves the leading slash on POSIX absolute paths.
+_SQLITE_URL_RE = re.compile(r"^sqlite:///(?P<path>.+)$")
 
 # Sentinel SHA used when the migration cannot read a real HEAD:
 # 40 zeros is git's empty-tree marker and stable across hosts. The
@@ -125,11 +139,12 @@ def _extract_db_path_from_url(url: str) -> Path | None:
             f"({url!r}); expected a sqlite:/// file URL."
         )
     raw = match.group("path")
-    # On Windows, ``sqlite:///C:/path`` extracts ``C:/path`` cleanly.
-    # On POSIX, the leading slash is part of the absolute path: a 4-slash
-    # URL (``sqlite:////abs/path``) gives ``raw = '/abs/path'``; a 3-slash
-    # URL (``sqlite:///rel/path``) yields a relative path that we resolve
-    # against the cwd so the walk-up below still works.
+    # The exactly-3-slash regex preserves the leading slash on POSIX
+    # absolute paths: ``sqlite:////tmp/g.db`` → ``raw = '/tmp/g.db'``.
+    # Windows absolute URLs use the same 3-slash prefix and yield e.g.
+    # ``raw = 'C:/path/g.db'``. Relative paths (``sqlite:///rel/path``)
+    # are not used in production but still resolve against the cwd so
+    # the walk-up below works for any caller that constructs them.
     return Path(raw).resolve()
 
 
