@@ -1,0 +1,5 @@
+id: cwe-89-sql-string-format
+severity: HIGH
+pattern: execute\(\s*[fr]?["'].*\{[^}]*\}.*["']
+languages: [python]
+message: Possible SQL injection via Python f-string or .format() in execute()
