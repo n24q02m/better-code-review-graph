@@ -392,16 +392,28 @@ def _full_build_federated(
     the DB) is registered too so its files don't fall outside every
     root and lose their ``repo_id``.
     """
-    from .federation import RepoRegistry
+    from .federation import RepoRegistry, backfill_commits_for_repo
     from .parser import CodeParser
     from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
     # Register primary first so it's always present, then each extra
     # root supplied by the caller. ``add`` is idempotent on re-add.
-    registry.add(primary_root)
+    primary_repo_id = registry.add(primary_root)
+    extra_repo_ids: list[tuple[Path, str]] = []
     for r in roots:
-        registry.add(r)
+        extra_repo_ids.append((r, registry.add(r)))
+
+    # Phase 3 Task 7: first-parent commit backfill. Runs once per
+    # registered root after the registry is set up so the FK to
+    # ``repos.repo_id`` resolves. The helper is best-effort — non-git
+    # roots return 0 silently; we don't surface per-root counts in the
+    # build summary because the caller only cares about node/edge
+    # counts. Errors are swallowed by the helper itself, so a failure
+    # to walk one repo's history does not abort the whole build.
+    backfill_commits_for_repo(store, primary_repo_id, primary_root)
+    for root, rid in extra_repo_ids:
+        backfill_commits_for_repo(store, rid, root)
 
     # Phase 2 Task 12: build ``target_repos`` from the registry so the
     # parser's cross-repo IMPORTS_FROM rewrite actually fires. Without
