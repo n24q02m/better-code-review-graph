@@ -1,0 +1,5 @@
+id: cwe-22-path-traversal
+severity: HIGH
+pattern: open\s*\([^)]*\+[^)]*request\.|os\.path\.join\([^)]*request\.
+languages: [python]
+message: Possible path traversal -- file path concatenated with request data

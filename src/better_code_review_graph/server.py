@@ -18,6 +18,7 @@ from .embeddings import EmbeddingStore, init_backend, resolve_backend
 from .incremental import get_db_path
 from .tools import (
     build_or_update_graph,
+    diff_graph,
     embed_graph,
     export_graph_dispatch,
     find_large_functions,
@@ -27,6 +28,11 @@ from .tools import (
     list_graph_stats,
     query_graph,
     renamed_in_diff,
+    review_delta,
+    security_report,
+    security_rule_list,
+    security_scan,
+    security_suppress,
     semantic_search_nodes,
     spot_check_last_callers,
     summarize_graph_dispatch,
@@ -184,7 +190,8 @@ def graph(
         "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
         "large_functions (min_lines), spot_check (n -- random callsite snippets from "
         "last callers_of/callees_of/inheritors_of/importers_of result), "
-        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref). "
+        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref), "
+        "diff (from_sha, to_sha -- nodes added/removed/modified between two commit SHAs). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -222,6 +229,10 @@ def query(
     repo_root: str | None = None,
     # Phase 2 Task 10 — cross-cutting repo filter
     repo: str = "",
+    # Phase 3 Task 9 — temporal cross-cutting params
+    as_of: str = "",
+    from_sha: str = "",
+    to_sha: str = "",
 ) -> str:
     """Query the code knowledge graph for relationships, search, and impact analysis.
 
@@ -268,6 +279,7 @@ def query(
                     repo_root=repo_root,
                     languages=languages,
                     repo=repo,
+                    as_of=as_of,
                 )
             )
         case "search":
@@ -279,6 +291,7 @@ def query(
                 limit=limit,
                 repo_root=repo_root,
                 repo=repo,
+                as_of=as_of,
             )
             result = _maybe_include_setup_hint(result)
             return _json(result)
@@ -292,6 +305,7 @@ def query(
                     base=base,
                     max_payload_bytes=max_payload_bytes,
                     repo=repo,
+                    as_of=as_of,
                 )
             )
         case "large_functions":
@@ -321,10 +335,20 @@ def query(
                     repo_root=repo_root,
                 )
             )
+        case "diff":
+            return _json(
+                diff_graph(
+                    repo_root=repo_root,
+                    from_sha=from_sha,
+                    to_sha=to_sha,
+                    repo=repo,
+                )
+            )
         case _:
             import difflib
 
             valid_actions = [
+                "diff",
                 "impact",
                 "large_functions",
                 "query",
@@ -350,9 +374,13 @@ def query(
 @mcp.tool(
     description=(
         "Generate token-efficient review context for code changes. "
-        "Auto-detects changed files from git diff. Returns structural summary, "
-        "impacted nodes, source snippets, and review guidance. "
-        "Params: changed_files (auto), max_depth=2, include_source=true, max_lines_per_file=200, base='HEAD~1', repo_root (auto). "
+        "Actions: context (default — auto-detects changed files from git diff, returns "
+        "structural summary, impacted nodes, source snippets, and review guidance), "
+        "delta (from_sha, to_sha — wraps the `query.diff` buckets and, when "
+        "show_line_shifts=true, surfaces qualified_names whose line_start moved "
+        "between the two commits for refactor auditing). "
+        "Context params: changed_files (auto), max_depth=2, include_source=true, max_lines_per_file=200, base='HEAD~1', repo_root (auto). "
+        "Delta params: from_sha, to_sha, show_line_shifts=false, repo, repo_root. "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -364,6 +392,7 @@ def query(
     ),
 )
 def review(
+    action: str = "context",
     changed_files: list[str] | None = None,
     max_depth: int = 2,
     include_source: bool = True,
@@ -372,40 +401,88 @@ def review(
     repo_root: str | None = None,
     languages: list[str] | None = None,
     repo: str = "",
+    # Phase 3 Task 10 — review.delta params
+    from_sha: str = "",
+    to_sha: str = "",
+    show_line_shifts: bool = False,
 ) -> str:
     """Generate focused review context for code changes.
 
-    Auto-detects changed files from git diff. Returns structural summary,
-    impacted nodes/files, source snippets, and review guidance.
+    Actions:
+
+    * ``context`` (default): Auto-detects changed files from git diff
+      and returns the structural summary + impacted nodes/files +
+      source snippets + review guidance produced by
+      :func:`get_review_context`. This is the original review tool
+      behaviour — calls without an explicit ``action`` continue to
+      hit this path.
+    * ``delta``: Wraps :func:`review_delta`. Given ``from_sha`` and
+      ``to_sha``, returns the ``diff`` buckets (added / removed /
+      modified) and, when ``show_line_shifts=True``, an extra
+      ``line_shifts`` list of ``{qualified_name, before_line,
+      after_line}`` entries for refactor auditing (Phase 3 Task 10).
 
     Args:
-        changed_files: Files to review (auto-detected from git if omitted)
-        max_depth: Impact radius depth (default: 2)
-        include_source: Include source code snippets (default: true)
-        max_lines_per_file: Max source lines per file (default: 200)
-        base: Git ref for change detection (default: HEAD~1)
-        repo_root: Repository root path (auto-detected)
-        languages: Optional list of language names (e.g. ``["python"]``) to
-            scope the ``untested_functions`` list. Excludes functions whose
-            language doesn't match. Fixes false positives on cross-language
-            repos (D16, fixes #340).
-        repo: Phase 2 Task 10 — when non-empty, scope the impact subgraph
-            to nodes whose ``repo_id`` matches (e.g.
-            ``repo='repo_a-aaaaaaaa'``). Default ``""`` includes every
-            federated repo.
+        action: ``context`` (default) or ``delta``.
+        changed_files: ``context`` action — files to review (auto-detected
+            from git if omitted).
+        max_depth: ``context`` action — impact radius depth (default: 2).
+        include_source: ``context`` action — include source code snippets
+            (default: true).
+        max_lines_per_file: ``context`` action — max source lines per file
+            (default: 200).
+        base: ``context`` action — git ref for change detection
+            (default: ``HEAD~1``).
+        repo_root: Repository root path (auto-detected). Both actions.
+        languages: ``context`` action — optional list of language names
+            (e.g. ``["python"]``) to scope the ``untested_functions``
+            list. Excludes functions whose language doesn't match. Fixes
+            false positives on cross-language repos (D16, fixes #340).
+        repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
+            ``repo_id`` matches (e.g. ``repo='repo_a-aaaaaaaa'``).
+            Default ``""`` includes every federated repo. Both actions.
+        from_sha: ``delta`` action — earlier commit SHA. Required.
+        to_sha: ``delta`` action — later commit SHA. Required.
+        show_line_shifts: ``delta`` action — when True, include nodes
+            whose ``line_start`` moved between ``from_sha`` and
+            ``to_sha`` in the response (default False).
     """
-    return _json(
-        get_review_context(
-            changed_files=changed_files,
-            max_depth=max_depth,
-            include_source=include_source,
-            max_lines_per_file=max_lines_per_file,
-            repo_root=repo_root,
-            base=base,
-            languages=languages,
-            repo=repo,
-        )
-    )
+    match action:
+        case "context":
+            return _json(
+                get_review_context(
+                    changed_files=changed_files,
+                    max_depth=max_depth,
+                    include_source=include_source,
+                    max_lines_per_file=max_lines_per_file,
+                    repo_root=repo_root,
+                    base=base,
+                    languages=languages,
+                    repo=repo,
+                )
+            )
+        case "delta":
+            return _json(
+                review_delta(
+                    repo_root=repo_root,
+                    from_sha=from_sha,
+                    to_sha=to_sha,
+                    show_line_shifts=show_line_shifts,
+                    repo=repo,
+                )
+            )
+        case _:
+            import difflib
+
+            valid_actions = ["context", "delta"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
+            return _json(
+                {
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
+                }
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +843,75 @@ def help(topic: str = "graph") -> str:
                 "valid_topics": sorted(valid_topics),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Tool 6: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    description=(
+        "Security scanning over the code knowledge graph. "
+        "Actions: scan (engine='heuristic'|'semgrep', repo_root), "
+        "report (format='json'|'sarif', repo_root), "
+        "suppress (rule_id, remove=false, repo_root), "
+        "rule_list (engine='heuristic'|'semgrep'). "
+        "Use `help` tool for full docs."
+    ),
+    annotations=ToolAnnotations(
+        title="Security",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+def security(
+    action: str = "scan",
+    repo_root: str | None = None,
+    engine: str = "heuristic",
+    format: str = "json",
+    rule_id: str | None = None,
+    remove: bool = False,
+) -> str:
+    """Security scanning tool: scan / report / suppress / rule_list.
+
+    Actions (required params -> optional):
+
+    - scan (-> engine='heuristic'|'semgrep', repo_root): Run a security scan
+      over Function/Class/Method nodes; results are cached on disk and
+      persisted to ``nodes.security_tags``.
+    - report (-> format='json'|'sarif', repo_root): Re-emit the cached scan
+      payload as JSON (default) or SARIF v2.1.0.
+    - suppress (rule_id -> remove=false, repo_root): Add or remove a rule_id
+      from the persistent suppression list at
+      ``.code-review-graph/security-suppressions.json``.
+    - rule_list (-> engine='heuristic'|'semgrep'): Enumerate active rules.
+    """
+    match action:
+        case "scan":
+            return _json(security_scan(repo_root=repo_root, engine=engine))
+        case "report":
+            return _json(security_report(repo_root=repo_root, format=format))
+        case "suppress":
+            return _json(
+                security_suppress(repo_root=repo_root, rule_id=rule_id, remove=remove)
+            )
+        case "rule_list":
+            return _json(security_rule_list(engine=engine))
+        case _:
+            import difflib
+
+            valid_actions = ["report", "rule_list", "scan", "suppress"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
+            return _json(
+                {
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
+                }
+            )
 
 
 # ---------------------------------------------------------------------------

@@ -118,6 +118,44 @@ qualified-name format.
 
 ---
 
+## Security scanning
+
+Run a security scan over the graph and re-emit the cached result as
+SARIF for CI ingest:
+
+```json
+{"tool": "security", "action": "scan"}
+{"tool": "security", "action": "report", "format": "sarif"}
+```
+
+Tier 1 (heuristic, default) needs no extra deps. Tier 2 (Semgrep,
+~120 rules) is opt-in via `uv add 'better-code-review-graph[security]'`
+and `engine="semgrep"`. Suppress noisy rules persistently with
+`security(action="suppress", rule_id=...)`. See `security.md` for the
+bundled ruleset, SARIF envelope shape, and the Semgrep install recipe.
+
+---
+
+## Temporal review (v2.0+)
+
+Every `query` / `search` / `impact` accepts `as_of=<sha>` to pin
+results to a historical commit (default returns currently-valid
+rows). For two-point comparisons:
+
+```json
+{"tool": "query", "action": "diff",
+ "from_sha": "<earlier-sha>", "to_sha": "<later-sha>"}
+```
+
+Returns `{added, removed, modified}` buckets. Pair with
+`review(action="delta", show_line_shifts=true, from_sha=..., to_sha=...)`
+to also surface symbols whose `line_start` shifted between the two
+commits -- useful for refactor auditing. See `query.md` "Temporal
+queries" and `review.md` "delta action" for the full parameter
+reference.
+
+---
+
 ## Tips
 
 - `query.action="callers_of"` auto-resolves the bare-name File+Function

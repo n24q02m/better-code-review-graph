@@ -1,0 +1,5 @@
+id: cwe-95-eval-on-input
+severity: CRITICAL
+pattern: \beval\s*\([^)]*input\s*\(
+languages: [python, javascript]
+message: Possible code injection -- dynamic-evaluation builtin applied directly to user input

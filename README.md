@@ -61,6 +61,47 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 
 Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with critical bug fixes, configurable embeddings, and production CI/CD. Parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters.
 
+## v2.0 migration (BREAKING)
+
+See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full
+schema-change list, behavior-change summary, environment
+requirements, and rollback procedure.
+
+This release adds **temporal columns** (`valid_from_sha` /
+`valid_to_sha` on every node + edge) and an opt-in **security
+scanner**. The schema migration is auto-applied on first
+`GraphStore` open, and a backup of the pre-2.0 DB is saved to
+`<graph_db>.pre-2.0.bak` so you can roll back if needed.
+
+To downgrade and restore the pre-2.0 backup:
+
+```sh
+CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph
+```
+
+The backup is created the first time alembic crosses the breaking
+boundary (revision `005_temporal_columns`); subsequent runs reuse
+the existing backup file. After a downgrade the v2-state DB is
+preserved at `<graph_db>.post-2.0.archived` so you can forward-roll
+again later.
+
+What you get on v2.0+:
+
+- **Temporal queries** -- `query`/`search`/`impact` accept
+  `as_of=<sha>` for snapshot semantics; `query(action="diff",
+  from_sha=X, to_sha=Y)` returns `{added, removed, modified}`
+  buckets driven entirely by the temporal columns (no re-parse).
+  See `help(topic="query")`.
+- **Refactor auditing** -- `review(action="delta",
+  show_line_shifts=true, ...)` surfaces symbols whose `line_start`
+  moved between two commits.
+- **Security scanning** -- `security(action="scan", ...)` runs a
+  regex-based Tier-1 scanner (5 rules) by default; pass
+  `engine="semgrep"` (after `uv add 'better-code-review-graph[security]'`)
+  for the ~120-rule Tier-2 overlay. Findings persist on
+  `nodes.security_tags`; `report` re-emits the cache as JSON or
+  SARIF v2.1.0. See `help(topic="security")`.
+
 ## What's new in v1.6
 
 - **LLM-generated summaries** -- `graph(action="summarize")` writes a one-paragraph docstring for each `Function` node via Gemini or OpenAI (cloud opt-in, no key = no-op). Run it after `graph(action="update")` to lift semantic-search recall by ~15% on repos with terse function names.
