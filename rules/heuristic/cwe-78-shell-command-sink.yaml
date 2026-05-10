@@ -1,0 +1,5 @@
+id: cwe-78-shell-command-sink
+severity: HIGH
+pattern: subprocess\.(run|call|Popen|check_call|check_output)\([^)]*shell\s*=\s*True
+languages: [python]
+message: Possible shell command injection -- subprocess called with shell=True

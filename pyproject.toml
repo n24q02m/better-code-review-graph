@@ -58,6 +58,7 @@ packages = ["src/better_code_review_graph"]
 # regardless of the install location.
 [tool.hatch.build.targets.wheel.force-include]
 "migrations" = "better_code_review_graph_migrations"
+"rules" = "better_code_review_graph_security_rules"
 
 [tool.ruff]
 line-length = 88
