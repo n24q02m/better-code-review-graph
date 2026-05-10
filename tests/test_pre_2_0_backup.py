@@ -210,8 +210,15 @@ def test_backup_taken_on_real_head_005_chain(tmp_path: Path) -> None:
         head = ScriptDirectory.from_config(
             _alembic_config_for(db_path)
         ).get_current_head()
-        assert head == "005"
-        assert _current_revision(db_path) == "005"
+        # Phase 3 Task 7 added revision 006 (commits table). Future
+        # additive revisions move the head forward; the BREAKING
+        # boundary remains at 005, so the backup behaviour pinned by
+        # this test does not change. We assert the chain reached the
+        # current head (whatever revision it points at) rather than
+        # hard-coding a numeric value that would have to be bumped on
+        # every additive migration.
+        assert head is not None and head >= "005"
+        assert _current_revision(db_path) == head
     finally:
         store.close()
 
