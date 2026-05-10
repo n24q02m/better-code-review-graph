@@ -1475,6 +1475,108 @@ def diff_graph(
         store.close()
 
 
+def review_delta(
+    repo_root: str | None = None,
+    *,
+    from_sha: str = "",
+    to_sha: str = "",
+    show_line_shifts: bool = False,
+    repo: str = "",
+) -> dict[str, Any]:
+    """Review what changed between two commit SHAs (token-efficient).
+
+    Wraps :func:`diff_graph` with an opt-in ``show_line_shifts`` mode.
+    When the flag is set, the response gains a ``line_shifts`` list
+    pointing at every symbol whose ``line_start`` moved between the
+    two commits — useful for refactor auditing ("this function moved
+    from line 10 to line 42, did anything break?").
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        from_sha: Earlier commit SHA. Required.
+        to_sha: Later commit SHA. Required.
+        show_line_shifts: When True, include nodes whose ``line_start``
+            changed between ``from_sha`` and ``to_sha``. Default False
+            (response is just the ``diff`` payload to keep it light).
+        repo: Optional ``repo_id`` filter (Phase 2 Task 10 semantics).
+            Empty (default) returns the delta across every registered
+            repo.
+
+    Returns:
+        ``{"diff": <diff_graph payload>, "line_shifts": [...] (when
+        requested)}``. ``line_shifts`` entries are dicts with
+        ``qualified_name``, ``before_line`` (the closed-out row's
+        ``line_start``) and ``after_line`` (the freshly introduced
+        row's ``line_start``).
+    """
+    if not from_sha or not to_sha:
+        return {"error": "review_delta requires both from_sha and to_sha"}
+    diff_result = diff_graph(repo_root, from_sha=from_sha, to_sha=to_sha, repo=repo)
+    if "error" in diff_result:
+        return diff_result
+    payload: dict[str, Any] = {"diff": diff_result}
+    if show_line_shifts:
+        payload["line_shifts"] = _collect_line_shifts(repo_root, from_sha, to_sha, repo)
+    return payload
+
+
+def _collect_line_shifts(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    repo: str,
+) -> list[dict[str, Any]]:
+    """Return ``line_start`` shifts across the close-out + new-row pair at ``to_sha``.
+
+    Joins the row closed at ``to_sha`` (``valid_to_sha = to_sha``)
+    against the row introduced at ``to_sha`` (``valid_from_sha =
+    to_sha``) on ``qualified_name`` and surfaces the line-number
+    delta. Same-line supersedes (body changed but ``line_start``
+    unchanged) are excluded by the SQL ``!=`` predicate.
+
+    The ``from_sha`` argument is reserved for a future ancestor-walk
+    scope check; the v1 implementation only needs ``to_sha`` because
+    every supersede transition is anchored on the new commit's SHA.
+    """
+    del from_sha  # reserved for future ancestor-walk scope check
+    store, _ = _get_store(repo_root)
+    try:
+        if repo:
+            rows = store._conn.execute(
+                "SELECT old.qualified_name, old.line_start AS before_line, "
+                "new.line_start AS after_line "
+                "FROM nodes old "
+                "JOIN nodes new ON old.qualified_name = new.qualified_name "
+                "WHERE old.valid_to_sha = ? "
+                "  AND new.valid_from_sha = ? "
+                "  AND old.line_start != new.line_start "
+                "  AND old.repo_id = ? "
+                "  AND new.repo_id = ?",
+                (to_sha, to_sha, repo, repo),
+            ).fetchall()
+        else:
+            rows = store._conn.execute(
+                "SELECT old.qualified_name, old.line_start AS before_line, "
+                "new.line_start AS after_line "
+                "FROM nodes old "
+                "JOIN nodes new ON old.qualified_name = new.qualified_name "
+                "WHERE old.valid_to_sha = ? "
+                "  AND new.valid_from_sha = ? "
+                "  AND old.line_start != new.line_start",
+                (to_sha, to_sha),
+            ).fetchall()
+        return [
+            {
+                "qualified_name": row[0],
+                "before_line": row[1],
+                "after_line": row[2],
+            }
+            for row in rows
+        ]
+    finally:
+        store.close()
+
+
 def spot_check_last_callers(
     n: int = 3,
     repo_root: str | None = None,
