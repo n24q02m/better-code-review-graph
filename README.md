@@ -63,6 +63,10 @@ Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with
 
 ## v2.0 migration (BREAKING)
 
+See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full
+schema-change list, behavior-change summary, environment
+requirements, and rollback procedure.
+
 This release adds **temporal columns** (`valid_from_sha` /
 `valid_to_sha` on every node + edge) and an opt-in **security
 scanner**. The schema migration is auto-applied on first
