@@ -38,6 +38,11 @@ dependencies = [
 [project.scripts]
 better-code-review-graph = "better_code_review_graph.cli:main"
 
+[project.optional-dependencies]
+security = [
+    "semgrep>=1.0,<2",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3,<10",

@@ -6,5 +6,13 @@ Two-tier security engine:
 """
 
 from .heuristic import HeuristicScanner, ScanResult, Tag
+from .semgrep_engine import SemgrepNotAvailable, SemgrepResult, SemgrepScanner
 
-__all__ = ["HeuristicScanner", "ScanResult", "Tag"]
+__all__ = [
+    "HeuristicScanner",
+    "ScanResult",
+    "SemgrepNotAvailable",
+    "SemgrepResult",
+    "SemgrepScanner",
+    "Tag",
+]
