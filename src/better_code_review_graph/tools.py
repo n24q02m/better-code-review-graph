@@ -515,6 +515,8 @@ def get_impact_radius(
     base: str = "HEAD~1",
     max_payload_bytes: int = _DEFAULT_IMPACT_PAYLOAD_BYTES,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Analyze the blast radius of changed files.
 
@@ -534,6 +536,13 @@ def get_impact_radius(
         repo: Phase 2 Task 10 — when non-empty, scope the BFS to nodes
             belonging to the given ``repo_id``. Empty (default) =
             traverse across every federated repo.
+        as_of: Phase 3 Task 9 — temporal snapshot SHA. Default ``""``
+            returns currently-valid rows (``valid_to_sha IS NULL``);
+            non-empty returns rows where ``valid_from_sha == as_of``
+            OR ``valid_to_sha == as_of``. Threaded into the seed
+            ``get_nodes_by_files`` and the final
+            ``get_nodes_by_qualified_names`` resolves; the BFS itself
+            still runs against the cached full-graph (Task 9.5).
 
     Returns:
         Changed nodes, impacted nodes, impacted files, connecting edges,
@@ -570,7 +579,11 @@ def get_impact_radius(
             abs_files.append(str(full_path))
 
         result = store.get_impact_radius(
-            abs_files, max_depth=max_depth, max_nodes=max_results, repo=repo
+            abs_files,
+            max_depth=max_depth,
+            max_nodes=max_results,
+            repo=repo,
+            as_of=as_of,
         )
 
         changed_dicts = [node_to_dict(n) for n in result["changed_nodes"]]
@@ -680,9 +693,11 @@ def _list_kinds_in_graph(store: Any) -> list[str]:
         return []
 
 
-def _lookup_node_directly(store: Any, root: Any, target: str) -> Any | None:
+def _lookup_node_directly(
+    store: Any, root: Any, target: str, *, as_of: str = ""
+) -> Any | None:
     """Attempt to find a node by its qualified name or file path."""
-    node = store.get_node(target)
+    node = store.get_node(target, as_of=as_of)
     if not node:
         full_target_raw = root / target
         try:
@@ -694,7 +709,7 @@ def _lookup_node_directly(store: Any, root: Any, target: str) -> Any | None:
                 and not full_target.is_symlink()
             ):
                 abs_target = str(full_target)
-                node = store.get_node(abs_target)
+                node = store.get_node(abs_target, as_of=as_of)
         except (OSError, ValueError):
             pass
     return node
@@ -706,9 +721,11 @@ def _resolve_search_candidates(
     pattern: str,
     original_target: str,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
     """Search for nodes by name and handle ambiguity/promotion."""
-    candidates = store.search_nodes(target, limit=5, repo=repo)
+    candidates = store.search_nodes(target, limit=5, repo=repo, as_of=as_of)
     promoted_indexed_under: list[str] = []
 
     # #316: when the pattern is call-graph oriented and the only ambiguity
@@ -821,6 +838,8 @@ def _resolve_query_target(
     target: str,
     pattern: str,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None]:
     """Resolve the query target to a node or path.
 
@@ -830,7 +849,7 @@ def _resolve_query_target(
     original_target = target
 
     # 1. Direct lookup (qualified name or absolute path)
-    node = _lookup_node_directly(store, root, target)
+    node = _lookup_node_directly(store, root, target, as_of=as_of)
     # Phase 2 Task 10: drop direct hits that don't belong to the
     # requested repo so the search-by-name fallback below can pick a
     # repo-scoped candidate instead of returning the cross-repo match.
@@ -846,7 +865,7 @@ def _resolve_query_target(
     promoted_indexed_under: list[str] = []
     if not node:
         node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
-            store, target, pattern, original_target, repo=repo
+            store, target, pattern, original_target, repo=repo, as_of=as_of
         )
         if error_resp:
             return None, target, error_resp
@@ -956,7 +975,13 @@ def _scan_dynamic_dispatch_hints(
 
 
 def _handle_callers_of(
-    store: Any, node: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    node: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     # Bolt: Use batched search to avoid N+1 queries when resolving callers (issue #342).
     # We look for CALLS edges targeting either the qualified name or the bare name.
@@ -964,7 +989,9 @@ def _handle_callers_of(
     if node and node.name and node.name != qn:
         search_targets.append(node.name)
 
-    edges = store.search_edges_by_target_names(search_targets, kind="CALLS")
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="CALLS", as_of=as_of
+    )
 
     qns = []
     for e in edges:
@@ -972,7 +999,7 @@ def _handle_callers_of(
         edges_out.append(edge_to_dict(e))
 
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
@@ -980,15 +1007,20 @@ def _handle_callers_of(
 
 
 def _handle_callees_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "CALLS":
             qns.append(e.target_qualified)
             edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_tgt in qns:
             if qn_tgt in node_map:
@@ -996,30 +1028,42 @@ def _handle_callees_of(
 
 
 def _handle_imports_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "IMPORTS_FROM":
             results.append({"import_target": e.target_qualified})
             edges_out.append(edge_to_dict(e))
 
 
 def _handle_importers_of(
-    store: Any, abs_target: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    abs_target: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(abs_target):
+    for e in store.get_edges_by_target(abs_target, as_of=as_of):
         if e.kind == "IMPORTS_FROM":
             results.append({"importer": e.source_qualified, "file": e.file_path})
             edges_out.append(edge_to_dict(e))
 
 
-def _handle_children_of(store: Any, qn: str, results: list[dict]) -> None:
+def _handle_children_of(
+    store: Any, qn: str, results: list[dict], *, as_of: str = ""
+) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "CONTAINS":
             qns.append(e.target_qualified)
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_tgt in qns:
             if qn_tgt in node_map:
@@ -1027,22 +1071,28 @@ def _handle_children_of(store: Any, qn: str, results: list[dict]) -> None:
 
 
 def _handle_tests_for(
-    store: Any, node: Any, target: str, qn: str, results: list[dict]
+    store: Any,
+    node: Any,
+    target: str,
+    qn: str,
+    results: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn):
+    for e in store.get_edges_by_target(qn, as_of=as_of):
         if e.kind == "TESTED_BY":
             qns.append(e.source_qualified)
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
     # Also search by naming convention
     name = node.name if node else target
-    test_nodes = store.search_nodes(f"test_{name}", limit=10)
-    test_nodes += store.search_nodes(f"Test{name}", limit=10)
+    test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
+    test_nodes += store.search_nodes(f"Test{name}", limit=10, as_of=as_of)
     seen = {r.get("qualified_name") for r in results}
     for t in test_nodes:
         if t.qualified_name not in seen and t.is_test:
@@ -1050,23 +1100,30 @@ def _handle_tests_for(
 
 
 def _handle_inheritors_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn):
+    for e in store.get_edges_by_target(qn, as_of=as_of):
         if e.kind in ("INHERITS", "IMPLEMENTS"):
             qns.append(e.source_qualified)
             edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
 
 
-def _handle_file_summary(store: Any, abs_path: str, results: list[dict]) -> None:
-    file_nodes = store.get_nodes_by_file(abs_path)
+def _handle_file_summary(
+    store: Any, abs_path: str, results: list[dict], *, as_of: str = ""
+) -> None:
+    file_nodes = store.get_nodes_by_file(abs_path, as_of=as_of)
     for n in file_nodes:
         results.append(node_to_dict(n))
 
@@ -1112,6 +1169,8 @@ def query_graph(
     repo_root: str | None = None,
     languages: list[str] | None = None,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Run a predefined graph query.
 
@@ -1128,6 +1187,12 @@ def query_graph(
             to nodes whose ``repo_id`` matches. Default ``""`` searches
             across every registered repo (legacy behaviour). Used to
             disambiguate same-named symbols across federated repos.
+        as_of: Phase 3 Task 9 — when non-empty, return the temporal
+            snapshot at the requested 40-char SHA (rows where
+            ``valid_from_sha == as_of`` OR ``valid_to_sha == as_of``).
+            Default ``""`` returns currently-valid rows
+            (``valid_to_sha IS NULL``) — first use of the temporal
+            columns by the read layer.
 
     Returns:
         Matching nodes and edges for the query.
@@ -1170,27 +1235,39 @@ def query_graph(
             }
 
         node, resolved_qn_or_path, error_resp = _resolve_query_target(
-            store, root, target, pattern, repo=repo
+            store, root, target, pattern, repo=repo, as_of=as_of
         )
         if error_resp:
             return error_resp
 
         if pattern == "callers_of":
-            _handle_callers_of(store, node, resolved_qn_or_path, results, edges_out)
+            _handle_callers_of(
+                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "callees_of":
-            _handle_callees_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_callees_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "imports_of":
-            _handle_imports_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_imports_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "importers_of":
-            _handle_importers_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_importers_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "children_of":
-            _handle_children_of(store, resolved_qn_or_path, results)
+            _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
         elif pattern == "tests_for":
-            _handle_tests_for(store, node, target, resolved_qn_or_path, results)
+            _handle_tests_for(
+                store, node, target, resolved_qn_or_path, results, as_of=as_of
+            )
         elif pattern == "inheritors_of":
-            _handle_inheritors_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_inheritors_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "file_summary":
-            _handle_file_summary(store, resolved_qn_or_path, results)
+            _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
 
         # D16: filter tests_for results by language if requested.
         if pattern == "tests_for" and languages is not None:
@@ -1283,6 +1360,117 @@ def query_graph(
             }
 
         return response
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tool 3.5: diff_graph (Phase 3 Task 9)
+# ---------------------------------------------------------------------------
+
+
+def diff_graph(
+    repo_root: str | None = None,
+    *,
+    from_sha: str = "",
+    to_sha: str = "",
+    repo: str = "",
+) -> dict[str, Any]:
+    """Return nodes added / removed / modified between two commit SHAs.
+
+    The diff is computed entirely from the temporal columns set by the
+    v2 ingest path (:class:`TemporalIndex`). It does NOT require the
+    parser to re-run — the close-out + supersede markers already on
+    each row encode every transition.
+
+    * **added**: rows whose ``valid_from_sha == to_sha`` AND whose
+      ``qualified_name`` does NOT also appear in the closed-out set
+      (i.e. genuinely new symbols at ``to_sha``).
+    * **removed**: rows whose ``valid_to_sha == to_sha`` AND whose
+      ``qualified_name`` does NOT also appear in the introduced set
+      (i.e. symbols deleted between ``from_sha`` and ``to_sha`` with
+      no replacement).
+    * **modified**: ``qualified_name``s that show up in BOTH sets —
+      one row closed at ``to_sha``, another row introduced at
+      ``to_sha``. This is the supersede signature emitted when a
+      function's source text changes across commits.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        from_sha: Earlier commit SHA. Required.
+        to_sha: Later commit SHA. Required.
+        repo: Optional ``repo_id`` filter (Phase 2 Task 10 semantics).
+            Empty (default) returns the diff across every registered
+            repo.
+
+    Returns:
+        ``{"from_sha": ..., "to_sha": ..., "added": [...],
+        "removed": [...], "modified": [...]}``. ``added`` /
+        ``removed`` entries are dicts with ``id``, ``qualified_name``,
+        ``kind``; ``modified`` entries are dicts with just
+        ``qualified_name``.
+    """
+    if not from_sha or not to_sha:
+        return {"error": "diff requires both from_sha and to_sha"}
+
+    store, _ = _get_store(repo_root)
+    try:
+        # Build the optional repo filter once. The base SQL stays
+        # static — Bandit B608 is happy because both branches expand
+        # to a fixed string literal at f-string interpolation time.
+        if repo:
+            added_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes "
+                "WHERE valid_from_sha = ? AND repo_id = ?",
+                (to_sha, repo),
+            ).fetchall()
+            removed_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes "
+                "WHERE valid_to_sha = ? AND repo_id = ?",
+                (to_sha, repo),
+            ).fetchall()
+        else:
+            added_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
+                (to_sha,),
+            ).fetchall()
+            removed_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
+                (to_sha,),
+            ).fetchall()
+
+        closed_qns = {row["qualified_name"] for row in removed_rows}
+        new_qns = {row["qualified_name"] for row in added_rows}
+        modified_qns = closed_qns & new_qns
+
+        purely_added = [
+            r for r in added_rows if r["qualified_name"] not in modified_qns
+        ]
+        purely_removed = [
+            r for r in removed_rows if r["qualified_name"] not in modified_qns
+        ]
+
+        return {
+            "from_sha": from_sha,
+            "to_sha": to_sha,
+            "added": [
+                {
+                    "id": r["id"],
+                    "qualified_name": r["qualified_name"],
+                    "kind": r["kind"],
+                }
+                for r in purely_added
+            ],
+            "removed": [
+                {
+                    "id": r["id"],
+                    "qualified_name": r["qualified_name"],
+                    "kind": r["kind"],
+                }
+                for r in purely_removed
+            ],
+            "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+        }
     finally:
         store.close()
 
@@ -1867,6 +2055,8 @@ def semantic_search_nodes(
     limit: int = 20,
     repo_root: str | None = None,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Search for nodes by name, keyword, or semantic similarity.
 
@@ -1882,6 +2072,11 @@ def semantic_search_nodes(
         repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
             ``repo_id`` matches. Default ``""`` searches across every
             registered repo.
+        as_of: Phase 3 Task 9 — temporal snapshot SHA. Empty (default)
+            returns currently-valid rows; non-empty returns rows where
+            ``valid_from_sha == as_of`` OR ``valid_to_sha == as_of``.
+            When set the path forces the keyword fallback (the vector
+            store has no temporal column) so the SQL filter applies.
 
     Returns:
         Ranked list of matching nodes.
@@ -1900,7 +2095,11 @@ def semantic_search_nodes(
         search_mode = "keyword"
 
         try:
-            if emb_store.available and emb_store.count() > 0:
+            # Phase 3 Task 9: an explicit ``as_of`` skips the vector path —
+            # the embedding store has no temporal column, so we cannot
+            # safely return historical snapshots through it. Fall through
+            # to the keyword path which threads ``as_of`` into the SQL.
+            if as_of == "" and emb_store.available and emb_store.count() > 0:
                 # Vector search
                 search_mode = "semantic"
                 raw = semantic_search(query, store, emb_store, limit=limit * 2)
@@ -1921,6 +2120,24 @@ def semantic_search_nodes(
                         if row is not None and (row["repo_id"] or "") == repo:
                             filtered.append(r)
                     raw = filtered
+                # Default-path filter: vector hits should also exclude
+                # rows that have been closed-out at a later commit. The
+                # vector store does not know about ``valid_to_sha`` so
+                # we cross-check via the SQL row (cheap single-row
+                # lookup, mirrors the repo filter above).
+                surviving: list[dict] = []
+                for r in raw:
+                    qn = r.get("qualified_name")
+                    if qn is None:
+                        continue
+                    row = store._conn.execute(
+                        "SELECT 1 FROM nodes WHERE qualified_name = ? "
+                        "AND valid_to_sha IS NULL",
+                        (qn,),
+                    ).fetchone()
+                    if row is not None:
+                        surviving.append(r)
+                raw = surviving
                 raw = raw[:limit]
                 return {
                     "status": "ok",
@@ -1937,7 +2154,7 @@ def semantic_search_nodes(
             emb_store.close()
 
         # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2, repo=repo)
+        results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
 
         if kind:
             results = [r for r in results if r.kind == kind]
