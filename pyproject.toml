@@ -26,7 +26,7 @@ dependencies = [
     "watchdog>=4.0.2,<6",
     "qwen3-embed>=1.9.2",
     "cohere>=6.1.0",
-    "google-genai>=1.75.0",
+    "google-genai>=2.0.1",
     "openai>=2.34.0",
     "httpx",
     "pydantic-settings",
