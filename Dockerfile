@@ -15,6 +15,8 @@ RUN sed -i '/^\[tool\.uv\.sources\]/,/^$/d' pyproject.toml && cp uv.lock /tmp/uv
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev
 COPY src/ src/
+COPY migrations/ migrations/
+COPY rules/ rules/
 RUN sed -i '/^\[tool\.uv\.sources\]/,/^$/d' pyproject.toml && cp /tmp/uv.lock.docker uv.lock
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
