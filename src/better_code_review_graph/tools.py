@@ -13,6 +13,7 @@ Exposes 9 tools:
 """
 
 import hashlib
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,12 @@ from .incremental import (
     get_db_path,
     get_staged_and_unstaged,
     incremental_update,
+)
+from .security import HeuristicScanner, Tag
+from .security.semgrep_engine import (
+    SemgrepNotAvailable,
+    SemgrepScanner,
+    _resolve_overlay_rules_dir,
 )
 
 # Common JS/TS builtin method names filtered from callers_of results.
@@ -385,16 +392,28 @@ def _full_build_federated(
     the DB) is registered too so its files don't fall outside every
     root and lose their ``repo_id``.
     """
-    from .federation import RepoRegistry
+    from .federation import RepoRegistry, backfill_commits_for_repo
     from .parser import CodeParser
     from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
     # Register primary first so it's always present, then each extra
     # root supplied by the caller. ``add`` is idempotent on re-add.
-    registry.add(primary_root)
+    primary_repo_id = registry.add(primary_root)
+    extra_repo_ids: list[tuple[Path, str]] = []
     for r in roots:
-        registry.add(r)
+        extra_repo_ids.append((r, registry.add(r)))
+
+    # Phase 3 Task 7: first-parent commit backfill. Runs once per
+    # registered root after the registry is set up so the FK to
+    # ``repos.repo_id`` resolves. The helper is best-effort — non-git
+    # roots return 0 silently; we don't surface per-root counts in the
+    # build summary because the caller only cares about node/edge
+    # counts. Errors are swallowed by the helper itself, so a failure
+    # to walk one repo's history does not abort the whole build.
+    backfill_commits_for_repo(store, primary_repo_id, primary_root)
+    for root, rid in extra_repo_ids:
+        backfill_commits_for_repo(store, rid, root)
 
     # Phase 2 Task 12: build ``target_repos`` from the registry so the
     # parser's cross-repo IMPORTS_FROM rewrite actually fires. Without
@@ -496,6 +515,8 @@ def get_impact_radius(
     base: str = "HEAD~1",
     max_payload_bytes: int = _DEFAULT_IMPACT_PAYLOAD_BYTES,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Analyze the blast radius of changed files.
 
@@ -515,6 +536,13 @@ def get_impact_radius(
         repo: Phase 2 Task 10 — when non-empty, scope the BFS to nodes
             belonging to the given ``repo_id``. Empty (default) =
             traverse across every federated repo.
+        as_of: Phase 3 Task 9 — temporal snapshot SHA. Default ``""``
+            returns currently-valid rows (``valid_to_sha IS NULL``);
+            non-empty returns rows where ``valid_from_sha == as_of``
+            OR ``valid_to_sha == as_of``. Threaded into the seed
+            ``get_nodes_by_files`` and the final
+            ``get_nodes_by_qualified_names`` resolves; the BFS itself
+            still runs against the cached full-graph (Task 9.5).
 
     Returns:
         Changed nodes, impacted nodes, impacted files, connecting edges,
@@ -551,7 +579,11 @@ def get_impact_radius(
             abs_files.append(str(full_path))
 
         result = store.get_impact_radius(
-            abs_files, max_depth=max_depth, max_nodes=max_results, repo=repo
+            abs_files,
+            max_depth=max_depth,
+            max_nodes=max_results,
+            repo=repo,
+            as_of=as_of,
         )
 
         changed_dicts = [node_to_dict(n) for n in result["changed_nodes"]]
@@ -661,9 +693,11 @@ def _list_kinds_in_graph(store: Any) -> list[str]:
         return []
 
 
-def _lookup_node_directly(store: Any, root: Any, target: str) -> Any | None:
+def _lookup_node_directly(
+    store: Any, root: Any, target: str, *, as_of: str = ""
+) -> Any | None:
     """Attempt to find a node by its qualified name or file path."""
-    node = store.get_node(target)
+    node = store.get_node(target, as_of=as_of)
     if not node:
         full_target_raw = root / target
         try:
@@ -675,7 +709,7 @@ def _lookup_node_directly(store: Any, root: Any, target: str) -> Any | None:
                 and not full_target.is_symlink()
             ):
                 abs_target = str(full_target)
-                node = store.get_node(abs_target)
+                node = store.get_node(abs_target, as_of=as_of)
         except (OSError, ValueError):
             pass
     return node
@@ -687,9 +721,11 @@ def _resolve_search_candidates(
     pattern: str,
     original_target: str,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
     """Search for nodes by name and handle ambiguity/promotion."""
-    candidates = store.search_nodes(target, limit=5, repo=repo)
+    candidates = store.search_nodes(target, limit=5, repo=repo, as_of=as_of)
     promoted_indexed_under: list[str] = []
 
     # #316: when the pattern is call-graph oriented and the only ambiguity
@@ -802,6 +838,8 @@ def _resolve_query_target(
     target: str,
     pattern: str,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> tuple[Any | None, str, dict[str, Any] | None]:
     """Resolve the query target to a node or path.
 
@@ -811,7 +849,7 @@ def _resolve_query_target(
     original_target = target
 
     # 1. Direct lookup (qualified name or absolute path)
-    node = _lookup_node_directly(store, root, target)
+    node = _lookup_node_directly(store, root, target, as_of=as_of)
     # Phase 2 Task 10: drop direct hits that don't belong to the
     # requested repo so the search-by-name fallback below can pick a
     # repo-scoped candidate instead of returning the cross-repo match.
@@ -827,7 +865,7 @@ def _resolve_query_target(
     promoted_indexed_under: list[str] = []
     if not node:
         node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
-            store, target, pattern, original_target, repo=repo
+            store, target, pattern, original_target, repo=repo, as_of=as_of
         )
         if error_resp:
             return None, target, error_resp
@@ -937,7 +975,13 @@ def _scan_dynamic_dispatch_hints(
 
 
 def _handle_callers_of(
-    store: Any, node: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    node: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     # Bolt: Use batched search to avoid N+1 queries when resolving callers (issue #342).
     # We look for CALLS edges targeting either the qualified name or the bare name.
@@ -945,7 +989,9 @@ def _handle_callers_of(
     if node and node.name and node.name != qn:
         search_targets.append(node.name)
 
-    edges = store.search_edges_by_target_names(search_targets, kind="CALLS")
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="CALLS", as_of=as_of
+    )
 
     qns = []
     for e in edges:
@@ -953,7 +999,7 @@ def _handle_callers_of(
         edges_out.append(edge_to_dict(e))
 
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
@@ -961,15 +1007,20 @@ def _handle_callers_of(
 
 
 def _handle_callees_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "CALLS":
             qns.append(e.target_qualified)
             edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_tgt in qns:
             if qn_tgt in node_map:
@@ -977,30 +1028,42 @@ def _handle_callees_of(
 
 
 def _handle_imports_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "IMPORTS_FROM":
             results.append({"import_target": e.target_qualified})
             edges_out.append(edge_to_dict(e))
 
 
 def _handle_importers_of(
-    store: Any, abs_target: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    abs_target: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(abs_target):
+    for e in store.get_edges_by_target(abs_target, as_of=as_of):
         if e.kind == "IMPORTS_FROM":
             results.append({"importer": e.source_qualified, "file": e.file_path})
             edges_out.append(edge_to_dict(e))
 
 
-def _handle_children_of(store: Any, qn: str, results: list[dict]) -> None:
+def _handle_children_of(
+    store: Any, qn: str, results: list[dict], *, as_of: str = ""
+) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn):
+    for e in store.get_edges_by_source(qn, as_of=as_of):
         if e.kind == "CONTAINS":
             qns.append(e.target_qualified)
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_tgt in qns:
             if qn_tgt in node_map:
@@ -1008,22 +1071,28 @@ def _handle_children_of(store: Any, qn: str, results: list[dict]) -> None:
 
 
 def _handle_tests_for(
-    store: Any, node: Any, target: str, qn: str, results: list[dict]
+    store: Any,
+    node: Any,
+    target: str,
+    qn: str,
+    results: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn):
+    for e in store.get_edges_by_target(qn, as_of=as_of):
         if e.kind == "TESTED_BY":
             qns.append(e.source_qualified)
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
     # Also search by naming convention
     name = node.name if node else target
-    test_nodes = store.search_nodes(f"test_{name}", limit=10)
-    test_nodes += store.search_nodes(f"Test{name}", limit=10)
+    test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
+    test_nodes += store.search_nodes(f"Test{name}", limit=10, as_of=as_of)
     seen = {r.get("qualified_name") for r in results}
     for t in test_nodes:
         if t.qualified_name not in seen and t.is_test:
@@ -1031,23 +1100,30 @@ def _handle_tests_for(
 
 
 def _handle_inheritors_of(
-    store: Any, qn: str, results: list[dict], edges_out: list[dict]
+    store: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn):
+    for e in store.get_edges_by_target(qn, as_of=as_of):
         if e.kind in ("INHERITS", "IMPLEMENTS"):
             qns.append(e.source_qualified)
             edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns)
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
 
 
-def _handle_file_summary(store: Any, abs_path: str, results: list[dict]) -> None:
-    file_nodes = store.get_nodes_by_file(abs_path)
+def _handle_file_summary(
+    store: Any, abs_path: str, results: list[dict], *, as_of: str = ""
+) -> None:
+    file_nodes = store.get_nodes_by_file(abs_path, as_of=as_of)
     for n in file_nodes:
         results.append(node_to_dict(n))
 
@@ -1093,6 +1169,8 @@ def query_graph(
     repo_root: str | None = None,
     languages: list[str] | None = None,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Run a predefined graph query.
 
@@ -1109,6 +1187,12 @@ def query_graph(
             to nodes whose ``repo_id`` matches. Default ``""`` searches
             across every registered repo (legacy behaviour). Used to
             disambiguate same-named symbols across federated repos.
+        as_of: Phase 3 Task 9 — when non-empty, return the temporal
+            snapshot at the requested 40-char SHA (rows where
+            ``valid_from_sha == as_of`` OR ``valid_to_sha == as_of``).
+            Default ``""`` returns currently-valid rows
+            (``valid_to_sha IS NULL``) — first use of the temporal
+            columns by the read layer.
 
     Returns:
         Matching nodes and edges for the query.
@@ -1151,27 +1235,39 @@ def query_graph(
             }
 
         node, resolved_qn_or_path, error_resp = _resolve_query_target(
-            store, root, target, pattern, repo=repo
+            store, root, target, pattern, repo=repo, as_of=as_of
         )
         if error_resp:
             return error_resp
 
         if pattern == "callers_of":
-            _handle_callers_of(store, node, resolved_qn_or_path, results, edges_out)
+            _handle_callers_of(
+                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "callees_of":
-            _handle_callees_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_callees_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "imports_of":
-            _handle_imports_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_imports_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "importers_of":
-            _handle_importers_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_importers_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "children_of":
-            _handle_children_of(store, resolved_qn_or_path, results)
+            _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
         elif pattern == "tests_for":
-            _handle_tests_for(store, node, target, resolved_qn_or_path, results)
+            _handle_tests_for(
+                store, node, target, resolved_qn_or_path, results, as_of=as_of
+            )
         elif pattern == "inheritors_of":
-            _handle_inheritors_of(store, resolved_qn_or_path, results, edges_out)
+            _handle_inheritors_of(
+                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            )
         elif pattern == "file_summary":
-            _handle_file_summary(store, resolved_qn_or_path, results)
+            _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
 
         # D16: filter tests_for results by language if requested.
         if pattern == "tests_for" and languages is not None:
@@ -1264,6 +1360,219 @@ def query_graph(
             }
 
         return response
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tool 3.5: diff_graph (Phase 3 Task 9)
+# ---------------------------------------------------------------------------
+
+
+def diff_graph(
+    repo_root: str | None = None,
+    *,
+    from_sha: str = "",
+    to_sha: str = "",
+    repo: str = "",
+) -> dict[str, Any]:
+    """Return nodes added / removed / modified between two commit SHAs.
+
+    The diff is computed entirely from the temporal columns set by the
+    v2 ingest path (:class:`TemporalIndex`). It does NOT require the
+    parser to re-run — the close-out + supersede markers already on
+    each row encode every transition.
+
+    * **added**: rows whose ``valid_from_sha == to_sha`` AND whose
+      ``qualified_name`` does NOT also appear in the closed-out set
+      (i.e. genuinely new symbols at ``to_sha``).
+    * **removed**: rows whose ``valid_to_sha == to_sha`` AND whose
+      ``qualified_name`` does NOT also appear in the introduced set
+      (i.e. symbols deleted between ``from_sha`` and ``to_sha`` with
+      no replacement).
+    * **modified**: ``qualified_name``s that show up in BOTH sets —
+      one row closed at ``to_sha``, another row introduced at
+      ``to_sha``. This is the supersede signature emitted when a
+      function's source text changes across commits.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        from_sha: Earlier commit SHA. Required.
+        to_sha: Later commit SHA. Required.
+        repo: Optional ``repo_id`` filter (Phase 2 Task 10 semantics).
+            Empty (default) returns the diff across every registered
+            repo.
+
+    Returns:
+        ``{"from_sha": ..., "to_sha": ..., "added": [...],
+        "removed": [...], "modified": [...]}``. ``added`` /
+        ``removed`` entries are dicts with ``id``, ``qualified_name``,
+        ``kind``; ``modified`` entries are dicts with just
+        ``qualified_name``.
+    """
+    if not from_sha or not to_sha:
+        return {"error": "diff requires both from_sha and to_sha"}
+
+    store, _ = _get_store(repo_root)
+    try:
+        # Build the optional repo filter once. The base SQL stays
+        # static — Bandit B608 is happy because both branches expand
+        # to a fixed string literal at f-string interpolation time.
+        if repo:
+            added_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes "
+                "WHERE valid_from_sha = ? AND repo_id = ?",
+                (to_sha, repo),
+            ).fetchall()
+            removed_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes "
+                "WHERE valid_to_sha = ? AND repo_id = ?",
+                (to_sha, repo),
+            ).fetchall()
+        else:
+            added_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
+                (to_sha,),
+            ).fetchall()
+            removed_rows = store._conn.execute(
+                "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
+                (to_sha,),
+            ).fetchall()
+
+        closed_qns = {row["qualified_name"] for row in removed_rows}
+        new_qns = {row["qualified_name"] for row in added_rows}
+        modified_qns = closed_qns & new_qns
+
+        purely_added = [
+            r for r in added_rows if r["qualified_name"] not in modified_qns
+        ]
+        purely_removed = [
+            r for r in removed_rows if r["qualified_name"] not in modified_qns
+        ]
+
+        return {
+            "from_sha": from_sha,
+            "to_sha": to_sha,
+            "added": [
+                {
+                    "id": r["id"],
+                    "qualified_name": r["qualified_name"],
+                    "kind": r["kind"],
+                }
+                for r in purely_added
+            ],
+            "removed": [
+                {
+                    "id": r["id"],
+                    "qualified_name": r["qualified_name"],
+                    "kind": r["kind"],
+                }
+                for r in purely_removed
+            ],
+            "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+        }
+    finally:
+        store.close()
+
+
+def review_delta(
+    repo_root: str | None = None,
+    *,
+    from_sha: str = "",
+    to_sha: str = "",
+    show_line_shifts: bool = False,
+    repo: str = "",
+) -> dict[str, Any]:
+    """Review what changed between two commit SHAs (token-efficient).
+
+    Wraps :func:`diff_graph` with an opt-in ``show_line_shifts`` mode.
+    When the flag is set, the response gains a ``line_shifts`` list
+    pointing at every symbol whose ``line_start`` moved between the
+    two commits — useful for refactor auditing ("this function moved
+    from line 10 to line 42, did anything break?").
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        from_sha: Earlier commit SHA. Required.
+        to_sha: Later commit SHA. Required.
+        show_line_shifts: When True, include nodes whose ``line_start``
+            changed between ``from_sha`` and ``to_sha``. Default False
+            (response is just the ``diff`` payload to keep it light).
+        repo: Optional ``repo_id`` filter (Phase 2 Task 10 semantics).
+            Empty (default) returns the delta across every registered
+            repo.
+
+    Returns:
+        ``{"diff": <diff_graph payload>, "line_shifts": [...] (when
+        requested)}``. ``line_shifts`` entries are dicts with
+        ``qualified_name``, ``before_line`` (the closed-out row's
+        ``line_start``) and ``after_line`` (the freshly introduced
+        row's ``line_start``).
+    """
+    if not from_sha or not to_sha:
+        return {"error": "review_delta requires both from_sha and to_sha"}
+    diff_result = diff_graph(repo_root, from_sha=from_sha, to_sha=to_sha, repo=repo)
+    if "error" in diff_result:
+        return diff_result
+    payload: dict[str, Any] = {"diff": diff_result}
+    if show_line_shifts:
+        payload["line_shifts"] = _collect_line_shifts(repo_root, from_sha, to_sha, repo)
+    return payload
+
+
+def _collect_line_shifts(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    repo: str,
+) -> list[dict[str, Any]]:
+    """Return ``line_start`` shifts across the close-out + new-row pair at ``to_sha``.
+
+    Joins the row closed at ``to_sha`` (``valid_to_sha = to_sha``)
+    against the row introduced at ``to_sha`` (``valid_from_sha =
+    to_sha``) on ``qualified_name`` and surfaces the line-number
+    delta. Same-line supersedes (body changed but ``line_start``
+    unchanged) are excluded by the SQL ``!=`` predicate.
+
+    The ``from_sha`` argument is reserved for a future ancestor-walk
+    scope check; the v1 implementation only needs ``to_sha`` because
+    every supersede transition is anchored on the new commit's SHA.
+    """
+    del from_sha  # reserved for future ancestor-walk scope check
+    store, _ = _get_store(repo_root)
+    try:
+        if repo:
+            rows = store._conn.execute(
+                "SELECT old.qualified_name, old.line_start AS before_line, "
+                "new.line_start AS after_line "
+                "FROM nodes old "
+                "JOIN nodes new ON old.qualified_name = new.qualified_name "
+                "WHERE old.valid_to_sha = ? "
+                "  AND new.valid_from_sha = ? "
+                "  AND old.line_start != new.line_start "
+                "  AND old.repo_id = ? "
+                "  AND new.repo_id = ?",
+                (to_sha, to_sha, repo, repo),
+            ).fetchall()
+        else:
+            rows = store._conn.execute(
+                "SELECT old.qualified_name, old.line_start AS before_line, "
+                "new.line_start AS after_line "
+                "FROM nodes old "
+                "JOIN nodes new ON old.qualified_name = new.qualified_name "
+                "WHERE old.valid_to_sha = ? "
+                "  AND new.valid_from_sha = ? "
+                "  AND old.line_start != new.line_start",
+                (to_sha, to_sha),
+            ).fetchall()
+        return [
+            {
+                "qualified_name": row[0],
+                "before_line": row[1],
+                "after_line": row[2],
+            }
+            for row in rows
+        ]
     finally:
         store.close()
 
@@ -1848,6 +2157,8 @@ def semantic_search_nodes(
     limit: int = 20,
     repo_root: str | None = None,
     repo: str = "",
+    *,
+    as_of: str = "",
 ) -> dict[str, Any]:
     """Search for nodes by name, keyword, or semantic similarity.
 
@@ -1863,6 +2174,11 @@ def semantic_search_nodes(
         repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
             ``repo_id`` matches. Default ``""`` searches across every
             registered repo.
+        as_of: Phase 3 Task 9 — temporal snapshot SHA. Empty (default)
+            returns currently-valid rows; non-empty returns rows where
+            ``valid_from_sha == as_of`` OR ``valid_to_sha == as_of``.
+            When set the path forces the keyword fallback (the vector
+            store has no temporal column) so the SQL filter applies.
 
     Returns:
         Ranked list of matching nodes.
@@ -1881,7 +2197,11 @@ def semantic_search_nodes(
         search_mode = "keyword"
 
         try:
-            if emb_store.available and emb_store.count() > 0:
+            # Phase 3 Task 9: an explicit ``as_of`` skips the vector path —
+            # the embedding store has no temporal column, so we cannot
+            # safely return historical snapshots through it. Fall through
+            # to the keyword path which threads ``as_of`` into the SQL.
+            if as_of == "" and emb_store.available and emb_store.count() > 0:
                 # Vector search
                 search_mode = "semantic"
                 raw = semantic_search(query, store, emb_store, limit=limit * 2)
@@ -1902,6 +2222,24 @@ def semantic_search_nodes(
                         if row is not None and (row["repo_id"] or "") == repo:
                             filtered.append(r)
                     raw = filtered
+                # Default-path filter: vector hits should also exclude
+                # rows that have been closed-out at a later commit. The
+                # vector store does not know about ``valid_to_sha`` so
+                # we cross-check via the SQL row (cheap single-row
+                # lookup, mirrors the repo filter above).
+                surviving: list[dict] = []
+                for r in raw:
+                    qn = r.get("qualified_name")
+                    if qn is None:
+                        continue
+                    row = store._conn.execute(
+                        "SELECT 1 FROM nodes WHERE qualified_name = ? "
+                        "AND valid_to_sha IS NULL",
+                        (qn,),
+                    ).fetchone()
+                    if row is not None:
+                        surviving.append(r)
+                raw = surviving
                 raw = raw[:limit]
                 return {
                     "status": "ok",
@@ -1918,7 +2256,7 @@ def semantic_search_nodes(
             emb_store.close()
 
         # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2, repo=repo)
+        results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
 
         if kind:
             results = [r for r in results if r.kind == kind]
@@ -2317,3 +2655,334 @@ def find_large_functions(
         }
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tool 10: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
+# ---------------------------------------------------------------------------
+
+_SUPPRESS_PATH_DEFAULT = ".code-review-graph/security-suppressions.json"
+_LAST_SCAN_CACHE_FILENAME = "security-last-scan.json"
+
+
+class _NodeView:
+    """Duck-typed adapter exposing the four attributes ``HeuristicScanner``
+    expects (``source_text``, ``language``, ``line_start``, ``qualified_name``).
+
+    Used to feed plain ``GraphStore`` rows into the scanner without forcing
+    a full ``NodeInfo`` re-construction.
+    """
+
+    __slots__ = ("qualified_name", "language", "line_start", "source_text")
+
+    def __init__(
+        self,
+        qualified_name: str,
+        language: str,
+        line_start: int | None,
+        source_text: str | None,
+    ) -> None:
+        self.qualified_name = qualified_name
+        self.language = language or ""
+        self.line_start = line_start
+        self.source_text = source_text
+
+
+def security_scan(
+    repo_root: str | None = None,
+    *,
+    engine: str = "heuristic",
+) -> dict[str, Any]:
+    """Run a security scan over Function/Class/Method nodes in the graph.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        engine: ``"heuristic"`` (default, regex tier-1) or ``"semgrep"``
+            (tier-2; requires the ``[security]`` extra).
+
+    Returns:
+        ``{"engine": str, "total": int, "by_severity": dict, "by_rule": dict,
+        "tags_by_node": dict[node_id -> list[tag dict]],
+        "suppressed_count": int}``.
+
+        When ``engine="semgrep"`` is requested but the CLI is unavailable,
+        returns ``{"error": <reason>, "engine": "semgrep"}``.
+    """
+    store, root = _get_store(repo_root)
+    try:
+        suppressions = _load_suppressions(root)
+        tags_by_node: dict[str, list[Tag]] = {}
+
+        if engine == "semgrep":
+            try:
+                scanner = SemgrepScanner()
+            except SemgrepNotAvailable as exc:
+                return {"error": str(exc), "engine": "semgrep"}
+            result = scanner.scan_path(root)
+            for tag in result.tags:
+                if tag.rule_id in suppressions:
+                    continue
+                tags_by_node.setdefault("(repo-wide)", []).append(tag)
+        else:
+            scanner = HeuristicScanner()
+            rows = store._conn.execute(
+                "SELECT qualified_name, language, line_start, source_text "
+                "FROM nodes WHERE source_text IS NOT NULL "
+                "AND kind IN ('Function','Class','Method')"
+            ).fetchall()
+            for row in rows:
+                view = _NodeView(
+                    qualified_name=row["qualified_name"],
+                    language=row["language"] or "",
+                    line_start=row["line_start"],
+                    source_text=row["source_text"],
+                )
+                tags = [
+                    t for t in scanner.scan_node(view) if t.rule_id not in suppressions
+                ]
+                if tags:
+                    tags_by_node[row["qualified_name"]] = tags
+
+        total = 0
+        by_severity: dict[str, int] = {}
+        by_rule: dict[str, int] = {}
+        for tags in tags_by_node.values():
+            total += len(tags)
+            for tag in tags:
+                by_severity[tag.severity] = by_severity.get(tag.severity, 0) + 1
+                by_rule[tag.rule_id] = by_rule.get(tag.rule_id, 0) + 1
+
+        serialized = {
+            nid: [
+                {
+                    "rule_id": t.rule_id,
+                    "severity": t.severity,
+                    "message": t.message,
+                    "line": t.line,
+                }
+                for t in tags
+            ]
+            for nid, tags in tags_by_node.items()
+        }
+        payload = {
+            "engine": engine,
+            "total": total,
+            "by_severity": by_severity,
+            "by_rule": by_rule,
+            "tags_by_node": serialized,
+            "suppressed_count": len(suppressions),
+        }
+        _cache_last_scan(root, payload)
+        _persist_security_tags(store, tags_by_node)
+        return payload
+    finally:
+        store.close()
+
+
+def security_report(
+    repo_root: str | None = None,
+    *,
+    format: str = "json",
+) -> dict[str, Any]:
+    """Re-emit the cached last scan as JSON or SARIF v2.1.0.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        format: ``"json"`` (default, returns the cached payload directly) or
+            ``"sarif"`` (wraps the payload in a SARIF v2.1.0 envelope).
+
+    Returns:
+        The cached payload, a SARIF envelope, or
+        ``{"error": "No prior scan found..."}`` when no scan has run yet.
+    """
+    _, root = _get_store(repo_root)
+    cached = _load_last_scan(root)
+    if cached is None:
+        return {"error": "No prior scan found. Run security_scan first."}
+    if format == "sarif":
+        return _to_sarif(cached)
+    return cached
+
+
+def security_suppress(
+    repo_root: str | None = None,
+    *,
+    rule_id: str | None = None,
+    remove: bool = False,
+) -> dict[str, Any]:
+    """Add or remove ``rule_id`` from the persistent suppression list.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        rule_id: The rule identifier (e.g. ``"cwe-89-sql-string-format"``).
+        remove: When ``True``, removes the rule instead of adding it.
+
+    Returns:
+        ``{"rule_id": str, "suppressed": bool, "total_suppressed": int}`` or
+        ``{"error": "rule_id is required"}`` when ``rule_id`` is missing.
+    """
+    if not rule_id:
+        return {"error": "rule_id is required"}
+    _, root = _get_store(repo_root)
+    suppressions = set(_load_suppressions(root))
+    if remove:
+        suppressions.discard(rule_id)
+    else:
+        suppressions.add(rule_id)
+    _save_suppressions(root, sorted(suppressions))
+    return {
+        "rule_id": rule_id,
+        "suppressed": not remove,
+        "total_suppressed": len(suppressions),
+    }
+
+
+def security_rule_list(
+    *,
+    engine: str = "heuristic",
+) -> dict[str, Any]:
+    """Enumerate active rules for the given engine.
+
+    Args:
+        engine: ``"heuristic"`` (default) or ``"semgrep"``.
+
+    Returns:
+        ``{"engine": str, "rules": [...]}`` -- entries are dicts with
+        ``id``/``severity``/``languages``/``message`` for the heuristic engine,
+        or filenames (``"name.yaml"``) for the semgrep overlay.
+    """
+    if engine == "semgrep":
+        rules_dir = _resolve_overlay_rules_dir()
+        if rules_dir is None:
+            return {
+                "engine": "semgrep",
+                "rules": [],
+                "note": "no curated overlay found",
+            }
+        rule_files = sorted(p.name for p in rules_dir.glob("*.yaml"))
+        return {"engine": "semgrep", "rules": rule_files}
+    scanner = HeuristicScanner()
+    rules = [
+        {
+            "id": r.id,
+            "severity": r.severity,
+            "languages": sorted(r.languages),
+            "message": r.message,
+        }
+        for r in scanner._rules
+    ]
+    return {"engine": "heuristic", "rules": rules}
+
+
+# ---------------------------------------------------------------------------
+# Persistence + serialization helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_suppressions(root: Path) -> set[str]:
+    """Load the JSON-array suppression list. Returns ``set()`` if absent or
+    unreadable -- callers treat suppressions as best-effort."""
+    sup_path = root / _SUPPRESS_PATH_DEFAULT
+    if not sup_path.is_file():
+        return set()
+    try:
+        data = json.loads(sup_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {str(item) for item in data}
+
+
+def _save_suppressions(root: Path, suppressions: list[str]) -> None:
+    """Persist the suppression list as a sorted JSON array."""
+    sup_path = root / _SUPPRESS_PATH_DEFAULT
+    sup_path.parent.mkdir(parents=True, exist_ok=True)
+    sup_path.write_text(json.dumps(suppressions, indent=2), encoding="utf-8")
+
+
+def _cache_last_scan(root: Path, payload: dict[str, Any]) -> None:
+    """Cache the most recent scan payload so ``security_report`` can re-emit it."""
+    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _load_last_scan(root: Path) -> dict[str, Any] | None:
+    """Return the cached scan payload, or ``None`` if absent/corrupt."""
+    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    if not cache_path.is_file():
+        return None
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _to_sarif(payload: dict[str, Any]) -> dict[str, Any]:
+    """Convert a cached scan payload to a SARIF v2.1.0 envelope."""
+    results: list[dict[str, Any]] = []
+    for node_id, tags in payload.get("tags_by_node", {}).items():
+        for tag in tags:
+            line = tag.get("line") or 1
+            results.append(
+                {
+                    "ruleId": tag["rule_id"],
+                    "level": _sarif_level(tag["severity"]),
+                    "message": {"text": tag["message"]},
+                    "locations": [
+                        {
+                            "logicalLocations": [{"name": node_id}],
+                            "physicalLocation": {"region": {"startLine": line}},
+                        }
+                    ],
+                }
+            )
+    return {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "better-code-review-graph",
+                        "informationUri": (
+                            "https://github.com/n24q02m/better-code-review-graph"
+                        ),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+
+def _sarif_level(severity: str) -> str:
+    """Map CRG severity to SARIF level."""
+    return {
+        "CRITICAL": "error",
+        "HIGH": "error",
+        "MEDIUM": "warning",
+        "LOW": "note",
+    }.get(severity, "warning")
+
+
+def _persist_security_tags(
+    store: GraphStore, tags_by_node: dict[str, list[Tag]]
+) -> None:
+    """Write JSON-serialized tag summaries into ``nodes.security_tags``.
+
+    Skips the ``(repo-wide)`` semgrep bucket since it has no node anchor.
+    Each entry is a compact ``"<rule_id>:<severity>"`` string -- callers
+    that need the full tag detail re-run ``security_report``.
+    """
+    for node_id, tags in tags_by_node.items():
+        if node_id == "(repo-wide)":
+            continue
+        serialized = json.dumps([f"{t.rule_id}:{t.severity}" for t in tags])
+        store._conn.execute(
+            "UPDATE nodes SET security_tags = ? WHERE qualified_name = ?",
+            (serialized, node_id),
+        )
+    store._conn.commit()

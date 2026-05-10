@@ -16,6 +16,7 @@ is package-private (``store._conn``).
 from __future__ import annotations
 
 import hashlib
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -212,3 +213,116 @@ class RepoRegistry:
     def entries(self) -> list[RepoEntry]:
         """Return all registered entries (a copy of the in-memory state)."""
         return list(self._entries.values())
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Task 7: first-parent commit backfill
+# ---------------------------------------------------------------------------
+
+
+# git log --format placeholders separated by NUL bytes so the columns
+# survive commit messages containing tabs / pipes / other delimiters
+# people occasionally use. The trailing ``%s`` is the subject line; we
+# deliberately do NOT use ``%B`` (full body) — the ``commits`` table is
+# meant for fast SHA→timestamp lookup, not full-text search.
+#
+# Layout (split by ``\x00``):
+#   parts[0] = sha           (%H)
+#   parts[1] = parents       (%P, space-separated; empty for root commit)
+#   parts[2] = commit time   (%ct, unix timestamp as decimal string)
+#   parts[3] = subject line  (%s)
+_GIT_LOG_FORMAT: str = "%H%x00%P%x00%ct%x00%s"
+
+# Hard upper bound on git subprocess execution. A 60s timeout is plenty
+# for repos with hundreds of thousands of commits and bounds the worst
+# case if ``git`` hangs (corrupt index, hung pager, FUSE mount stall).
+_GIT_LOG_TIMEOUT_SECONDS: int = 60
+
+
+def backfill_commits_for_repo(
+    store: GraphStore,
+    repo_id: str,
+    repo_root: Path,
+) -> int:
+    """Walk ``git log --first-parent`` and populate the ``commits`` table.
+
+    Parameters
+    ----------
+    store:
+        The :class:`GraphStore` whose SQLite connection backs the
+        ``commits`` table (created by alembic revision 006).
+    repo_id:
+        The registry id assigned to ``repo_root``. Every inserted row is
+        tagged with this value so the FK to ``repos.repo_id`` resolves.
+    repo_root:
+        Filesystem path of the git working tree to walk.
+
+    Returns
+    -------
+    int
+        The number of commit rows actually inserted (0 if ``repo_root``
+        is not a git repo, ``git`` is missing, the subprocess fails, or
+        every commit was already present).
+
+    Notes
+    -----
+    The walk uses ``--first-parent`` so merge commits collapse to the
+    mainline; merged feature-branch commits are intentionally excluded
+    (the table is for "what landed on the trunk" lookups, not full
+    history). Existing rows are preserved via ``INSERT OR IGNORE``, so
+    calling the function repeatedly is safe and idempotent.
+
+    The helper is best-effort: any failure path returns ``0`` rather
+    than raising so a non-git directory or a transient ``git`` failure
+    on a single root never aborts a federated build.
+    """
+    if not (repo_root / ".git").exists():
+        return 0
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "log",
+                "--first-parent",
+                f"--format={_GIT_LOG_FORMAT}",
+            ],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_GIT_LOG_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return 0
+    if proc.returncode != 0:
+        return 0
+
+    inserted = 0
+    for line in proc.stdout.splitlines():
+        # Each row is exactly 4 NUL-separated columns; anything else
+        # signals a malformed line (e.g. truncated output) and we skip
+        # rather than insert garbage.
+        parts = line.split("\x00")
+        if len(parts) < 4:
+            continue
+        sha, parents, timestamp, message = parts[0], parts[1], parts[2], parts[3]
+        # First-parent only: take the head of the parents list. Root
+        # commit has no parents (empty string) → ``parent_sha`` is NULL.
+        parent_sha = parents.split()[0] if parents.strip() else None
+        try:
+            ts = int(timestamp)
+        except ValueError:
+            # Defensive: ``%ct`` is always a decimal int, but a corrupt
+            # or future git version that emits something else should
+            # not blow up the backfill. Skip the row instead.
+            continue
+        cursor = store._conn.execute(
+            "INSERT OR IGNORE INTO commits "
+            "(sha, repo_id, parent_sha, timestamp, message) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (sha, repo_id, parent_sha, ts, message),
+        )
+        if cursor.rowcount > 0:
+            inserted += 1
+    store._conn.commit()
+    return inserted

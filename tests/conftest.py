@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -13,6 +15,30 @@ def pytest_addoption(parser):
 
 from better_code_review_graph.graph import GraphStore  # noqa: E402
 from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _allow_temporal_migration_without_git() -> None:
+    """Opt the test session into the no-git fallback path of migration 005.
+
+    The Phase 3 Task 6 BREAKING migration (``005_temporal_columns``)
+    reads ``git rev-parse HEAD`` from the repo containing the graph DB
+    so it can backfill ``valid_from_sha``. Production deployments
+    always satisfy this invariant — CRG only indexes git repos. The
+    test suite, however, creates throwaway DBs in ``tmp_path`` /
+    ``tempfile.NamedTemporaryFile`` paths that live outside any git
+    repo, and many legacy tests deliberately probe code paths that
+    assume those tmp dirs are NOT inside a git repo (see
+    ``test_incremental.py::TestFindRepoRoot::test_returns_none_without_git``).
+
+    Setting ``CRG_TEST_ALLOW_NO_GIT=1`` flips migration 005 to use the
+    documented in-memory sentinel SHA (40 zeros) when no ``.git``
+    ancestor is reachable. The migration still aborts with the
+    actionable :class:`RuntimeError` in production code paths where
+    the env var is unset. Tests that exercise the abort path
+    explicitly clear this env var via ``monkeypatch.delenv``.
+    """
+    os.environ["CRG_TEST_ALLOW_NO_GIT"] = "1"
 
 
 @pytest.fixture(autouse=True)

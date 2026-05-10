@@ -55,6 +55,13 @@ def _stamp(db_path: Path, revision: str) -> None:
     command.upgrade(cfg, revision)
 
 
+# The session-scoped autouse fixture in ``tests/conftest.py``
+# (``_session_git_tempdir``) initialises a git repo at the pytest
+# basetemp so every per-test ``tmp_path`` walks up to ``.git`` cleanly.
+# Migration 005 therefore resolves ``git rev-parse HEAD`` end-to-end
+# without per-module fixtures.
+
+
 def _current_revision(db_path: Path) -> str | None:
     with closing(sqlite3.connect(str(db_path))) as conn:
         row = conn.execute(
@@ -177,12 +184,16 @@ def test_backup_skipped_when_already_at_005_or_above(
 # ---------------------------------------------------------------------------
 
 
-def test_backup_skipped_when_target_below_005(tmp_path: Path) -> None:
-    """DB at rev 001, real head at "003" — no backup (boundary not crossed).
+def test_backup_taken_on_real_head_005_chain(tmp_path: Path) -> None:
+    """DB at rev 001, real head at ``005`` — backup IS taken (boundary crossed).
 
-    No monkeypatch — the real shipped head is currently ``003`` (Phase 2
-    federation), well below the BREAKING boundary of ``005``.  The hook
-    must be a no-op so existing flows remain unaffected.
+    No monkeypatch — Phase 3 Task 6 lands the real BREAKING migration
+    at revision ``005``. The hook fires for any DB at a pre-005
+    revision because ``GraphStore`` will walk it up through the
+    ``005_temporal_columns`` migration. This pins the real-world
+    upgrade path: the fixture's autouse ``_init_git`` makes the
+    backfill succeed end-to-end, so the chain runs to head and the
+    backup file remains on disk afterwards.
     """
     db_path = tmp_path / "graph.db"
     _stamp(db_path, "001")
@@ -193,13 +204,32 @@ def test_backup_skipped_when_target_below_005(tmp_path: Path) -> None:
 
     store = GraphStore(db_path)
     try:
-        # GraphStore brings the DB to head normally; backup never created.
-        assert _current_revision(db_path) is not None
+        # GraphStore brought the DB through 001 -> 005 (head). The hook
+        # snapshotted the rev-001 state to ``<db>.pre-2.0.bak`` BEFORE
+        # the upgrade chain ran.
+        head = ScriptDirectory.from_config(
+            _alembic_config_for(db_path)
+        ).get_current_head()
+        # Phase 3 Task 7 added revision 006 (commits table). Future
+        # additive revisions move the head forward; the BREAKING
+        # boundary remains at 005, so the backup behaviour pinned by
+        # this test does not change. We assert the chain reached the
+        # current head (whatever revision it points at) rather than
+        # hard-coding a numeric value that would have to be bumped on
+        # every additive migration.
+        assert head is not None and head >= "005"
+        assert _current_revision(db_path) == head
     finally:
         store.close()
 
-    assert not backup_path.exists(), (
-        "backup must not be created when target head is below rev 005"
+    assert backup_path.exists(), (
+        "backup must be created when crossing the BREAKING 005 boundary"
+    )
+    # Backup preserves the pre-upgrade rev-001 state.
+    with closing(sqlite3.connect(str(backup_path))) as conn:
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert row[0] == "001", (
+        f"backup should preserve the rev-001 state captured before upgrade; got {row[0]!r}"
     )
 
 
@@ -440,7 +470,14 @@ def test_take_backup_silent_no_op_when_db_path_missing(tmp_path: Path) -> None:
     Scenario: a memory-only test path or a virtual filesystem where the
     on-disk file simply does not exist.  We synthesize this by opening
     a ``GraphStore`` against a fresh tmp file and then deleting the file
-    out from under it before invoking the helper directly.
+    (and any pre-2.0 backup the upgrade hook just produced) before
+    invoking the helper directly.
+
+    Now that revision ``005`` is the real shipped head, opening a fresh
+    DB triggers the backup hook automatically (current=None < 005).
+    We therefore have to clear the backup file too before re-invoking
+    the helper, so the assertion "the helper produced no NEW backup"
+    has a clean baseline.
 
     The helper must NOT raise — defensive guard for code paths that
     re-enter ``_run_alembic_upgrade`` from atypical bootstraps.
@@ -454,6 +491,12 @@ def test_take_backup_silent_no_op_when_db_path_missing(tmp_path: Path) -> None:
         store._conn.close()
         db_path.unlink()
         assert not db_path.exists()
+
+        # The upgrade hook produced a backup at first open; remove it
+        # so we can assert the direct call below is a clean no-op.
+        if backup_path.exists():
+            backup_path.unlink()
+        assert not backup_path.exists()
 
         # Direct call — no exception, no backup file.
         store._take_pre_2_0_backup()
