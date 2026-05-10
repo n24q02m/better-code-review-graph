@@ -20,7 +20,8 @@ tracking.  Before that migration ships, we add a safety net:
 
 These tests must work BEFORE migration 005 ships: we monkeypatch
 ``ScriptDirectory.get_current_head`` to return ``"005"`` to simulate
-the post-005 world.  Today's real head is still ``003``, so the hook
+the post-005 world.  Today's real head is still pre-005 (currently
+``004`` after Phase 3 Task 2 added ``security_tags``), so the hook
 is a no-op on the production code path until the BREAKING migration
 lands.
 """
@@ -268,11 +269,15 @@ def test_downgrade_env_var_restores_backup(
     backup_path = db_path.with_suffix(".pre-2.0.bak")
     shutil.copy2(db_path, backup_path)
 
-    # Bump current DB to head ("003") — pretend we're at v2.
+    # Bump current DB to head — pretend we're at v2. We compare against
+    # the real head reported by alembic (currently ``004`` after Phase 3
+    # Task 2; will roll forward as future pre-005 migrations land) so this
+    # assertion does not need to be touched on every additive bump.
     cfg = _alembic_config_for(db_path)
     command.upgrade(cfg, "head")
     v2_rev = _current_revision(db_path)
-    assert v2_rev == "003"
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert v2_rev == head
 
     # Sanity: backup is still at 002.
     with closing(sqlite3.connect(str(backup_path))) as conn:
