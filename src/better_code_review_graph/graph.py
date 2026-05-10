@@ -6,6 +6,8 @@ Supports impact-radius queries and subgraph extraction.
 """
 
 import json
+import os
+import shutil
 import sqlite3
 import threading
 import time
@@ -16,6 +18,46 @@ from typing import Any
 import networkx as nx
 
 from .parser import EdgeInfo, NodeInfo
+
+# Phase 3 Task 1 — pre-flight backup hook constants.
+#
+# ``_BREAKING_REVISION`` is the alembic revision id at which the
+# v2.0.0 BREAKING migration ships (security-aware nodes + temporal
+# tracking).  Any upgrade chain that crosses *into* this revision
+# from below triggers a one-time copy of the SQLite file to
+# ``<db>.pre-2.0.bak`` before alembic runs.
+#
+# The hook is intentionally encoded as a string compare on revision
+# ids — the project pads alembic ids to 3 digits (``001`` … ``005``),
+# so lexical comparison matches numeric comparison.  When the day
+# comes that the project switches to alembic's default 12-char hex
+# ids (or a downstream fork inherits this hook), this constant +
+# the helper below are the only places that need to change.
+_BREAKING_REVISION: str = "005"
+_BACKUP_SUFFIX: str = ".pre-2.0.bak"
+_ARCHIVED_SUFFIX: str = ".post-2.0.archived"
+_DOWNGRADE_ENV_VAR: str = "CRG_DOWNGRADE_TO_1_X"
+
+
+def _crosses_breaking_boundary(current_rev: str | None, target_rev: str | None) -> bool:
+    """Return True iff the upgrade chain crosses the v2.0 BREAKING boundary.
+
+    The boundary is crossed when:
+      * ``target_rev`` is at or past ``_BREAKING_REVISION`` (so the
+        upgrade *will* run the BREAKING migration), AND
+      * ``current_rev`` is below ``_BREAKING_REVISION`` (or ``None``
+        for a fresh DB without ``alembic_version``).
+
+    A ``None`` ``target_rev`` is treated as "unknown / no migrations
+    available" → no backup needed (defensive: if alembic can't tell
+    us where it's going, we don't second-guess it).
+    """
+    if target_rev is None or target_rev < _BREAKING_REVISION:
+        return False
+    # target_rev >= _BREAKING_REVISION
+    if current_rev is None:
+        return True
+    return current_rev < _BREAKING_REVISION
 
 
 def _resolve_migrations_dir() -> Path:
@@ -247,6 +289,18 @@ class GraphStore:
         cfg.set_main_option("script_location", str(migrations_dir))
         cfg.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
 
+        # Phase 3 Task 1 — early-exit downgrade path.
+        #
+        # When the operator sets ``CRG_DOWNGRADE_TO_1_X=1`` we restore
+        # the pre-2.0 backup BEFORE any alembic activity (including
+        # the auto-stamp branch below — stamping a v1.x DB to "002"
+        # is the same idempotent outcome as the restored DB already
+        # being at "002", but we still skip it to avoid touching the
+        # restored file at all).
+        if os.environ.get(_DOWNGRADE_ENV_VAR) == "1":
+            self._restore_pre_2_0_backup()
+            return
+
         # Detect "legacy DB": pre-existing structural tables but alembic
         # has not yet recorded a head revision. Two sub-cases:
         #   1. ``alembic_version`` table is missing entirely.
@@ -271,6 +325,20 @@ class GraphStore:
             if needs_stamp:
                 command.stamp(cfg, "002")
 
+        # Phase 3 Task 1 — backup before BREAKING migration crosses the
+        # 005 boundary.  Read the current recorded revision (post-stamp)
+        # and the script-directory head; if the chain crosses 005,
+        # snapshot the SQLite file via ``shutil.copy2`` so the operator
+        # can roll back via ``CRG_DOWNGRADE_TO_1_X=1`` if the BREAKING
+        # migration produces a worse outcome than expected.  Idempotent:
+        # an existing backup is preserved (could be from an earlier
+        # partial run that aborted mid-upgrade — that copy is closer to
+        # the true v1.x state than anything we'd produce now).
+        current_rev = self._read_alembic_version()
+        target_rev = ScriptDirectory.from_config(cfg).get_current_head()
+        if _crosses_breaking_boundary(current_rev, target_rev):
+            self._take_pre_2_0_backup()
+
         try:
             command.upgrade(cfg, "head")
         except CommandError as exc:
@@ -293,6 +361,113 @@ class GraphStore:
                 f"better-code-review-graph (head={head!r}). Either downgrade "
                 "the package or recreate the DB."
             ) from exc
+
+    # ------------------------------------------------------------------
+    # Phase 3 Task 1 — backup / restore helpers
+    # ------------------------------------------------------------------
+
+    def _read_alembic_version(self) -> str | None:
+        """Return the revision recorded in ``alembic_version`` (or ``None``).
+
+        ``None`` covers two cases the BREAKING-boundary check needs to
+        treat identically: the table is missing entirely (fresh DB) or
+        the table exists but has no row (interrupted prior run).
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()
+        except sqlite3.Error:
+            return None
+        if row is None:
+            return None
+        return row[0]
+
+    def _take_pre_2_0_backup(self) -> None:
+        """Copy ``self.db_path`` to ``<db>.pre-2.0.bak`` if not already taken.
+
+        Uses ``shutil.copy2`` to preserve metadata so a forensic timestamp
+        comparison remains meaningful.  Idempotent: a pre-existing backup
+        file is left untouched (the original copy is closer to true v1.x
+        state than anything a re-run could produce).
+
+        :memory: databases — and any path that does not exist on disk —
+        are skipped silently.  alembic-managed in-memory DBs aren't a
+        target for forensic rollback, and the file-not-found case can
+        only come up on bizarre virtual filesystems where copy would
+        fail anyway.
+        """
+        backup_path = self.db_path.with_suffix(_BACKUP_SUFFIX)
+        if backup_path.exists():
+            return
+        if not self.db_path.is_file():
+            return
+        # ``shutil.copy2`` follows symlinks and preserves metadata.
+        # WAL files (``-wal`` / ``-shm``) are intentionally NOT copied:
+        # we close the sqlite connection's WAL state by issuing a
+        # checkpoint first so the .db file is self-contained.
+        try:
+            self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error:
+            # Some pragmas aren't available on every SQLite build /
+            # platform — falling back to a copy of the main file alone
+            # is still strictly better than no backup.
+            pass
+        shutil.copy2(self.db_path, backup_path)
+
+    def _restore_pre_2_0_backup(self) -> None:
+        """Restore ``<db>.pre-2.0.bak`` over ``self.db_path``.
+
+        Used when the operator opts into a v1.x downgrade via
+        ``CRG_DOWNGRADE_TO_1_X=1``.  The current (potentially v2)
+        DB is preserved at ``<db>.post-2.0.archived`` so a follow-up
+        forward-roll is still possible if the operator changes their
+        mind.
+
+        Closes the active sqlite connection before the restore so the
+        on-disk file can be replaced safely on Windows (which holds an
+        exclusive lock on open files).  A fresh connection is opened
+        against the restored file before returning so the rest of
+        ``GraphStore.__init__`` continues to work.
+
+        Raises :class:`RuntimeError` with a clear message when the env
+        var is set but no backup file exists — the operator's intent
+        was explicit and we have nothing to honour it with.
+        """
+        backup_path = self.db_path.with_suffix(_BACKUP_SUFFIX)
+        archived_path = self.db_path.with_suffix(_ARCHIVED_SUFFIX)
+
+        if not backup_path.is_file():
+            raise RuntimeError(
+                f"{_DOWNGRADE_ENV_VAR}=1 was set but no backup file was "
+                f"found at {backup_path}. A v1.x downgrade requires the "
+                "pre-migration snapshot taken on the previous startup. "
+                "Either restore the backup file from elsewhere or unset "
+                f"{_DOWNGRADE_ENV_VAR} to continue with the v2 schema."
+            )
+
+        # Close the live connection so Windows lets us swap the file.
+        # Re-opened below before this method returns.
+        self._conn.close()
+
+        # Move (not delete) the v2 state aside so the operator can still
+        # recover it.  ``os.replace`` is atomic on the same filesystem.
+        if self.db_path.is_file():
+            if archived_path.exists():
+                archived_path.unlink()
+            os.replace(self.db_path, archived_path)
+
+        shutil.copy2(backup_path, self.db_path)
+
+        # Reopen against the restored file with the same PRAGMAs as
+        # ``__init__``.  Keeping these in sync with ``__init__`` is a
+        # narrow contract; if either is changed, the other must follow.
+        self._conn = sqlite3.connect(
+            str(self.db_path), timeout=30, check_same_thread=False
+        )
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
 
     def _ensure_federation_columns(self) -> None:
         """Backfill Phase 2 Task 1 federation columns on legacy / in-memory DBs.
