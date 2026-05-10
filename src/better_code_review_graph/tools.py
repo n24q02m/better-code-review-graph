@@ -13,6 +13,7 @@ Exposes 9 tools:
 """
 
 import hashlib
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,12 @@ from .incremental import (
     get_db_path,
     get_staged_and_unstaged,
     incremental_update,
+)
+from .security import HeuristicScanner, Tag
+from .security.semgrep_engine import (
+    SemgrepNotAvailable,
+    SemgrepScanner,
+    _resolve_overlay_rules_dir,
 )
 
 # Common JS/TS builtin method names filtered from callers_of results.
@@ -2317,3 +2324,334 @@ def find_large_functions(
         }
     finally:
         store.close()
+
+
+# ---------------------------------------------------------------------------
+# Tool 10: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
+# ---------------------------------------------------------------------------
+
+_SUPPRESS_PATH_DEFAULT = ".code-review-graph/security-suppressions.json"
+_LAST_SCAN_CACHE_FILENAME = "security-last-scan.json"
+
+
+class _NodeView:
+    """Duck-typed adapter exposing the four attributes ``HeuristicScanner``
+    expects (``source_text``, ``language``, ``line_start``, ``qualified_name``).
+
+    Used to feed plain ``GraphStore`` rows into the scanner without forcing
+    a full ``NodeInfo`` re-construction.
+    """
+
+    __slots__ = ("qualified_name", "language", "line_start", "source_text")
+
+    def __init__(
+        self,
+        qualified_name: str,
+        language: str,
+        line_start: int | None,
+        source_text: str | None,
+    ) -> None:
+        self.qualified_name = qualified_name
+        self.language = language or ""
+        self.line_start = line_start
+        self.source_text = source_text
+
+
+def security_scan(
+    repo_root: str | None = None,
+    *,
+    engine: str = "heuristic",
+) -> dict[str, Any]:
+    """Run a security scan over Function/Class/Method nodes in the graph.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        engine: ``"heuristic"`` (default, regex tier-1) or ``"semgrep"``
+            (tier-2; requires the ``[security]`` extra).
+
+    Returns:
+        ``{"engine": str, "total": int, "by_severity": dict, "by_rule": dict,
+        "tags_by_node": dict[node_id -> list[tag dict]],
+        "suppressed_count": int}``.
+
+        When ``engine="semgrep"`` is requested but the CLI is unavailable,
+        returns ``{"error": <reason>, "engine": "semgrep"}``.
+    """
+    store, root = _get_store(repo_root)
+    try:
+        suppressions = _load_suppressions(root)
+        tags_by_node: dict[str, list[Tag]] = {}
+
+        if engine == "semgrep":
+            try:
+                scanner = SemgrepScanner()
+            except SemgrepNotAvailable as exc:
+                return {"error": str(exc), "engine": "semgrep"}
+            result = scanner.scan_path(root)
+            for tag in result.tags:
+                if tag.rule_id in suppressions:
+                    continue
+                tags_by_node.setdefault("(repo-wide)", []).append(tag)
+        else:
+            scanner = HeuristicScanner()
+            rows = store._conn.execute(
+                "SELECT qualified_name, language, line_start, source_text "
+                "FROM nodes WHERE source_text IS NOT NULL "
+                "AND kind IN ('Function','Class','Method')"
+            ).fetchall()
+            for row in rows:
+                view = _NodeView(
+                    qualified_name=row["qualified_name"],
+                    language=row["language"] or "",
+                    line_start=row["line_start"],
+                    source_text=row["source_text"],
+                )
+                tags = [
+                    t for t in scanner.scan_node(view) if t.rule_id not in suppressions
+                ]
+                if tags:
+                    tags_by_node[row["qualified_name"]] = tags
+
+        total = 0
+        by_severity: dict[str, int] = {}
+        by_rule: dict[str, int] = {}
+        for tags in tags_by_node.values():
+            total += len(tags)
+            for tag in tags:
+                by_severity[tag.severity] = by_severity.get(tag.severity, 0) + 1
+                by_rule[tag.rule_id] = by_rule.get(tag.rule_id, 0) + 1
+
+        serialized = {
+            nid: [
+                {
+                    "rule_id": t.rule_id,
+                    "severity": t.severity,
+                    "message": t.message,
+                    "line": t.line,
+                }
+                for t in tags
+            ]
+            for nid, tags in tags_by_node.items()
+        }
+        payload = {
+            "engine": engine,
+            "total": total,
+            "by_severity": by_severity,
+            "by_rule": by_rule,
+            "tags_by_node": serialized,
+            "suppressed_count": len(suppressions),
+        }
+        _cache_last_scan(root, payload)
+        _persist_security_tags(store, tags_by_node)
+        return payload
+    finally:
+        store.close()
+
+
+def security_report(
+    repo_root: str | None = None,
+    *,
+    format: str = "json",
+) -> dict[str, Any]:
+    """Re-emit the cached last scan as JSON or SARIF v2.1.0.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        format: ``"json"`` (default, returns the cached payload directly) or
+            ``"sarif"`` (wraps the payload in a SARIF v2.1.0 envelope).
+
+    Returns:
+        The cached payload, a SARIF envelope, or
+        ``{"error": "No prior scan found..."}`` when no scan has run yet.
+    """
+    _, root = _get_store(repo_root)
+    cached = _load_last_scan(root)
+    if cached is None:
+        return {"error": "No prior scan found. Run security_scan first."}
+    if format == "sarif":
+        return _to_sarif(cached)
+    return cached
+
+
+def security_suppress(
+    repo_root: str | None = None,
+    *,
+    rule_id: str | None = None,
+    remove: bool = False,
+) -> dict[str, Any]:
+    """Add or remove ``rule_id`` from the persistent suppression list.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        rule_id: The rule identifier (e.g. ``"cwe-89-sql-string-format"``).
+        remove: When ``True``, removes the rule instead of adding it.
+
+    Returns:
+        ``{"rule_id": str, "suppressed": bool, "total_suppressed": int}`` or
+        ``{"error": "rule_id is required"}`` when ``rule_id`` is missing.
+    """
+    if not rule_id:
+        return {"error": "rule_id is required"}
+    _, root = _get_store(repo_root)
+    suppressions = set(_load_suppressions(root))
+    if remove:
+        suppressions.discard(rule_id)
+    else:
+        suppressions.add(rule_id)
+    _save_suppressions(root, sorted(suppressions))
+    return {
+        "rule_id": rule_id,
+        "suppressed": not remove,
+        "total_suppressed": len(suppressions),
+    }
+
+
+def security_rule_list(
+    *,
+    engine: str = "heuristic",
+) -> dict[str, Any]:
+    """Enumerate active rules for the given engine.
+
+    Args:
+        engine: ``"heuristic"`` (default) or ``"semgrep"``.
+
+    Returns:
+        ``{"engine": str, "rules": [...]}`` -- entries are dicts with
+        ``id``/``severity``/``languages``/``message`` for the heuristic engine,
+        or filenames (``"name.yaml"``) for the semgrep overlay.
+    """
+    if engine == "semgrep":
+        rules_dir = _resolve_overlay_rules_dir()
+        if rules_dir is None:
+            return {
+                "engine": "semgrep",
+                "rules": [],
+                "note": "no curated overlay found",
+            }
+        rule_files = sorted(p.name for p in rules_dir.glob("*.yaml"))
+        return {"engine": "semgrep", "rules": rule_files}
+    scanner = HeuristicScanner()
+    rules = [
+        {
+            "id": r.id,
+            "severity": r.severity,
+            "languages": sorted(r.languages),
+            "message": r.message,
+        }
+        for r in scanner._rules
+    ]
+    return {"engine": "heuristic", "rules": rules}
+
+
+# ---------------------------------------------------------------------------
+# Persistence + serialization helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_suppressions(root: Path) -> set[str]:
+    """Load the JSON-array suppression list. Returns ``set()`` if absent or
+    unreadable -- callers treat suppressions as best-effort."""
+    sup_path = root / _SUPPRESS_PATH_DEFAULT
+    if not sup_path.is_file():
+        return set()
+    try:
+        data = json.loads(sup_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {str(item) for item in data}
+
+
+def _save_suppressions(root: Path, suppressions: list[str]) -> None:
+    """Persist the suppression list as a sorted JSON array."""
+    sup_path = root / _SUPPRESS_PATH_DEFAULT
+    sup_path.parent.mkdir(parents=True, exist_ok=True)
+    sup_path.write_text(json.dumps(suppressions, indent=2), encoding="utf-8")
+
+
+def _cache_last_scan(root: Path, payload: dict[str, Any]) -> None:
+    """Cache the most recent scan payload so ``security_report`` can re-emit it."""
+    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _load_last_scan(root: Path) -> dict[str, Any] | None:
+    """Return the cached scan payload, or ``None`` if absent/corrupt."""
+    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    if not cache_path.is_file():
+        return None
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _to_sarif(payload: dict[str, Any]) -> dict[str, Any]:
+    """Convert a cached scan payload to a SARIF v2.1.0 envelope."""
+    results: list[dict[str, Any]] = []
+    for node_id, tags in payload.get("tags_by_node", {}).items():
+        for tag in tags:
+            line = tag.get("line") or 1
+            results.append(
+                {
+                    "ruleId": tag["rule_id"],
+                    "level": _sarif_level(tag["severity"]),
+                    "message": {"text": tag["message"]},
+                    "locations": [
+                        {
+                            "logicalLocations": [{"name": node_id}],
+                            "physicalLocation": {"region": {"startLine": line}},
+                        }
+                    ],
+                }
+            )
+    return {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "better-code-review-graph",
+                        "informationUri": (
+                            "https://github.com/n24q02m/better-code-review-graph"
+                        ),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+
+def _sarif_level(severity: str) -> str:
+    """Map CRG severity to SARIF level."""
+    return {
+        "CRITICAL": "error",
+        "HIGH": "error",
+        "MEDIUM": "warning",
+        "LOW": "note",
+    }.get(severity, "warning")
+
+
+def _persist_security_tags(
+    store: GraphStore, tags_by_node: dict[str, list[Tag]]
+) -> None:
+    """Write JSON-serialized tag summaries into ``nodes.security_tags``.
+
+    Skips the ``(repo-wide)`` semgrep bucket since it has no node anchor.
+    Each entry is a compact ``"<rule_id>:<severity>"`` string -- callers
+    that need the full tag detail re-run ``security_report``.
+    """
+    for node_id, tags in tags_by_node.items():
+        if node_id == "(repo-wide)":
+            continue
+        serialized = json.dumps([f"{t.rule_id}:{t.severity}" for t in tags])
+        store._conn.execute(
+            "UPDATE nodes SET security_tags = ? WHERE qualified_name = ?",
+            (serialized, node_id),
+        )
+    store._conn.commit()

@@ -27,6 +27,10 @@ from .tools import (
     list_graph_stats,
     query_graph,
     renamed_in_diff,
+    security_report,
+    security_rule_list,
+    security_scan,
+    security_suppress,
     semantic_search_nodes,
     spot_check_last_callers,
     summarize_graph_dispatch,
@@ -766,6 +770,75 @@ def help(topic: str = "graph") -> str:
                 "valid_topics": sorted(valid_topics),
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Tool 6: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    description=(
+        "Security scanning over the code knowledge graph. "
+        "Actions: scan (engine='heuristic'|'semgrep', repo_root), "
+        "report (format='json'|'sarif', repo_root), "
+        "suppress (rule_id, remove=false, repo_root), "
+        "rule_list (engine='heuristic'|'semgrep'). "
+        "Use `help` tool for full docs."
+    ),
+    annotations=ToolAnnotations(
+        title="Security",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+        openWorldHint=False,
+    ),
+)
+def security(
+    action: str = "scan",
+    repo_root: str | None = None,
+    engine: str = "heuristic",
+    format: str = "json",
+    rule_id: str | None = None,
+    remove: bool = False,
+) -> str:
+    """Security scanning tool: scan / report / suppress / rule_list.
+
+    Actions (required params -> optional):
+
+    - scan (-> engine='heuristic'|'semgrep', repo_root): Run a security scan
+      over Function/Class/Method nodes; results are cached on disk and
+      persisted to ``nodes.security_tags``.
+    - report (-> format='json'|'sarif', repo_root): Re-emit the cached scan
+      payload as JSON (default) or SARIF v2.1.0.
+    - suppress (rule_id -> remove=false, repo_root): Add or remove a rule_id
+      from the persistent suppression list at
+      ``.code-review-graph/security-suppressions.json``.
+    - rule_list (-> engine='heuristic'|'semgrep'): Enumerate active rules.
+    """
+    match action:
+        case "scan":
+            return _json(security_scan(repo_root=repo_root, engine=engine))
+        case "report":
+            return _json(security_report(repo_root=repo_root, format=format))
+        case "suppress":
+            return _json(
+                security_suppress(repo_root=repo_root, rule_id=rule_id, remove=remove)
+            )
+        case "rule_list":
+            return _json(security_rule_list(engine=engine))
+        case _:
+            import difflib
+
+            valid_actions = ["report", "rule_list", "scan", "suppress"]
+            closest = difflib.get_close_matches(action, valid_actions, n=1)
+            suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
+            return _json(
+                {
+                    "error": f"Unknown action '{action}'.{suggestion}",
+                    "valid_actions": valid_actions,
+                }
+            )
 
 
 # ---------------------------------------------------------------------------
