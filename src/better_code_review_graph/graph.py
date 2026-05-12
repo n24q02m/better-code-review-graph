@@ -947,7 +947,7 @@ class GraphStore:
     def get_edges_by_source(
         self,
         qualified_name: str,
-        kind: str | tuple[str, ...] | None = None,
+        kind: "str | tuple[str, ...] | None" = None,
         *,
         as_of: str = "",
     ) -> list[GraphEdge]:
@@ -974,7 +974,7 @@ class GraphStore:
     def get_edges_by_target(
         self,
         qualified_name: str,
-        kind: str | tuple[str, ...] | None = None,
+        kind: "str | tuple[str, ...] | None" = None,
         *,
         as_of: str = "",
     ) -> list[GraphEdge]:
