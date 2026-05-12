@@ -945,30 +945,75 @@ class GraphStore:
         return [self._row_to_node(r) for r in rows]
 
     def get_edges_by_source(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
-        rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE source_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
-        ).fetchall()
+        if kind:
+            if isinstance(kind, tuple):
+                placeholders = ",".join("?" * len(kind))
+                rows = self._conn.execute(
+                    f"SELECT * FROM edges WHERE source_qualified = ? AND kind IN ({placeholders}){frag}",  # noqa: S608
+                    (qualified_name, *kind, *frag_params),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    f"SELECT * FROM edges WHERE source_qualified = ? AND kind = ?{frag}",  # noqa: S608
+                    (qualified_name, kind, *frag_params),
+                ).fetchall()
+        else:
+            rows = self._conn.execute(
+                f"SELECT * FROM edges WHERE source_qualified = ?{frag}",  # noqa: S608
+                (qualified_name, *frag_params),
+            ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
     def get_edges_by_target(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
-        rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
-        ).fetchall()
-        if not rows and "::" in qualified_name:
-            # Fallback: try matching bare name (last segment after ::)
-            bare_name = qualified_name.rsplit("::", 1)[-1]
+        if kind:
+            if isinstance(kind, tuple):
+                placeholders = ",".join("?" * len(kind))
+                rows = self._conn.execute(
+                    f"SELECT * FROM edges WHERE target_qualified = ? AND kind IN ({placeholders}){frag}",  # noqa: S608
+                    (qualified_name, *kind, *frag_params),
+                ).fetchall()
+                if not rows and "::" in qualified_name:
+                    bare_name = qualified_name.rsplit("::", 1)[-1]
+                    rows = self._conn.execute(
+                        f"SELECT * FROM edges WHERE target_qualified = ? AND kind IN ({placeholders}){frag}",  # noqa: S608
+                        (bare_name, *kind, *frag_params),
+                    ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    f"SELECT * FROM edges WHERE target_qualified = ? AND kind = ?{frag}",  # noqa: S608
+                    (qualified_name, kind, *frag_params),
+                ).fetchall()
+                if not rows and "::" in qualified_name:
+                    bare_name = qualified_name.rsplit("::", 1)[-1]
+                    rows = self._conn.execute(
+                        f"SELECT * FROM edges WHERE target_qualified = ? AND kind = ?{frag}",  # noqa: S608
+                        (bare_name, kind, *frag_params),
+                    ).fetchall()
+        else:
             rows = self._conn.execute(
                 f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-                (bare_name, *frag_params),
+                (qualified_name, *frag_params),
             ).fetchall()
+            if not rows and "::" in qualified_name:
+                bare_name = qualified_name.rsplit("::", 1)[-1]
+                rows = self._conn.execute(
+                    f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
+                    (bare_name, *frag_params),
+                ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
     def get_edges_by_targets(
