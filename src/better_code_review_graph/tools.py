@@ -1280,6 +1280,25 @@ def query_graph(
         # nodes table. Edges are scoped indirectly: only edges whose
         # source AND target survive the node filter remain.
         if repo:
+            # BOLT OPTIMIZATION: Replaced N+1 query loop with a single batch fetch using json_each(?)
+            qns_to_check = []
+            for r in results:
+                qn = (
+                    r.get("qualified_name")
+                    or r.get("importer")
+                    or r.get("import_target")
+                )
+                if qn is not None:
+                    qns_to_check.append(qn)
+
+            repo_map = {}
+            if qns_to_check:
+                rows = store._conn.execute(
+                    "SELECT n.qualified_name, n.repo_id FROM nodes n JOIN json_each(?) j ON n.qualified_name = j.value",
+                    (json.dumps(qns_to_check),),
+                ).fetchall()
+                repo_map = {row["qualified_name"]: row["repo_id"] for row in rows}
+
             kept_qns: set[str] = set()
             filtered_results = []
             for r in results:
@@ -1292,11 +1311,8 @@ def query_graph(
                 if qn is None:
                     filtered_results.append(r)
                     continue
-                row = store._conn.execute(
-                    "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-                    (qn,),
-                ).fetchone()
-                if row is not None and (row["repo_id"] or "") == repo:
+                r_repo = repo_map.get(qn)
+                if r_repo is not None and (r_repo or "") == repo:
                     kept_qns.add(qn)
                     filtered_results.append(r)
             results = filtered_results
@@ -2210,16 +2226,29 @@ def semantic_search_nodes(
                 if repo:
                     # The vector store has no repo_id column; cross-check
                     # each hit against the SQL row and drop misses.
+                    # BOLT OPTIMIZATION: Replaced N+1 query loop with a single batch fetch using json_each(?)
+                    qns_to_check = [
+                        r.get("qualified_name")
+                        for r in raw
+                        if r.get("qualified_name") is not None
+                    ]
+                    repo_map = {}
+                    if qns_to_check:
+                        rows = store._conn.execute(
+                            "SELECT n.qualified_name, n.repo_id FROM nodes n JOIN json_each(?) j ON n.qualified_name = j.value",
+                            (json.dumps(qns_to_check),),
+                        ).fetchall()
+                        repo_map = {
+                            row["qualified_name"]: row["repo_id"] for row in rows
+                        }
+
                     filtered = []
                     for r in raw:
                         qn = r.get("qualified_name")
                         if qn is None:
                             continue
-                        row = store._conn.execute(
-                            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-                            (qn,),
-                        ).fetchone()
-                        if row is not None and (row["repo_id"] or "") == repo:
+                        r_repo = repo_map.get(qn)
+                        if r_repo is not None and (r_repo or "") == repo:
                             filtered.append(r)
                     raw = filtered
                 # Default-path filter: vector hits should also exclude
@@ -2227,17 +2256,26 @@ def semantic_search_nodes(
                 # vector store does not know about ``valid_to_sha`` so
                 # we cross-check via the SQL row (cheap single-row
                 # lookup, mirrors the repo filter above).
+                # BOLT OPTIMIZATION: Replaced N+1 query loop with a single batch fetch using json_each(?)
+                qns_to_check = [
+                    r.get("qualified_name")
+                    for r in raw
+                    if r.get("qualified_name") is not None
+                ]
+                surviving_qns = set()
+                if qns_to_check:
+                    rows = store._conn.execute(
+                        "SELECT n.qualified_name FROM nodes n JOIN json_each(?) j ON n.qualified_name = j.value WHERE n.valid_to_sha IS NULL",
+                        (json.dumps(qns_to_check),),
+                    ).fetchall()
+                    surviving_qns = {row["qualified_name"] for row in rows}
+
                 surviving: list[dict] = []
                 for r in raw:
                     qn = r.get("qualified_name")
                     if qn is None:
                         continue
-                    row = store._conn.execute(
-                        "SELECT 1 FROM nodes WHERE qualified_name = ? "
-                        "AND valid_to_sha IS NULL",
-                        (qn,),
-                    ).fetchone()
-                    if row is not None:
+                    if qn in surviving_qns:
                         surviving.append(r)
                 raw = surviving
                 raw = raw[:limit]
