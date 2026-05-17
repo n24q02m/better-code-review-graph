@@ -2725,12 +2725,14 @@ def security_scan(
                 tags_by_node.setdefault("(repo-wide)", []).append(tag)
         else:
             scanner = HeuristicScanner()
-            rows = store._conn.execute(
+            # ⚡ Bolt: Iterate cursor directly instead of .fetchall() to prevent OOM
+            # on large codebases by lazily streaming the source_text column
+            cursor = store._conn.execute(
                 "SELECT qualified_name, language, line_start, source_text "
                 "FROM nodes WHERE source_text IS NOT NULL "
                 "AND kind IN ('Function','Class','Method')"
-            ).fetchall()
-            for row in rows:
+            )
+            for row in cursor:
                 view = _NodeView(
                     qualified_name=row["qualified_name"],
                     language=row["language"] or "",
