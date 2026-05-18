@@ -2977,12 +2977,18 @@ def _persist_security_tags(
     Each entry is a compact ``"<rule_id>:<severity>"`` string -- callers
     that need the full tag detail re-run ``security_report``.
     """
+    # Use executemany to batch update security tags and avoid N+1 query patterns
+    # during large security scans
+    updates = []
     for node_id, tags in tags_by_node.items():
         if node_id == "(repo-wide)":
             continue
         serialized = json.dumps([f"{t.rule_id}:{t.severity}" for t in tags])
-        store._conn.execute(
+        updates.append((serialized, node_id))
+
+    if updates:
+        store._conn.executemany(
             "UPDATE nodes SET security_tags = ? WHERE qualified_name = ?",
-            (serialized, node_id),
+            updates,
         )
-    store._conn.commit()
+        store._conn.commit()
