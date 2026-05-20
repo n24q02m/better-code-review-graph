@@ -945,29 +945,74 @@ class GraphStore:
         return [self._row_to_node(r) for r in rows]
 
     def get_edges_by_source(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag = ""
+        kind_params = []
+        if kind is not None:
+            if isinstance(kind, str):
+                kind_frag = " AND kind = ?"
+                kind_params.append(kind)
+            elif isinstance(kind, tuple) and kind:
+                placeholders = ",".join("?" for _ in kind)
+                kind_frag = f" AND kind IN ({placeholders})"
+                kind_params.extend(kind)
+
+        # Bolt: Optimized to push kind filtering into SQLite to prevent unnecessary object instantiation.
         rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE source_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
+            f"SELECT * FROM edges WHERE source_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            (qualified_name, *kind_params, *frag_params),
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
     def get_edges_by_target(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag = ""
+        kind_params = []
+        if kind is not None:
+            if isinstance(kind, str):
+                kind_frag = " AND kind = ?"
+                kind_params.append(kind)
+            elif isinstance(kind, tuple) and kind:
+                placeholders = ",".join("?" for _ in kind)
+                kind_frag = f" AND kind IN ({placeholders})"
+                kind_params.extend(kind)
+
+        # Bolt: Optimized to push kind filtering into SQLite to prevent unnecessary object instantiation.
         rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
+            f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            (qualified_name, *kind_params, *frag_params),
         ).fetchall()
+
+        # We only want to trigger the fallback if the node itself has NO edges at all
+        # (meaning the fully qualified name isn't known to the graph as a target),
+        # not if it just happens to lack edges of this specific `kind`.
         if not rows and "::" in qualified_name:
+            if kind is not None:
+                # Check if it has any edges without the kind filter
+                any_rows = self._conn.execute(
+                    f"SELECT 1 FROM edges WHERE target_qualified = ?{frag} LIMIT 1",  # noqa: S608
+                    (qualified_name, *frag_params),
+                ).fetchall()
+                if any_rows:
+                    return []
+
             # Fallback: try matching bare name (last segment after ::)
             bare_name = qualified_name.rsplit("::", 1)[-1]
             rows = self._conn.execute(
-                f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-                (bare_name, *frag_params),
+                f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+                (bare_name, *kind_params, *frag_params),
             ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 

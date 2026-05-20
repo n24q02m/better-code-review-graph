@@ -941,9 +941,8 @@ def _scan_dynamic_dispatch_hints(
     # import the target's file -- those are the most likely sites for
     # asyncio.to_thread(<target>) / functools.partial(<target>).
     try:
-        for e in store.get_edges_by_target(target_file):  # type: ignore[attr-defined]
-            if e.kind == "IMPORTS_FROM":
-                candidate_files.add(e.file_path)
+        for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
+            candidate_files.add(e.file_path)
     except Exception:
         pass
 
@@ -1015,10 +1014,9 @@ def _handle_callees_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "CALLS":
-            qns.append(e.target_qualified)
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+        qns.append(e.target_qualified)
+        edges_out.append(edge_to_dict(e))
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1035,10 +1033,9 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "IMPORTS_FROM":
-            results.append({"import_target": e.target_qualified})
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
+        results.append({"import_target": e.target_qualified})
+        edges_out.append(edge_to_dict(e))
 
 
 def _handle_importers_of(
@@ -1049,19 +1046,17 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(abs_target, as_of=as_of):
-        if e.kind == "IMPORTS_FROM":
-            results.append({"importer": e.source_qualified, "file": e.file_path})
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_target(abs_target, kind="IMPORTS_FROM", as_of=as_of):
+        results.append({"importer": e.source_qualified, "file": e.file_path})
+        edges_out.append(edge_to_dict(e))
 
 
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], *, as_of: str = ""
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "CONTAINS":
-            qns.append(e.target_qualified)
+    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
+        qns.append(e.target_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1080,9 +1075,8 @@ def _handle_tests_for(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn, as_of=as_of):
-        if e.kind == "TESTED_BY":
-            qns.append(e.source_qualified)
+    for e in store.get_edges_by_target(qn, kind="TESTED_BY", as_of=as_of):
+        qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1108,10 +1102,11 @@ def _handle_inheritors_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn, as_of=as_of):
-        if e.kind in ("INHERITS", "IMPLEMENTS"):
-            qns.append(e.source_qualified)
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_target(
+        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    ):
+        qns.append(e.source_qualified)
+        edges_out.append(edge_to_dict(e))
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
