@@ -18,6 +18,21 @@ from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _isolate_global_git_config() -> None:
+    """Strip global git config so test-created repos commit deterministically.
+
+    Without this, tests that ``git init`` a throwaway repo and run
+    ``git commit`` inherit the developer/CI ``commit.gpgsign``,
+    ``gpg.format``, and ``user.signingkey`` from ``~/.gitconfig``.
+    When the signing program is not actually wired up for the
+    sandboxed test environment (e.g. inside a CI runner image that
+    pre-configures SSH signing), the commit aborts with a confusing
+    "signing failed" error unrelated to the test logic.
+    """
+    os.environ.setdefault("GIT_CONFIG_GLOBAL", "/dev/null")
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _allow_temporal_migration_without_git() -> None:
     """Opt the test session into the no-git fallback path of migration 005.
 

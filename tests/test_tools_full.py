@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -1334,6 +1335,10 @@ class TestQueryGraphEdgeCases:
     @pytest.mark.skipif(
         sys.platform == "win32",
         reason="chmod 000 does not deny read access on Windows",
+    )
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="chmod 000 does not deny read access for root",
     )
     def test_review_context_source_read_error(self, repo_with_graph):
         """Source snippet handling for files that raise exceptions during read."""
