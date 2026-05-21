@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "mcp>=1.27.0,<2",
+    "mcp>=1.27.1,<2",
     "fastmcp>=3.2.4,<4",
     "tree-sitter>=0.25.2,<1",
     "tree-sitter-language-pack>=0.13.0,<1",
@@ -26,13 +26,13 @@ dependencies = [
     "watchdog>=4.0.2,<6",
     "qwen3-embed>=1.9.2",
     "cohere>=6.1.0",
-    "google-genai>=2.0.1",
-    "openai>=2.34.0",
+    "google-genai>=2.5.0",
+    "openai>=2.36.0",
     "httpx",
     "pydantic-settings",
     "n24q02m-mcp-core>=1.14.0,<2",
     "Pygments>=2.20.0",
-    "alembic>=1.14.0,<2",
+    "alembic>=1.18.4,<2",
 ]
 
 [project.scripts]
@@ -40,6 +40,9 @@ better-code-review-graph = "better_code_review_graph.cli:main"
 
 [project.optional-dependencies]
 security = [
+    # Cannot upgrade past 1.161 yet: semgrep >=1.162 pins mcp==1.23.3, which
+    # conflicts with our mcp>=1.27 requirement. Re-bump when semgrep relaxes
+    # its mcp pin.
     "semgrep>=1.0,<2",
 ]
 
