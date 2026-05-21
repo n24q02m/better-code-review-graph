@@ -945,31 +945,67 @@ class GraphStore:
         return [self._row_to_node(r) for r in rows]
 
     def get_edges_by_source(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
+        # Push optional kind filter down to SQLite so callers that previously
+        # post-filtered a fully materialized list now avoid the wasted rows.
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
         rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE source_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
+            f"SELECT * FROM edges WHERE source_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            (qualified_name, *kind_params, *frag_params),
         ).fetchall()
         return [self._row_to_edge(r) for r in rows]
 
     def get_edges_by_target(
-        self, qualified_name: str, *, as_of: str = ""
+        self,
+        qualified_name: str,
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
         rows = self._conn.execute(
-            f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-            (qualified_name, *frag_params),
+            f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            (qualified_name, *kind_params, *frag_params),
         ).fetchall()
+        # Fallback to bare name (last segment after ::) when the qualified name
+        # has no edges AT ALL. With a kind filter, "no rows of this kind" is not
+        # enough to trigger the fallback — that would wrongly pull in edges
+        # belonging to a different qualified target that happens to share the
+        # bare name.
         if not rows and "::" in qualified_name:
-            # Fallback: try matching bare name (last segment after ::)
+            if kind is not None:
+                exists = self._conn.execute(
+                    f"SELECT 1 FROM edges WHERE target_qualified = ?{frag} LIMIT 1",  # noqa: S608
+                    (qualified_name, *frag_params),
+                ).fetchone()
+                if exists is not None:
+                    return []
             bare_name = qualified_name.rsplit("::", 1)[-1]
             rows = self._conn.execute(
-                f"SELECT * FROM edges WHERE target_qualified = ?{frag}",  # noqa: S608
-                (bare_name, *frag_params),
+                f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+                (bare_name, *kind_params, *frag_params),
             ).fetchall()
         return [self._row_to_edge(r) for r in rows]
+
+    @staticmethod
+    def _kind_filter(
+        kind: str | tuple[str, ...] | None,
+    ) -> tuple[str, tuple[str, ...]]:
+        if kind is None:
+            return "", ()
+        if isinstance(kind, str):
+            return " AND kind = ?", (kind,)
+        if not kind:
+            return "", ()
+        placeholders = ",".join("?" for _ in kind)
+        return f" AND kind IN ({placeholders})", tuple(kind)
 
     def get_edges_by_targets(
         self, qualified_names: list[str], *, as_of: str = ""
