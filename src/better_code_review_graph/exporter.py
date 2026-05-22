@@ -16,8 +16,12 @@ return value; callers wanting file output write the string to disk.
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
+
+# Mitigate XXE (XML External Entity) and Billion Laughs vulnerabilities
+# by using defusedxml instead of standard xml.etree.ElementTree.
+# Fail securely if defusedxml is missing.
+import defusedxml.ElementTree as ET
 
 if TYPE_CHECKING:
     from .graph import GraphStore

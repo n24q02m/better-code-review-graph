@@ -27,8 +27,12 @@ caller leaves the edge as a within-repo bare reference.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+
+# Mitigate XXE (XML External Entity) and Billion Laughs vulnerabilities
+# by using defusedxml instead of standard xml.etree.ElementTree.
+# Fail securely if defusedxml is missing.
+import defusedxml.ElementTree as ET
 from pathlib import Path
 
 from ._types import TargetRepo  # re-exported for backwards compatibility
