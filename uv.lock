@@ -132,10 +132,10 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.4,<2" },
     { name = "cohere", specifier = ">=6.1.0" },
     { name = "fastmcp", specifier = ">=3.2.4,<4" },
-    { name = "google-genai", specifier = ">=2.5.0" },
+    { name = "google-genai", specifier = ">=2.6.0" },
     { name = "httpx" },
     { name = "mcp", specifier = ">=1.27.1,<2" },
-    { name = "n24q02m-mcp-core", specifier = ">=1.14.0,<2" },
+    { name = "n24q02m-mcp-core", directory = "../mcp-core/packages/core-py" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "openai", specifier = ">=2.36.0" },
     { name = "pydantic-settings" },
@@ -604,7 +604,7 @@ requests = [
 
 [[package]]
 name = "google-genai"
-version = "2.5.0"
+version = "2.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -618,9 +618,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/08/c7f3a6f49bb6674891ce6fb9e9eeeb7a7522cb51f3422afff5d5a59bf347/google_genai-2.5.0.tar.gz", hash = "sha256:643d8158a718eecb8d14d4155ed973f43034f8ae757ac922fb6b093dd374e2af", size = 552293, upload-time = "2026-05-20T18:59:00.473Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/ec/6e49f50f5c70588d97c6ed25e0b8c18828bf4d58895f397b53a7522168a1/google_genai-2.6.0.tar.gz", hash = "sha256:7d4f777234002f2e94be499dbdfb43b506a6aca9dbbec13e61d3dc6ce640ffa7", size = 554809, upload-time = "2026-05-22T01:34:33.581Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/a7/b90fcd62461d74e08ded24e8265af5d2e53c0fd2dcc309a14687fdf2077a/google_genai-2.5.0-py3-none-any.whl", hash = "sha256:bba50cdb3a14cb3dea7b3e43a8f23b50191fd77bd19097df98b051ce1a619352", size = 818214, upload-time = "2026-05-20T18:58:58.435Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/9e/e8ba4e58a9d5daf42343f3ea1cb0efb721eba36a1d6624e9873d039a5c1e/google_genai-2.6.0-py3-none-any.whl", hash = "sha256:272b6f6320f5d355735241ad441f972af095ec80dc10cb075cb430d96721648a", size = 821003, upload-time = "2026-05-22T01:34:31.55Z" },
 ]
 
 [[package]]
@@ -1052,7 +1052,7 @@ wheels = [
 [[package]]
 name = "n24q02m-mcp-core"
 version = "1.14.0"
-source = { registry = "https://pypi.org/simple" }
+source = { directory = "../mcp-core/packages/core-py" }
 dependencies = [
     { name = "authlib" },
     { name = "cryptography" },
@@ -1065,9 +1065,29 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/76/e247032467d5e4b224145485219155ddcd9f041b50a8473ef8be168bc069/n24q02m_mcp_core-1.14.0.tar.gz", hash = "sha256:cd5d1fa31a60fe4aa49f461618b4acf4987cb9bb8e06c096c1da6bac13848fd9", size = 192400, upload-time = "2026-05-06T12:56:33.198Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a1/77/aed34c84240b7dd2edb3a2e38e0dbdb0c83554c957c47389efe2edf7bdce/n24q02m_mcp_core-1.14.0-py3-none-any.whl", hash = "sha256:f35a7fd5fd9c23532d62f55cf7948ad754dca3f0805ec2101642b1d6e1ce1a7e", size = 123365, upload-time = "2026-05-06T12:56:32.026Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "authlib", specifier = ">=1.7.2" },
+    { name = "cryptography", specifier = ">=48.0.0" },
+    { name = "fastmcp", specifier = ">=3.2.4" },
+    { name = "filelock", specifier = ">=3.29.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "platformdirs", specifier = ">=4.9.6" },
+    { name = "pydantic", specifier = ">=2.12.5,<2.13" },
+    { name = "starlette", specifier = ">=1.0.0" },
+    { name = "tomli-w", specifier = ">=1.2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
+    { name = "pytest-cov", specifier = ">=7.1.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.15.12" },
+    { name = "ty", specifier = ">=0.0.34" },
 ]
 
 [[package]]
