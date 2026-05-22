@@ -941,9 +941,8 @@ def _scan_dynamic_dispatch_hints(
     # import the target's file -- those are the most likely sites for
     # asyncio.to_thread(<target>) / functools.partial(<target>).
     try:
-        for e in store.get_edges_by_target(target_file):  # type: ignore[attr-defined]
-            if e.kind == "IMPORTS_FROM":
-                candidate_files.add(e.file_path)
+        for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
+            candidate_files.add(e.file_path)
     except Exception:
         pass
 
@@ -1015,10 +1014,9 @@ def _handle_callees_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "CALLS":
-            qns.append(e.target_qualified)
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+        qns.append(e.target_qualified)
+        edges_out.append(edge_to_dict(e))
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1035,10 +1033,9 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "IMPORTS_FROM":
-            results.append({"import_target": e.target_qualified})
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
+        results.append({"import_target": e.target_qualified})
+        edges_out.append(edge_to_dict(e))
 
 
 def _handle_importers_of(
@@ -1049,19 +1046,17 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(abs_target, as_of=as_of):
-        if e.kind == "IMPORTS_FROM":
-            results.append({"importer": e.source_qualified, "file": e.file_path})
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_target(abs_target, kind="IMPORTS_FROM", as_of=as_of):
+        results.append({"importer": e.source_qualified, "file": e.file_path})
+        edges_out.append(edge_to_dict(e))
 
 
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], *, as_of: str = ""
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, as_of=as_of):
-        if e.kind == "CONTAINS":
-            qns.append(e.target_qualified)
+    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
+        qns.append(e.target_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1080,9 +1075,8 @@ def _handle_tests_for(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn, as_of=as_of):
-        if e.kind == "TESTED_BY":
-            qns.append(e.source_qualified)
+    for e in store.get_edges_by_target(qn, kind="TESTED_BY", as_of=as_of):
+        qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1108,10 +1102,11 @@ def _handle_inheritors_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn, as_of=as_of):
-        if e.kind in ("INHERITS", "IMPLEMENTS"):
-            qns.append(e.source_qualified)
-            edges_out.append(edge_to_dict(e))
+    for e in store.get_edges_by_target(
+        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    ):
+        qns.append(e.source_qualified)
+        edges_out.append(edge_to_dict(e))
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1280,8 +1275,7 @@ def query_graph(
         # nodes table. Edges are scoped indirectly: only edges whose
         # source AND target survive the node filter remain.
         if repo:
-            kept_qns: set[str] = set()
-            filtered_results = []
+            qns_to_check: list[str] = []
             for r in results:
                 qn = r.get("qualified_name")
                 if qn is None:
@@ -1289,14 +1283,28 @@ def query_graph(
                     # ``import_target`` keys instead of ``qualified_name``.
                     # Fall back to the most likely qualified field.
                     qn = r.get("importer") or r.get("import_target")
+                if qn is not None:
+                    qns_to_check.append(qn)
+            repo_map: dict[str, str] = {}
+            if qns_to_check:
+                rows = store._conn.execute(
+                    "SELECT n.qualified_name, n.repo_id FROM nodes n "
+                    "JOIN json_each(?) j ON n.qualified_name = j.value",
+                    (json.dumps(qns_to_check),),
+                ).fetchall()
+                repo_map = {row["qualified_name"]: row["repo_id"] for row in rows}
+
+            kept_qns: set[str] = set()
+            filtered_results = []
+            for r in results:
+                qn = r.get("qualified_name")
+                if qn is None:
+                    qn = r.get("importer") or r.get("import_target")
                 if qn is None:
                     filtered_results.append(r)
                     continue
-                row = store._conn.execute(
-                    "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-                    (qn,),
-                ).fetchone()
-                if row is not None and (row["repo_id"] or "") == repo:
+                r_repo = repo_map.get(qn)
+                if r_repo is not None and (r_repo or "") == repo:
                     kept_qns.add(qn)
                     filtered_results.append(r)
             results = filtered_results
@@ -2209,35 +2217,57 @@ def semantic_search_nodes(
                     raw = [r for r in raw if r.get("kind") == kind]
                 if repo:
                     # The vector store has no repo_id column; cross-check
-                    # each hit against the SQL row and drop misses.
+                    # each hit against the SQL row and drop misses. Batched
+                    # via json_each so it stays O(1) queries regardless of
+                    # how many hits the vector store returned.
+                    repo_qns = [
+                        r.get("qualified_name")
+                        for r in raw
+                        if r.get("qualified_name") is not None
+                    ]
+                    repo_map: dict[str, str] = {}
+                    if repo_qns:
+                        rows = store._conn.execute(
+                            "SELECT n.qualified_name, n.repo_id FROM nodes n "
+                            "JOIN json_each(?) j ON n.qualified_name = j.value",
+                            (json.dumps(repo_qns),),
+                        ).fetchall()
+                        repo_map = {
+                            row["qualified_name"]: row["repo_id"] for row in rows
+                        }
                     filtered = []
                     for r in raw:
                         qn = r.get("qualified_name")
                         if qn is None:
                             continue
-                        row = store._conn.execute(
-                            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-                            (qn,),
-                        ).fetchone()
-                        if row is not None and (row["repo_id"] or "") == repo:
+                        r_repo = repo_map.get(qn)
+                        if r_repo is not None and (r_repo or "") == repo:
                             filtered.append(r)
                     raw = filtered
                 # Default-path filter: vector hits should also exclude
                 # rows that have been closed-out at a later commit. The
                 # vector store does not know about ``valid_to_sha`` so
-                # we cross-check via the SQL row (cheap single-row
-                # lookup, mirrors the repo filter above).
+                # we cross-check via the SQL row — batched via json_each.
+                surv_qns = [
+                    r.get("qualified_name")
+                    for r in raw
+                    if r.get("qualified_name") is not None
+                ]
+                surviving_set: set[str] = set()
+                if surv_qns:
+                    rows = store._conn.execute(
+                        "SELECT n.qualified_name FROM nodes n "
+                        "JOIN json_each(?) j ON n.qualified_name = j.value "
+                        "WHERE n.valid_to_sha IS NULL",
+                        (json.dumps(surv_qns),),
+                    ).fetchall()
+                    surviving_set = {row["qualified_name"] for row in rows}
                 surviving: list[dict] = []
                 for r in raw:
                     qn = r.get("qualified_name")
                     if qn is None:
                         continue
-                    row = store._conn.execute(
-                        "SELECT 1 FROM nodes WHERE qualified_name = ? "
-                        "AND valid_to_sha IS NULL",
-                        (qn,),
-                    ).fetchone()
-                    if row is not None:
+                    if qn in surviving_set:
                         surviving.append(r)
                 raw = surviving
                 raw = raw[:limit]
@@ -2725,12 +2755,15 @@ def security_scan(
                 tags_by_node.setdefault("(repo-wide)", []).append(tag)
         else:
             scanner = HeuristicScanner()
-            rows = store._conn.execute(
+            # Iterate the cursor directly instead of materializing every
+            # node's source_text in memory — large monorepos blow up RSS
+            # otherwise.
+            cursor = store._conn.execute(
                 "SELECT qualified_name, language, line_start, source_text "
                 "FROM nodes WHERE source_text IS NOT NULL "
                 "AND kind IN ('Function','Class','Method')"
-            ).fetchall()
-            for row in rows:
+            )
+            for row in cursor:
                 view = _NodeView(
                     qualified_name=row["qualified_name"],
                     language=row["language"] or "",
@@ -2977,12 +3010,15 @@ def _persist_security_tags(
     Each entry is a compact ``"<rule_id>:<severity>"`` string -- callers
     that need the full tag detail re-run ``security_report``.
     """
+    updates: list[tuple[str, str]] = []
     for node_id, tags in tags_by_node.items():
         if node_id == "(repo-wide)":
             continue
         serialized = json.dumps([f"{t.rule_id}:{t.severity}" for t in tags])
-        store._conn.execute(
+        updates.append((serialized, node_id))
+    if updates:
+        store._conn.executemany(
             "UPDATE nodes SET security_tags = ? WHERE qualified_name = ?",
-            (serialized, node_id),
+            updates,
         )
-    store._conn.commit()
+        store._conn.commit()
