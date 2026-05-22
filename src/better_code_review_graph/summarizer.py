@@ -275,7 +275,7 @@ def batch_summarize(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
         "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
         (max_nodes,),
-    ).fetchall()
+    )
 
     generated = 0
     cached = 0

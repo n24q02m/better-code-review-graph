@@ -314,7 +314,7 @@ class GraphStore:
             row[0]
             for row in self._conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            )
         }
         if "nodes" in existing:
             needs_stamp = "alembic_version" not in existing
@@ -490,16 +490,12 @@ class GraphStore:
           the index plus the column-presence check make this safe to
           call unconditionally on every connect.
         """
-        node_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
-        }
+        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         if "repo_id" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
             )
-        edge_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(edges)").fetchall()
-        }
+        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
         if "repo_id" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
@@ -551,9 +547,7 @@ class GraphStore:
         downstream temporal queries treat the two paths identically.
         """
         sentinel_sha = "0" * 40
-        node_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
-        }
+        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         if "valid_from_sha" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -561,9 +555,7 @@ class GraphStore:
             )
         if "valid_to_sha" not in node_cols:
             self._conn.execute("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT")
-        edge_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(edges)").fetchall()
-        }
+        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
         if "valid_from_sha" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -591,9 +583,7 @@ class GraphStore:
         without requiring a fresh build. Idempotent — safe to call on every
         connect.
         """
-        existing = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
-        }
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         for column in _SUMMARY_COLUMNS:
             if column not in existing:
                 # Static column names from the module-level allowlist; safe
@@ -899,7 +889,7 @@ class GraphStore:
         rows = self._conn.execute(
             f"SELECT * FROM nodes WHERE file_path = ?{frag}",  # noqa: S608
             (file_path, *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_node(r) for r in rows]
 
     def get_nodes_by_files(
@@ -921,7 +911,7 @@ class GraphStore:
             "SELECT * FROM nodes WHERE file_path IN "  # noqa: S608
             f"(SELECT value FROM json_each(?)){frag}",
             (json.dumps(unique_files), *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_node(r) for r in rows]
 
     def get_nodes_by_qualified_names(
@@ -941,7 +931,7 @@ class GraphStore:
             "SELECT * FROM nodes WHERE qualified_name IN "  # noqa: S608
             f"(SELECT value FROM json_each(?)){frag}",
             (json.dumps(unique_qns), *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_node(r) for r in rows]
 
     def get_edges_by_source(
@@ -958,7 +948,7 @@ class GraphStore:
         rows = self._conn.execute(
             f"SELECT * FROM edges WHERE source_qualified = ?{kind_frag}{frag}",  # noqa: S608
             (qualified_name, *kind_params, *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_edge(r) for r in rows]
 
     def get_edges_by_target(
@@ -973,7 +963,7 @@ class GraphStore:
         rows = self._conn.execute(
             f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
             (qualified_name, *kind_params, *frag_params),
-        ).fetchall()
+        )
         # Fallback to bare name (last segment after ::) when the qualified name
         # has no edges AT ALL. With a kind filter, "no rows of this kind" is not
         # enough to trigger the fallback — that would wrongly pull in edges
@@ -991,7 +981,7 @@ class GraphStore:
             rows = self._conn.execute(
                 f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
                 (bare_name, *kind_params, *frag_params),
-            ).fetchall()
+            )
         return [self._row_to_edge(r) for r in rows]
 
     @staticmethod
@@ -1020,7 +1010,7 @@ class GraphStore:
             "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
             f"(SELECT value FROM json_each(?)){frag}",
             (json.dumps(unique_qns), *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_edge(r) for r in rows]
 
     def search_edges_by_target_name(
@@ -1053,13 +1043,13 @@ class GraphStore:
             "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
             f"(SELECT value FROM json_each(?)) AND kind = ?{frag}",
             (json.dumps(unique_names), kind, *frag_params),
-        ).fetchall()
+        )
         return [self._row_to_edge(r) for r in rows]
 
     def get_all_files(self) -> list[str]:
         rows = self._conn.execute(
             "SELECT DISTINCT file_path FROM nodes WHERE kind = 'File'"
-        ).fetchall()
+        )
         return [r["file_path"] for r in rows]
 
     def search_nodes(
@@ -1116,7 +1106,7 @@ class GraphStore:
                 *frag_params,
                 limit,
             ],
-        ).fetchall()
+        )
         return [self._row_to_node(r) for r in rows]
 
     # --- Impact / Graph traversal ---
@@ -1170,7 +1160,7 @@ class GraphStore:
             rows = self._conn.execute(
                 "SELECT qualified_name FROM nodes WHERE repo_id = ?",
                 (repo,),
-            ).fetchall()
+            )
             repo_qns = {r["qualified_name"] for r in rows}
 
         # BFS outward through all edge types
@@ -1354,7 +1344,7 @@ class GraphStore:
                 repo,
                 limit,
             ],
-        ).fetchall()
+        )
         return [self._row_to_node(r) for r in rows]
 
     # --- Public edge access (for visualization etc.) ---
@@ -1385,7 +1375,7 @@ class GraphStore:
                WHERE source_qualified IN (SELECT value FROM json_each(?))
                  AND target_qualified IN (SELECT value FROM json_each(?))""",
             (qns_json, qns_json),
-        ).fetchall()
+        )
         return [self._row_to_edge(r) for r in rows]
 
     # --- Internal helpers ---
