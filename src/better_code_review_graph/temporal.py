@@ -150,7 +150,7 @@ class TemporalIndex:
 
         # Read existing column list verbatim — we want to mirror whatever
         # alembic last left on the table (Phase 2/3 columns included).
-        cols_info = conn.execute("PRAGMA table_info(nodes)")
+        cols_info = conn.execute("PRAGMA table_info(nodes)").fetchall()
         col_names = [row[1] for row in cols_info]
 
         # Build the new-table DDL. ``id`` keeps its PK + AUTOINCREMENT;
@@ -438,7 +438,7 @@ class TemporalIndex:
             "SELECT id, qualified_name FROM nodes "
             "WHERE file_path = ? AND valid_to_sha IS NULL",
             (file_path,),
-        )
+        ).fetchall()
         closed = 0
         for row in rows:
             row_id = row[0]

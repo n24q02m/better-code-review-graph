@@ -93,7 +93,7 @@ class RepoRegistry:
         rows = self._store._conn.execute(
             "SELECT repo_id, path, remote_url, last_indexed_sha, "
             "first_indexed_at, last_indexed_at FROM repos"
-        )
+        ).fetchall()
         for row in rows:
             entry = RepoEntry(
                 repo_id=row["repo_id"],

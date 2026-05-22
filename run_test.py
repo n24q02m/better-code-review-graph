@@ -14,6 +14,10 @@ sys.modules['fastmcp'] = MockMcpCore()
 sys.modules['mcp'] = MockMcpCore()
 sys.modules['mcp.types'] = MockMcpCore()
 sys.modules['mcp.server'] = MockMcpCore()
+sys.modules['mcp.client'] = MockMcpCore()
+sys.modules['mcp.client.session'] = MockMcpCore()
+sys.modules['mcp.client.streamable_http'] = MockMcpCore()
+sys.modules['mcp.client.stdio'] = MockMcpCore()
 
 import pytest
-sys.exit(pytest.main(["-v", "tests/test_graph_batch_fetch.py"]))
+sys.exit(pytest.main(["-v", "tests/"]))

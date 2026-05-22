@@ -627,7 +627,7 @@ class EmbeddingStore:
             "SELECT qualified_name, text_hash, provider FROM embeddings "
             "WHERE qualified_name IN (SELECT value FROM json_each(?))",
             (json.dumps(qns),),
-        )
+        ).fetchall()
         for r in rows:
             existing_map[r["qualified_name"]] = r
 

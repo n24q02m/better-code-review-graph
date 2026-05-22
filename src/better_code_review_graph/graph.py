@@ -314,7 +314,7 @@ class GraphStore:
             row[0]
             for row in self._conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            ).fetchall()
         }
         if "nodes" in existing:
             needs_stamp = "alembic_version" not in existing
@@ -490,12 +490,16 @@ class GraphStore:
           the index plus the column-presence check make this safe to
           call unconditionally on every connect.
         """
-        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
+        node_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
         if "repo_id" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
             )
-        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
+        edge_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(edges)").fetchall()
+        }
         if "repo_id" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
@@ -547,7 +551,9 @@ class GraphStore:
         downstream temporal queries treat the two paths identically.
         """
         sentinel_sha = "0" * 40
-        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
+        node_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
         if "valid_from_sha" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -555,7 +561,9 @@ class GraphStore:
             )
         if "valid_to_sha" not in node_cols:
             self._conn.execute("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT")
-        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
+        edge_cols = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(edges)").fetchall()
+        }
         if "valid_from_sha" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -583,7 +591,9 @@ class GraphStore:
         without requiring a fresh build. Idempotent — safe to call on every
         connect.
         """
-        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
+        existing = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)").fetchall()
+        }
         for column in _SUMMARY_COLUMNS:
             if column not in existing:
                 # Static column names from the module-level allowlist; safe
@@ -963,7 +973,7 @@ class GraphStore:
         rows = self._conn.execute(
             f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
             (qualified_name, *kind_params, *frag_params),
-        )
+        ).fetchall()
         # Fallback to bare name (last segment after ::) when the qualified name
         # has no edges AT ALL. With a kind filter, "no rows of this kind" is not
         # enough to trigger the fallback — that would wrongly pull in edges
@@ -1049,7 +1059,7 @@ class GraphStore:
     def get_all_files(self) -> list[str]:
         rows = self._conn.execute(
             "SELECT DISTINCT file_path FROM nodes WHERE kind = 'File'"
-        )
+        ).fetchall()
         return [r["file_path"] for r in rows]
 
     def search_nodes(
@@ -1160,7 +1170,7 @@ class GraphStore:
             rows = self._conn.execute(
                 "SELECT qualified_name FROM nodes WHERE repo_id = ?",
                 (repo,),
-            )
+            ).fetchall()
             repo_qns = {r["qualified_name"] for r in rows}
 
         # BFS outward through all edge types
