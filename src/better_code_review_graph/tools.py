@@ -1866,14 +1866,32 @@ def _get_source_snippets(
     """Generate source snippets for changed files."""
     snippets = {}
     root_resolved = root.resolve()
-    for rel_path in changed_files:
+
+    # Deduplicate changed_files while preserving order
+    unique_files = list(dict.fromkeys(changed_files))
+    parent_cache: dict[Path, Path | None] = {}
+
+    for rel_path in unique_files:
         full_path_raw = root / rel_path
         try:
-            full_path = full_path_raw.resolve()
+            parent_raw = full_path_raw.parent
+            if parent_raw not in parent_cache:
+                try:
+                    parent_cache[parent_raw] = parent_raw.resolve(strict=True)
+                except OSError:
+                    parent_cache[parent_raw] = None
+
+            parent_resolved = parent_cache[parent_raw]
+            if parent_resolved:
+                full_path = parent_resolved / full_path_raw.name
+            else:
+                full_path = full_path_raw.resolve()
+
             if not full_path.is_relative_to(root_resolved):
                 continue
             if full_path_raw.is_symlink() or full_path.is_symlink():
                 continue
+
             if full_path.is_file():
                 try:
                     lines = full_path.read_text(errors="replace").splitlines()
