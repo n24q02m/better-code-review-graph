@@ -25,7 +25,7 @@ dependencies = [
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
     "qwen3-embed>=1.9.2",
-    "cohere>=6.1.0",
+    "cohere>=7.0.0",
     "google-genai>=2.6.0",
     "openai>=2.36.0",
     "httpx",
