@@ -1943,7 +1943,9 @@ def _compute_untested_functions(
     tested_qns = set()
     for e in impact["edges"]:
         if e.kind == "TESTED_BY":
-            tested_qns.add(e.source_qualified)
+            # Bolt: TESTED_BY edges point from the test to the function.
+            # We only need the target to verify the function is tested.
+            # Reduces set operations and memory usage.
             tested_qns.add(e.target_qualified)
 
     out: list[dict[str, Any]] = []
@@ -2098,7 +2100,10 @@ def _generate_review_guidance(
     inheritance_edges_count = 0
     for e in impact["edges"]:
         if e.kind == "TESTED_BY":
-            tested_funcs.add(e.source_qualified)
+            # Bolt: TESTED_BY edges point from the test to the function.
+            # Collecting target_qualified instead of source_qualified properly
+            # builds the set of tested functions rather than a set of tests.
+            tested_funcs.add(e.target_qualified)
         elif e.kind in ("INHERITS", "IMPLEMENTS"):
             inheritance_edges_count += 1
 
