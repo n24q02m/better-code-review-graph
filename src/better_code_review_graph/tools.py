@@ -685,10 +685,10 @@ _LAST_CALLERS_RESULT: dict[str, dict[str, Any]] = {}
 def _list_kinds_in_graph(store: Any) -> list[str]:
     """Return distinct node kinds present in the graph (for D15 hints)."""
     try:
-        rows = store._conn.execute(
+        cursor = store._conn.execute(
             "SELECT DISTINCT kind FROM nodes ORDER BY kind"
-        ).fetchall()
-        return [r["kind"] for r in rows]
+        )
+        return [r["kind"] for r in cursor]
     except Exception:
         return []
 
@@ -1287,12 +1287,12 @@ def query_graph(
                     qns_to_check.append(qn)
             repo_map: dict[str, str] = {}
             if qns_to_check:
-                rows = store._conn.execute(
+                cursor = store._conn.execute(
                     "SELECT n.qualified_name, n.repo_id FROM nodes n "
                     "JOIN json_each(?) j ON n.qualified_name = j.value",
                     (json.dumps(qns_to_check),),
-                ).fetchall()
-                repo_map = {row["qualified_name"]: row["repo_id"] for row in rows}
+                )
+                repo_map = {row["qualified_name"]: row["repo_id"] for row in cursor}
 
             kept_qns: set[str] = set()
             filtered_results = []
@@ -1427,25 +1427,29 @@ def diff_graph(
         # static — Bandit B608 is happy because both branches expand
         # to a fixed string literal at f-string interpolation time.
         if repo:
-            added_rows = store._conn.execute(
+            added_cursor = store._conn.execute(
                 "SELECT id, qualified_name, kind FROM nodes "
                 "WHERE valid_from_sha = ? AND repo_id = ?",
                 (to_sha, repo),
-            ).fetchall()
-            removed_rows = store._conn.execute(
+            )
+            added_rows = list(added_cursor)
+            removed_cursor = store._conn.execute(
                 "SELECT id, qualified_name, kind FROM nodes "
                 "WHERE valid_to_sha = ? AND repo_id = ?",
                 (to_sha, repo),
-            ).fetchall()
+            )
+            removed_rows = list(removed_cursor)
         else:
-            added_rows = store._conn.execute(
+            added_cursor = store._conn.execute(
                 "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
                 (to_sha,),
-            ).fetchall()
-            removed_rows = store._conn.execute(
+            )
+            added_rows = list(added_cursor)
+            removed_cursor = store._conn.execute(
                 "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
                 (to_sha,),
-            ).fetchall()
+            )
+            removed_rows = list(removed_cursor)
 
         closed_qns = {row["qualified_name"] for row in removed_rows}
         new_qns = {row["qualified_name"] for row in added_rows}
@@ -1550,7 +1554,7 @@ def _collect_line_shifts(
     store, _ = _get_store(repo_root)
     try:
         if repo:
-            rows = store._conn.execute(
+            cursor = store._conn.execute(
                 "SELECT old.qualified_name, old.line_start AS before_line, "
                 "new.line_start AS after_line "
                 "FROM nodes old "
@@ -1561,9 +1565,9 @@ def _collect_line_shifts(
                 "  AND old.repo_id = ? "
                 "  AND new.repo_id = ?",
                 (to_sha, to_sha, repo, repo),
-            ).fetchall()
+            )
         else:
-            rows = store._conn.execute(
+            cursor = store._conn.execute(
                 "SELECT old.qualified_name, old.line_start AS before_line, "
                 "new.line_start AS after_line "
                 "FROM nodes old "
@@ -1572,14 +1576,14 @@ def _collect_line_shifts(
                 "  AND new.valid_from_sha = ? "
                 "  AND old.line_start != new.line_start",
                 (to_sha, to_sha),
-            ).fetchall()
+            )
         return [
             {
                 "qualified_name": row[0],
                 "before_line": row[1],
                 "after_line": row[2],
             }
-            for row in rows
+            for row in cursor
         ]
     finally:
         store.close()
@@ -2245,13 +2249,13 @@ def semantic_search_nodes(
                     ]
                     repo_map: dict[str, str] = {}
                     if repo_qns:
-                        rows = store._conn.execute(
+                        cursor = store._conn.execute(
                             "SELECT n.qualified_name, n.repo_id FROM nodes n "
                             "JOIN json_each(?) j ON n.qualified_name = j.value",
                             (json.dumps(repo_qns),),
-                        ).fetchall()
+                        )
                         repo_map = {
-                            row["qualified_name"]: row["repo_id"] for row in rows
+                            row["qualified_name"]: row["repo_id"] for row in cursor
                         }
                     filtered = []
                     for r in raw:
@@ -2273,13 +2277,13 @@ def semantic_search_nodes(
                 ]
                 surviving_set: set[str] = set()
                 if surv_qns:
-                    rows = store._conn.execute(
+                    cursor = store._conn.execute(
                         "SELECT n.qualified_name FROM nodes n "
                         "JOIN json_each(?) j ON n.qualified_name = j.value "
                         "WHERE n.valid_to_sha IS NULL",
                         (json.dumps(surv_qns),),
-                    ).fetchall()
-                    surviving_set = {row["qualified_name"] for row in rows}
+                    )
+                    surviving_set = {row["qualified_name"] for row in cursor}
                 surviving: list[dict] = []
                 for r in raw:
                     qn = r.get("qualified_name")
