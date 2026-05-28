@@ -83,10 +83,10 @@ def _hash_source(source_text: str | None) -> str:
     return hashlib.sha256(source_text.encode("utf-8")).hexdigest()
 
 
-
 def _quote_identifier(name: str) -> str:
     """Quote a SQL identifier (column or table name) for SQLite."""
-    return "\"" + name.replace("\"", "\"\"") + "\""
+    return '"' + name.replace('"', '""') + '"'
+
 
 class TemporalIndex:
     """Temporal-aware upsert layer over :class:`GraphStore`.
