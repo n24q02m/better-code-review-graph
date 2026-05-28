@@ -546,30 +546,9 @@ async def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
-            from mcp_core.storage.per_plugin_store import PerPluginStore
-
             from . import credential_state as _cs
 
-            # Derive providers_configured from live PerPluginStore load + env
-            # so status is accurate even if module-level _state is stale.
-            _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
-            _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
-            _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
-            _providers = list(dict.fromkeys(_env_keys + _store_keys))
-            if _providers:
-                _derived_state = "configured"
-            elif _cs.get_state() == _cs.CredentialState.LOCAL:
-                _derived_state = "local"
-            else:
-                _derived_state = "awaiting_setup"
-            return _json(
-                {
-                    "state": _derived_state,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": _env_keys,
-                    "providers_configured": _providers,
-                }
-            )
+            return _json(_cs.get_credential_details())
         case "setup_start":
             from .credential_state import CredentialState, get_state
 

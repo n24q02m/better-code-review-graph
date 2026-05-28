@@ -1,22 +1,3 @@
-"""Non-blocking credential state management for better-code-review-graph.
-
-State machine: awaiting_setup -> (configured | local)
-Reset: configured/local -> awaiting_setup (via setup tool).
-
-CRG has a local fallback (qwen3-embed ONNX) so all tools work without
-cloud credentials. Cloud keys are optional enhancements.
-
-After the stdio-pure + http-multi-user split (spec
-2026-05-01-stdio-pure-http-multiuser.md), the daemon-bridge auto-spawn
-flow has been removed. In stdio mode the server reads cloud API keys
-from env vars only; in HTTP mode the relay form lives on the HTTP
-server itself at ``<PUBLIC_URL>/authorize``.
-
-Migrated from mcp_core.storage.config_file (shared config.enc) to
-mcp_core.storage.per_plugin_store (per-plugin encrypted store) for
-trust model alignment per spec 2026-04-30-trust-model-alignment.md.
-"""
-
 from __future__ import annotations
 
 import contextvars
@@ -66,8 +47,12 @@ _current_sub: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 
 
 def get_state() -> CredentialState:
-    """Return current credential state."""
-    return _state
+    """Return current credential state.
+
+    Dynamically derived by calling resolve_credential_state(quiet=True)
+    to ensure the returned state is never stale.
+    """
+    return resolve_credential_state(quiet=True)
 
 
 def get_setup_url() -> str | None:
@@ -93,7 +78,7 @@ def _is_http_mode() -> bool:
     )
 
 
-def resolve_credential_state() -> CredentialState:
+def resolve_credential_state(quiet: bool = False) -> CredentialState:
     """Fast, synchronous credential check. Called during lifespan startup.
 
     Stdio mode (default per spec 2026-05-01-stdio-pure-http-multiuser §4.1 + OQ3):
@@ -118,7 +103,8 @@ def resolve_credential_state() -> CredentialState:
     global _state
 
     if any(os.environ.get(k) for k in CLOUD_KEYS):
-        logger.info("Cloud API keys found in environment")
+        if not quiet:
+            logger.info("Cloud API keys found in environment")
         _state = CredentialState.CONFIGURED
         return _state
 
@@ -129,7 +115,8 @@ def resolve_credential_state() -> CredentialState:
                 for key, value in saved.items():
                     if value and key not in os.environ:
                         os.environ[key] = value
-                logger.info("Config loaded from encrypted per-plugin store")
+                if not quiet:
+                    logger.info("Config loaded from encrypted per-plugin store")
                 _state = CredentialState.CONFIGURED
                 return _state
         except Exception:
@@ -140,15 +127,44 @@ def resolve_credential_state() -> CredentialState:
 
             mode = get_mode(SERVER_NAME)
             if mode == "local":
-                logger.info("Local mode marker found, skipping relay")
+                if not quiet:
+                    logger.info("Local mode marker found, skipping relay")
                 _state = CredentialState.LOCAL
                 return _state
         except Exception:
             pass
 
-    logger.info("No credentials found -- server starting in awaiting_setup mode")
+    if not quiet:
+        logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
     return _state
+
+
+def get_credential_details() -> dict:
+    """Return consolidated credential status details.
+
+    Used by the setup_status action to ensure reported state is always
+    accurate and derived from live data.
+    """
+    saved = PerPluginStore(PLUGIN_NAME).load() or {}
+    env_keys = [k for k in CLOUD_KEYS if os.environ.get(k)]
+    store_keys = [k for k in CLOUD_KEYS if saved.get(k)]
+    providers = list(dict.fromkeys(env_keys + store_keys))
+
+    # Determine state dynamically
+    if providers:
+        state = "configured"
+    elif get_state() == CredentialState.LOCAL:
+        state = "local"
+    else:
+        state = "awaiting_setup"
+
+    return {
+        "state": state,
+        "setup_url": get_setup_url(),
+        "cloud_keys_in_env": env_keys,
+        "providers_configured": providers,
+    }
 
 
 def _sub_data_dir(sub: str) -> Path:

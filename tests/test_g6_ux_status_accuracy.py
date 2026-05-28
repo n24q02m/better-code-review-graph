@@ -52,7 +52,11 @@ class TestSetupStatusLiveDerivedState:
     def test_returns_needs_setup_when_store_empty(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """setup_status returns awaiting_setup when store empty and no env vars."""
+        """setup_status returns awaiting_setup when store empty and no env vars.
+
+        Even if the internal _state was previously set to CONFIGURED, the dynamic
+        derivation ensures we report accurate data.
+        """
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -60,7 +64,7 @@ class TestSetupStatusLiveDerivedState:
         monkeypatch.delenv("COHERE_API_KEY", raising=False)
         monkeypatch.delenv("CO_API_KEY", raising=False)
 
-        # Force module-level state to CONFIGURED (stale) to reproduce the bug
+        # Ensure module-level state is CONFIGURED (previously stale)
         import better_code_review_graph.credential_state as cs
 
         cs.set_state(cs.CredentialState.CONFIGURED)
@@ -71,7 +75,8 @@ class TestSetupStatusLiveDerivedState:
         ):
             result = _call_config_setup_status_sync()
 
-        # State must be derived from live creds, NOT stale _state
+        # State must be derived from live creds, NOT stale _state.
+        # Now that we've refactored to use dynamic derivation, this is robust.
         assert result["state"] != "configured"
         assert result["providers_configured"] == []
 
