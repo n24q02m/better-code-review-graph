@@ -10,6 +10,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 [![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
 [![Docker](https://img.shields.io/docker/v/n24q02m/better-code-review-graph?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/better-code-review-graph)
 [![License: MIT](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
+[![SafeSkill 92/100](https://img.shields.io/badge/SafeSkill-92%2F100_Verified%20Safe-brightgreen)](https://safeskill.dev/scan/n24q02m-better-code-review-graph)
 
 <!-- Badge Row 2: Tech -->
 [![Python](https://img.shields.io/badge/Python_3.13-3776AB?logo=python&logoColor=white)](#)
