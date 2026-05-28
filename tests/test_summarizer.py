@@ -765,3 +765,49 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
         mock_sum.assert_not_called()
     finally:
         store.close()
+
+
+def test_batch_summarize_error_logging(tmp_path, monkeypatch, caplog):
+    """Verify that summarize_node failures are logged as warnings with node ID."""
+    import logging
+
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        nid = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="fail_func",
+                file_path="fail.py",
+                line_start=10,
+                line_end=12,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store._conn.execute(
+            "UPDATE nodes SET source_text=? WHERE id=?",
+            ("def fail_func(): pass", nid),
+        )
+        store._conn.commit()
+
+        with caplog.at_level(logging.WARNING):
+            with patch(
+                "better_code_review_graph.summarizer.summarize_node",
+                side_effect=RuntimeError("simulated failure"),
+            ):
+                result = batch_summarize(store, max_nodes=1)
+
+        assert result.errors == 1
+        assert "summarize_node failed for id=" in caplog.text
+        assert str(nid) in caplog.text
+        assert "simulated failure" in caplog.text
+    finally:
+        store.close()
