@@ -155,7 +155,7 @@ def get_credential_details() -> dict:
     # Determine state dynamically
     if providers:
         state = "configured"
-    elif _state == CredentialState.LOCAL:
+    elif get_state() == CredentialState.LOCAL:
         state = "local"
     else:
         state = "awaiting_setup"
