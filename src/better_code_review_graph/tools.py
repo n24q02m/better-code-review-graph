@@ -1081,10 +1081,9 @@ def _handle_tests_for(
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
-    # Also search by naming convention
+    # Also search by naming convention (Bolt: combined into single query to reduce DB trips)
     name = node.name if node else target
-    test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
-    test_nodes += store.search_nodes(f"Test{name}", limit=10, as_of=as_of)
+    test_nodes = store.search_nodes(f"test {name}", limit=20, as_of=as_of)
     seen = {r.get("qualified_name") for r in results}
     for t in test_nodes:
         if t.qualified_name not in seen and t.is_test:
