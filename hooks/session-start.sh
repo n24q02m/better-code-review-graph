@@ -9,10 +9,10 @@ if [ -f "$DB_PATH" ]; then
 [better-code-review-graph] Knowledge graph is available.
 
 When answering questions about this codebase, prefer using the better-code-review-graph MCP tools before scanning files manually:
-- Use semantic_search_nodes_tool to find classes, functions, or types by name or keyword.
-- Use query_graph_tool with patterns like callers_of, callees_of, imports_of, importers_of, children_of, tests_for, inheritors_of, or file_summary to explore relationships.
-- Use get_impact_radius_tool to understand the blast radius of changes.
-- Use get_review_context_tool for token-efficient review context.
+- Use the query tool with action="search" (search_query=...) to find classes, functions, or types by name or keyword (semantic search).
+- Use the query tool with action="query" and a pattern like callers_of, callees_of, imports_of, importers_of, children_of, tests_for, inheritors_of, or file_summary (with target=...) to explore relationships.
+- Use the query tool with action="impact" (changed_files=... or base=...) to understand the blast radius of changes.
+- Use the review tool with action="context" for token-efficient review context.
 - Fall back to Grep/Glob/Read only when the graph does not cover what you need.
 
 This saves significant tokens by avoiding full codebase scans.
