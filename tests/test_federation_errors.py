@@ -1,39 +1,48 @@
-import sys
-from unittest.mock import MagicMock
-
-# Mocking dependencies BEFORE ANY OTHER IMPORT to ensure tests can run in restricted environments
-mock_networkx = MagicMock()
-sys.modules["networkx"] = mock_networkx
-mock_tree_sitter = MagicMock()
-sys.modules["tree_sitter"] = mock_tree_sitter
-mock_tslp = MagicMock()
-sys.modules["tree_sitter_language_pack"] = mock_tslp
-mock_mcp = MagicMock()
-sys.modules["mcp"] = mock_mcp
-mock_fastmcp = MagicMock()
-sys.modules["fastmcp"] = mock_fastmcp
-mock_mcp_core = MagicMock()
-sys.modules["mcp_core"] = mock_mcp_core
-sys.modules["mcp_core.relay"] = MagicMock()
-sys.modules["mcp_core.relay.tool_helpers"] = MagicMock()
-sys.modules["mcp_core.storage"] = MagicMock()
-sys.modules["mcp_core.storage.per_plugin_store"] = MagicMock()
-
-# ALEMBIC MOCKING
-mock_alembic = MagicMock()
-sys.modules["alembic"] = mock_alembic
-sys.modules["alembic.config"] = MagicMock()
-sys.modules["alembic.command"] = MagicMock()
-sys.modules["alembic.script"] = MagicMock()
-sys.modules["alembic.runtime"] = MagicMock()
-sys.modules["alembic.runtime.migration"] = MagicMock()
-
 import subprocess
+import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+# Surgical mocking only during import to avoid poisoning CI environment or failing discovery
+modules_to_mock = [
+    "networkx",
+    "tree_sitter",
+    "tree_sitter_language_pack",
+    "watchdog",
+    "watchdog.observers",
+    "watchdog.events",
+    "mcp",
+    "mcp.types",
+    "mcp.server",
+    "mcp.server.fastmcp",
+    "fastmcp",
+    "qwen3_embed",
+    "cohere",
+    "google.genai",
+    "openai",
+    "httpx",
+    "pydantic_settings",
+    "alembic",
+    "alembic.config",
+    "alembic.command",
+    "alembic.script",
+    "alembic.runtime",
+    "alembic.runtime.migration",
+]
+
+
+class MockModule(MagicMock):
+    def __getattr__(self, name):
+        return MagicMock()
+
+
+# Pre-emptively mock for the entire module session
+for mod in modules_to_mock:
+    if mod not in sys.modules:
+        sys.modules[mod] = MockModule()
 
 # Now import the modules
-from better_code_review_graph.federation import backfill_commits_for_repo
+from better_code_review_graph.federation import backfill_commits_for_repo  # noqa: E402
 
 
 def test_backfill_commits_os_error(caplog):
