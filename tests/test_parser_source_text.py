@@ -24,7 +24,7 @@ def test_parser_populates_source_text_for_functions(tmp_path):
     nodes, _edges = parser.parse_file(py_file)
 
     fns = [n for n in nodes if n.kind == "Function"]
-    names = {n.name: n.source_text for n in fns}
+    names = {n.name: n.source_text or "" for n in fns}
     assert "alpha" in names
     assert "beta" in names
     assert "def alpha():" in names["alpha"]

@@ -63,7 +63,7 @@ def test_node_needing_summary_is_frozen():
     """NodeNeedingSummary must be immutable for safe use as cache key input."""
     node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
     with pytest.raises(dataclasses.FrozenInstanceError):
-        node.node_id = "z"  # type: ignore[misc]
+        node.node_id = "z"  # ty: ignore[invalid-assignment]
 
 
 def test_cache_key_combines_source_hash_and_provider():

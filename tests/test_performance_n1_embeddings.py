@@ -1,6 +1,7 @@
 import time
+from typing import cast
 
-from better_code_review_graph.embeddings import EmbeddingStore
+from better_code_review_graph.embeddings import EmbeddingBackend, EmbeddingStore
 from tests.test_embeddings import _make_node
 
 
@@ -13,7 +14,7 @@ class MockBackend:
 
 def test_embed_nodes_n1_performance(tmp_path):
     db_path = tmp_path / "test.db"
-    backend = MockBackend()
+    backend = cast("EmbeddingBackend", MockBackend())
     store = EmbeddingStore(db_path, backend)
 
     nodes = []

@@ -180,7 +180,7 @@ def test_upsert_node_legacy_object_without_repo_id_attr() -> None:
             extra: dict = {}
             source_text = None
 
-        store.upsert_node(LegacyNode())  # type: ignore[arg-type]
+        store.upsert_node(LegacyNode())  # ty: ignore[invalid-argument-type]
         store.commit()
 
         row = store._conn.execute(

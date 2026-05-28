@@ -134,7 +134,7 @@ def export_jsonld(store: GraphStore) -> str:
     """Emit JSON-LD with @context + nodes + edges arrays."""
     nodes = []
     for node in store.get_all_nodes():
-        n = {
+        n: dict[str, object] = {
             "@id": node.qualified_name,
             "@type": node.kind,
             "name": node.name,
@@ -148,7 +148,7 @@ def export_jsonld(store: GraphStore) -> str:
         nodes.append(n)
     edges = []
     for edge in store.get_all_edges():
-        e = {
+        e: dict[str, object] = {
             "source": edge.source_qualified,
             "target": edge.target_qualified,
             "kind": edge.kind,
@@ -184,7 +184,7 @@ def export_cypher(store: GraphStore) -> str:
     for node in store.get_all_nodes():
         kind_label = node.kind or "Node"
         var = _cypher_var(node.qualified_name)
-        props = {
+        props: dict[str, object] = {
             "id": node.qualified_name,
             "name": node.name,
             "file_path": node.file_path,
