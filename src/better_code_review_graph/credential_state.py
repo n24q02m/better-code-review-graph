@@ -8,7 +8,6 @@ from enum import Enum
 from pathlib import Path
 
 from loguru import logger
-
 from mcp_core.storage.per_plugin_store import PerPluginStore
 
 SERVER_NAME = "better-code-review-graph"
