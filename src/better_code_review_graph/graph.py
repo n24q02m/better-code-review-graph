@@ -310,14 +310,14 @@ class GraphStore:
         #      alembic was wired up).
         # In both cases we stamp at ``002`` so the baseline ``CREATE
         # TABLE`` is skipped on the subsequent ``upgrade("head")``.
-        existing = {
-            row[0]
-            for row in self._conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        if "nodes" in existing:
-            needs_stamp = "alembic_version" not in existing
+        has_nodes = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='nodes'"
+        ).fetchone()
+        if has_nodes:
+            has_alembic = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='alembic_version'"
+            ).fetchone()
+            needs_stamp = not has_alembic
             if not needs_stamp:
                 row = self._conn.execute(
                     "SELECT COUNT(*) FROM alembic_version"
