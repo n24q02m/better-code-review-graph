@@ -462,6 +462,26 @@ class TestCloudEmbeddingBackend:
                 assert len(vectors) == 1
                 assert call_count == 2
 
+    def test_sequential_fallback_on_batch_failure(self):
+        """Test that a failed batch retries items sequentially."""
+        backend = CloudEmbeddingBackend(api_key="test-key")
+
+        def side_effect(texts, dimensions=None):
+            if len(texts) > 1:
+                raise Exception("Persistent batch failure")
+            return [[0.1] * 768 for _ in texts]
+
+        with patch.object(
+            CloudEmbeddingBackend, "_embed_batch_inner", side_effect=side_effect
+        ) as mock_batch:
+            texts = ["text1", "text2"]
+            vectors = backend.embed_texts(texts, dimensions=768)
+
+            assert len(vectors) == 2
+            assert all(len(v) == 768 for v in vectors)
+            # Called once for the batch, then twice for individual items
+            assert mock_batch.call_count == 3
+
     def test_dimensions_truncation(self):
         """Test that dimensions parameter truncates embeddings."""
         backend = CloudEmbeddingBackend(api_key="test-key")

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -29,6 +30,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -420,17 +423,30 @@ class CloudEmbeddingBackend:
         texts: list[str],
         dimensions: int | None = None,
     ) -> list[list[float]]:
-        """Embed texts with auto batch splitting."""
+        """Embed texts with auto batch splitting and sequential fallback."""
         if not texts:
             return []
 
         if len(texts) <= self.MAX_BATCH_SIZE:
-            return self._embed_batch_inner(texts, dimensions)
+            try:
+                return self._embed_batch_inner(texts, dimensions)
+            except Exception as e:
+                if len(texts) <= 1:
+                    raise
+                logger.warning("Batch failed, retrying sequentially: %s", e)
+                return [self.embed_single(t, dimensions) for t in texts]
 
         all_embeddings: list[list[float]] = []
         for i in range(0, len(texts), self.MAX_BATCH_SIZE):
             batch = texts[i : i + self.MAX_BATCH_SIZE]
-            batch_result = self._embed_batch_inner(batch, dimensions)
+            batch_idx = i // self.MAX_BATCH_SIZE
+            try:
+                batch_result = self._embed_batch_inner(batch, dimensions)
+            except Exception as e:
+                logger.warning(
+                    "Batch %d failed, retrying sequentially: %s", batch_idx, e
+                )
+                batch_result = [self.embed_single(t, dimensions) for t in batch]
             all_embeddings.extend(batch_result)
 
         return all_embeddings
