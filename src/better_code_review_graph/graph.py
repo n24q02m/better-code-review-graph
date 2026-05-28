@@ -892,27 +892,31 @@ class GraphStore:
         )
         return [self._row_to_node(r) for r in cursor]
 
+    def _batch_fetch_nodes(
+        self, column: str, values: list[str], *, as_of: str = ""
+    ) -> list[GraphNode]:
+        """Generic helper to batch fetch nodes by a specific column."""
+        if not values:
+            return []
+
+        unique_values = list(set(values))
+        frag, frag_params = self._temporal_filter(as_of)
+        cursor = self._conn.execute(
+            f"SELECT * FROM nodes WHERE {column} IN "  # noqa: S608
+            f"(SELECT value FROM json_each(?)){frag}",
+            (json.dumps(unique_values), *frag_params),
+        )
+        return [self._row_to_node(r) for r in cursor]
+
     def get_nodes_by_files(
         self, file_paths: list[str], *, as_of: str = ""
     ) -> list[GraphNode]:
         """Batch fetch nodes by their file paths to prevent N+1 queries.
 
         Deduplicates input file paths, fetches in batches to respect SQLite
-        parameter limits, and returns all matching nodes. Uses the same
-        json_each(?) idiom as get_nodes_by_qualified_names to keep SQL static
-        and satisfy Bandit B608.
+        parameter limits, and returns all matching nodes.
         """
-        if not file_paths:
-            return []
-
-        unique_files = list(set(file_paths))
-        frag, frag_params = self._temporal_filter(as_of)
-        cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE file_path IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
-            (json.dumps(unique_files), *frag_params),
-        )
-        return [self._row_to_node(r) for r in cursor]
+        return self._batch_fetch_nodes("file_path", file_paths, as_of=as_of)
 
     def get_nodes_by_qualified_names(
         self, qualified_names: list[str], *, as_of: str = ""
@@ -922,17 +926,7 @@ class GraphStore:
         Deduplicates input names, fetches in batches to respect SQLite limits,
         and returns all matching nodes.
         """
-        if not qualified_names:
-            return []
-
-        unique_qns = list(set(qualified_names))
-        frag, frag_params = self._temporal_filter(as_of)
-        cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE qualified_name IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
-            (json.dumps(unique_qns), *frag_params),
-        )
-        return [self._row_to_node(r) for r in cursor]
+        return self._batch_fetch_nodes("qualified_name", qualified_names, as_of=as_of)
 
     def get_edges_by_source(
         self,
