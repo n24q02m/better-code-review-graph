@@ -16,6 +16,7 @@ is package-private (``store._conn``).
 from __future__ import annotations
 
 import hashlib
+import logging
 import subprocess
 import time
 from dataclasses import dataclass
@@ -24,6 +25,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .graph import GraphStore
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -293,6 +297,7 @@ def backfill_commits_for_repo(
             timeout=_GIT_LOG_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired):
+        logger.warning("Failed to git rev-list for repo %s", repo_id)
         return 0
     if proc.returncode != 0:
         return 0
