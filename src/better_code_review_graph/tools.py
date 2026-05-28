@@ -507,6 +507,130 @@ def _estimate_payload_bytes(*payloads: list[dict] | dict) -> int:
     return sum(len(repr(p)) for p in payloads)
 
 
+def _resolve_impact_seeds(
+    root: Path,
+    changed_files: list[str] | None,
+    base: str,
+) -> tuple[list[str], list[str]]:
+    """Resolve changed files to absolute paths for graph lookup."""
+    if changed_files is None:
+        changed_files = get_changed_files(root, base)
+        if not changed_files:
+            changed_files = get_staged_and_unstaged(root)
+
+    if not changed_files:
+        return [], []
+
+    abs_files = []
+    root_resolved = root.resolve()
+    for f in changed_files:
+        full_path_raw = root / f
+        full_path = full_path_raw.resolve()
+        if not full_path.is_relative_to(root_resolved):
+            continue
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            continue
+        abs_files.append(str(full_path))
+    return changed_files, abs_files
+
+
+def _truncate_impact_payload(
+    changed_dicts: list[dict[str, Any]],
+    impacted_dicts: list[dict[str, Any]],
+    edge_dicts: list[dict[str, Any]],
+    max_payload_bytes: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool, str | None, int, int, int]:
+    """Soft-cap response size by iteratively truncating results."""
+    results_truncated = False
+    results_truncated_reason = None
+    original_impacted_count = len(impacted_dicts)
+    original_edges_count = len(edge_dicts)
+    estimated = 0
+
+    if max_payload_bytes > 0:
+        estimated = _estimate_payload_bytes(changed_dicts, impacted_dicts, edge_dicts)
+        if estimated > max_payload_bytes:
+            results_truncated = True
+            while _estimate_payload_bytes(
+                changed_dicts, impacted_dicts, edge_dicts
+            ) > max_payload_bytes and (
+                len(impacted_dicts) > 10 or len(edge_dicts) > 10
+            ):
+                impacted_dicts = impacted_dicts[: max(10, len(impacted_dicts) // 2)]
+                edge_dicts = edge_dicts[: max(10, len(edge_dicts) // 2)]
+            results_truncated_reason = (
+                f"impact payload exceeded {max_payload_bytes} bytes "
+                f"(was approximately {estimated})"
+            )
+
+    return (
+        impacted_dicts,
+        edge_dicts,
+        results_truncated,
+        results_truncated_reason,
+        original_impacted_count,
+        original_edges_count,
+        estimated,
+    )
+
+
+def _assemble_impact_response(
+    changed_files: list[str],
+    changed_dicts: list[dict[str, Any]],
+    impacted_dicts: list[dict[str, Any]],
+    impacted_files: list[str],
+    edge_dicts: list[dict[str, Any]],
+    truncated: bool,
+    total_impacted: int,
+    results_truncated: bool,
+    results_truncated_reason: str | None,
+    original_impacted_count: int,
+    original_edges_count: int,
+    max_depth: int,
+    max_results: int,
+) -> dict[str, Any]:
+    """Assemble the final impact radius response dictionary."""
+    summary_parts = [
+        f"Blast radius for {len(changed_files)} changed file(s):",
+        f"  - {len(changed_dicts)} nodes directly changed",
+        f"  - {len(impacted_dicts)} nodes impacted (within {max_depth} hops)",
+        f"  - {len(impacted_files)} additional files affected",
+    ]
+    if truncated:
+        summary_parts.append(
+            f"  - TRUNCATED: results capped at {max_results} nodes"
+            f" ({total_impacted} total impacted)"
+        )
+    if results_truncated:
+        summary_parts.append(
+            f"  - PAYLOAD TRUNCATED: kept {len(impacted_dicts)} of "
+            f"{original_impacted_count} impacted nodes / "
+            f"{len(edge_dicts)} of {original_edges_count} edges"
+        )
+
+    response: dict[str, Any] = {
+        "status": "ok",
+        "summary": "\n".join(summary_parts),
+        "changed_files": changed_files,
+        "changed_nodes": changed_dicts,
+        "impacted_nodes": impacted_dicts,
+        "impacted_files": impacted_files,
+        "edges": edge_dicts,
+        "truncated": truncated,
+        "total_impacted": total_impacted,
+    }
+    if results_truncated:
+        response["results_truncated"] = True
+        response["reason"] = results_truncated_reason
+        response["hint"] = (
+            "rerun with max_depth=1, narrow changed_files scope, or "
+            "raise max_payload_bytes if you can handle a larger response"
+        )
+        response["original_impacted_count"] = original_impacted_count
+        response["original_edges_count"] = original_edges_count
+    return response
+
+
 def get_impact_radius(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
@@ -550,11 +674,7 @@ def get_impact_radius(
     """
     store, root = _get_store(repo_root)
     try:
-        if changed_files is None:
-            changed_files = get_changed_files(root, base)
-            if not changed_files:
-                changed_files = get_staged_and_unstaged(root)
-
+        changed_files, abs_files = _resolve_impact_seeds(root, changed_files, base)
         if not changed_files:
             return {
                 "status": "ok",
@@ -565,18 +685,6 @@ def get_impact_radius(
                 "truncated": False,
                 "total_impacted": 0,
             }
-
-        # Convert to absolute paths for graph lookup
-        abs_files = []
-        root_resolved = root.resolve()
-        for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
 
         result = store.get_impact_radius(
             abs_files,
@@ -589,79 +697,38 @@ def get_impact_radius(
         changed_dicts = [node_to_dict(n) for n in result["changed_nodes"]]
         impacted_dicts = [node_to_dict(n) for n in result["impacted_nodes"]]
         edge_dicts = [edge_to_dict(e) for e in result["edges"]]
-        truncated = result["truncated"]
-        total_impacted = result["total_impacted"]
 
-        summary_parts = [
-            f"Blast radius for {len(changed_files)} changed file(s):",
-            f"  - {len(changed_dicts)} nodes directly changed",
-            f"  - {len(impacted_dicts)} nodes impacted (within {max_depth} hops)",
-            f"  - {len(result['impacted_files'])} additional files affected",
-        ]
-        if truncated:
-            summary_parts.append(
-                f"  - TRUNCATED: results capped at {max_results} nodes"
-                f" ({total_impacted} total impacted)"
-            )
+        (
+            impacted_dicts,
+            edge_dicts,
+            results_truncated,
+            results_truncated_reason,
+            original_impacted_count,
+            original_edges_count,
+            _,
+        ) = _truncate_impact_payload(
+            changed_dicts, impacted_dicts, edge_dicts, max_payload_bytes
+        )
 
-        # #315: payload-size auto-truncation. Even with max_results=500 the
-        # impacted_nodes + edges arrays can blow past the conversation
-        # token budget for shared utils (observed: 7.6MB, 12MB). Trim
-        # iteratively until the rough JSON size fits under the soft cap.
-        results_truncated = False
-        results_truncated_reason: str | None = None
-        original_impacted_count = len(impacted_dicts)
-        original_edges_count = len(edge_dicts)
-        if max_payload_bytes and max_payload_bytes > 0:
-            estimated = _estimate_payload_bytes(
-                changed_dicts, impacted_dicts, edge_dicts
-            )
-            if estimated > max_payload_bytes:
-                results_truncated = True
-                # Halve until we fit (or down to a minimum sample of 10 each).
-                while _estimate_payload_bytes(
-                    changed_dicts, impacted_dicts, edge_dicts
-                ) > max_payload_bytes and (
-                    len(impacted_dicts) > 10 or len(edge_dicts) > 10
-                ):
-                    impacted_dicts = impacted_dicts[: max(10, len(impacted_dicts) // 2)]
-                    edge_dicts = edge_dicts[: max(10, len(edge_dicts) // 2)]
-                results_truncated_reason = (
-                    f"impact payload exceeded {max_payload_bytes} bytes "
-                    f"(was approximately {estimated})"
-                )
-                summary_parts.append(
-                    f"  - PAYLOAD TRUNCATED: kept {len(impacted_dicts)} of "
-                    f"{original_impacted_count} impacted nodes / "
-                    f"{len(edge_dicts)} of {original_edges_count} edges"
-                )
-
-        response: dict[str, Any] = {
-            "status": "ok",
-            "summary": "\n".join(summary_parts),
-            "changed_files": changed_files,
-            "changed_nodes": changed_dicts,
-            "impacted_nodes": impacted_dicts,
-            "impacted_files": result["impacted_files"],
-            "edges": edge_dicts,
-            "truncated": truncated,
-            "total_impacted": total_impacted,
-        }
-        if results_truncated:
-            response["results_truncated"] = True
-            response["reason"] = results_truncated_reason
-            response["hint"] = (
-                "rerun with max_depth=1, narrow changed_files scope, or "
-                "raise max_payload_bytes if you can handle a larger response"
-            )
-            response["original_impacted_count"] = original_impacted_count
-            response["original_edges_count"] = original_edges_count
-        return response
+        return _assemble_impact_response(
+            changed_files,
+            changed_dicts,
+            impacted_dicts,
+            result["impacted_files"],
+            edge_dicts,
+            result["truncated"],
+            result["total_impacted"],
+            results_truncated,
+            results_truncated_reason,
+            original_impacted_count,
+            original_edges_count,
+            max_depth,
+            max_results,
+        )
     finally:
         store.close()
 
 
-# ---------------------------------------------------------------------------
 # Tool 3: query_graph
 # ---------------------------------------------------------------------------
 
