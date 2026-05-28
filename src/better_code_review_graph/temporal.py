@@ -83,6 +83,11 @@ def _hash_source(source_text: str | None) -> str:
     return hashlib.sha256(source_text.encode("utf-8")).hexdigest()
 
 
+
+def _quote_identifier(name: str) -> str:
+    """Quote a SQL identifier (column or table name) for SQLite."""
+    return "\"" + name.replace("\"", "\"\"") + "\""
+
 class TemporalIndex:
     """Temporal-aware upsert layer over :class:`GraphStore`.
 
@@ -157,7 +162,14 @@ class TemporalIndex:
         # ``qualified_name`` keeps NOT NULL but loses UNIQUE.
         column_defs: list[str] = []
         for cid, name, typ, notnull, dflt, pk in cols_info:  # noqa: B007
-            parts: list[str] = [name, typ or "TEXT"]
+            # Security: Validate column names from PRAGMA (Bandit B608).
+            # PRAGMA results are normally safe, but we verify they only contain
+            # alphanumeric characters and underscores as a defense-in-depth.
+            if not all(c.isalnum() or c == "_" for c in name):
+                raise RuntimeError(f"Unsafe column name detected in schema: {name}")
+
+            quoted_name = _quote_identifier(name)
+            parts: list[str] = [quoted_name, typ or "TEXT"]
             if pk:
                 parts.append("PRIMARY KEY AUTOINCREMENT")
             if notnull and not pk:
@@ -171,9 +183,9 @@ class TemporalIndex:
         conn.execute("DROP TABLE IF EXISTS nodes_temporal_new")
         conn.execute(f"CREATE TABLE nodes_temporal_new ({', '.join(column_defs)})")
 
-        col_list = ", ".join(col_names)
+        col_list = ", ".join(_quote_identifier(c) for c in col_names)
         conn.execute(
-            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608 — names from PRAGMA
+            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608 — quoted names
         )
         conn.execute("DROP TABLE nodes")
         conn.execute("ALTER TABLE nodes_temporal_new RENAME TO nodes")
