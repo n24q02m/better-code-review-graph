@@ -41,9 +41,10 @@ better-code-review-graph = "better_code_review_graph.cli:main"
 [project.optional-dependencies]
 security = [
     # Cannot upgrade past 1.161 yet: semgrep >=1.162 pins mcp==1.23.3, which
-    # conflicts with our mcp>=1.27 requirement. Re-bump when semgrep relaxes
-    # its mcp pin.
-    "semgrep>=1.164.0,<2",
+    # conflicts with our mcp>=1.27 requirement. Renovate previously bumped to
+    # 1.164.0 but that re-introduced the conflict — explicit upper cap until
+    # semgrep relaxes its mcp pin (track: github.com/semgrep/semgrep upstream).
+    "semgrep>=1.0,<1.162",
 ]
 
 [dependency-groups]
