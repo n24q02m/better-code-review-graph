@@ -380,7 +380,7 @@ class TestGraphStoreExtra:
         assert eid1 == eid2
         store.close()
 
-    def test_search_edges_by_target_name(self, tmp_path):
+    def test_search_edges_by_target_names(self, tmp_path):
         store = GraphStore(str(tmp_path / "t.db"))
         store.upsert_edge(
             EdgeInfo(
@@ -393,12 +393,12 @@ class TestGraphStoreExtra:
         )
         store.commit()
 
-        edges = store.search_edges_by_target_name("helper")
+        edges = store.search_edges_by_target_names(["helper"])
         assert len(edges) == 1
         assert edges[0].target_qualified == "helper"
 
         # Wrong kind should return empty
-        edges2 = store.search_edges_by_target_name("helper", kind="IMPORTS_FROM")
+        edges2 = store.search_edges_by_target_names(["helper"], kind="IMPORTS_FROM")
         assert len(edges2) == 0
         store.close()
 

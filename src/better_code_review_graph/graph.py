@@ -1021,19 +1021,6 @@ class GraphStore:
         )
         return [self._row_to_edge(r) for r in cursor]
 
-    def search_edges_by_target_name(
-        self, name: str, kind: str = "CALLS", *, as_of: str = ""
-    ) -> list[GraphEdge]:
-        """Search for edges where target_qualified matches an unqualified name.
-
-        CALLS edges often store unqualified target names (e.g. ``generateTestCode``)
-        rather than fully qualified ones (``file.ts::generateTestCode``).  This
-        method finds those edges by exact match on the plain function name so that
-        reverse call tracing (callers_of) works even when qualified-name lookup
-        returns nothing.
-        """
-        return self.search_edges_by_target_names([name], kind=kind, as_of=as_of)
-
     def search_edges_by_target_names(
         self, names: list[str], kind: str = "CALLS", *, as_of: str = ""
     ) -> list[GraphEdge]:

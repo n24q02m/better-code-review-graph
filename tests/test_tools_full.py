@@ -434,7 +434,7 @@ class TestQueryGraph:
         assert result["status"] in ("ok", "ambiguous", "not_found")
 
     def test_callers_of_fallback_bare_name(self, repo_with_graph):
-        """callers_of should use search_edges_by_target_name fallback."""
+        """callers_of should use search_edges_by_target_names fallback."""
         abs_auth = str(repo_with_graph / "auth.py")
         # Add an edge with unqualified target
         db_path = repo_with_graph / ".code-review-graph" / "graph.db"
@@ -1143,12 +1143,12 @@ class TestQueryGraphEdgeCases:
         assert "Fix stuff" in result["content"]
 
     def test_callers_of_bare_name_fallback(self, repo_with_graph):
-        """callers_of should fallback to search_edges_by_target_name when no qualified match.
+        """callers_of should fallback to search_edges_by_target_names when no qualified match.
 
         The first loop (get_edges_by_target) tries the qualified name and its bare
         name fallback in graph.py. For the tools.py fallback (lines 479-484) to run,
         we need a case where get_edges_by_target returns nothing but
-        search_edges_by_target_name finds the edge.
+        search_edges_by_target_names finds the edge.
 
         This happens when the edge target is stored as a bare name that differs
         from the last segment of the qualified name (e.g. "MyTarget" stored as edge
@@ -1210,7 +1210,7 @@ class TestQueryGraphEdgeCases:
             repo_root=str(repo_with_graph),
         )
         assert result["status"] == "ok"
-        # The fallback path should find the edge via search_edges_by_target_name("special_method")
+        # The fallback path should find the edge via search_edges_by_target_names(["special_method"])
         assert len(result["edges"]) >= 1
 
     def test_tests_for_with_tested_by_edge(self, repo_with_graph):
