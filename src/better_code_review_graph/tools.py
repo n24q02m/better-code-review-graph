@@ -685,9 +685,7 @@ _LAST_CALLERS_RESULT: dict[str, dict[str, Any]] = {}
 def _list_kinds_in_graph(store: Any) -> list[str]:
     """Return distinct node kinds present in the graph (for D15 hints)."""
     try:
-        cursor = store._conn.execute(
-            "SELECT DISTINCT kind FROM nodes ORDER BY kind"
-        )
+        cursor = store._conn.execute("SELECT DISTINCT kind FROM nodes ORDER BY kind")
         return [r["kind"] for r in cursor]
     except Exception:
         return []

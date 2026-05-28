@@ -490,16 +490,12 @@ class GraphStore:
           the index plus the column-presence check make this safe to
           call unconditionally on every connect.
         """
-        node_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")
-        }
+        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         if "repo_id" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
             )
-        edge_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(edges)")
-        }
+        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
         if "repo_id" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
@@ -551,9 +547,7 @@ class GraphStore:
         downstream temporal queries treat the two paths identically.
         """
         sentinel_sha = "0" * 40
-        node_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")
-        }
+        node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         if "valid_from_sha" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -561,9 +555,7 @@ class GraphStore:
             )
         if "valid_to_sha" not in node_cols:
             self._conn.execute("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT")
-        edge_cols = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(edges)")
-        }
+        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
         if "valid_from_sha" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL "
@@ -591,9 +583,7 @@ class GraphStore:
         without requiring a fresh build. Idempotent — safe to call on every
         connect.
         """
-        existing = {
-            row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")
-        }
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         for column in _SUMMARY_COLUMNS:
             if column not in existing:
                 # Static column names from the module-level allowlist; safe
@@ -997,7 +987,9 @@ class GraphStore:
             return [self._row_to_edge(r) for r in cursor]
 
         if first_row:
-            return [self._row_to_edge(first_row)] + [self._row_to_edge(r) for r in cursor]
+            return [self._row_to_edge(first_row)] + [
+                self._row_to_edge(r) for r in cursor
+            ]
         return []
 
     @staticmethod
