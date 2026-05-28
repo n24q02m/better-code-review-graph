@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -767,8 +766,7 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
     finally:
         store.close()
 
-
-def test_batch_summarize_error_logging(tmp_path, monkeypatch, caplog):
+def test_batch_summarize_error_logging(tmp_path, monkeypatch):
     """Verify that summarize_node failures are logged as warnings with node ID."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
@@ -792,16 +790,12 @@ def test_batch_summarize_error_logging(tmp_path, monkeypatch, caplog):
             file_hash="h",
         )
         store._conn.execute(
-            "UPDATE nodes SET source_text=? WHERE id=?",
-            ("def fail_func(): pass", nid),
+            "UPDATE nodes SET source_text='def fail_func(): pass' WHERE id=?",
+            (nid,),
         )
         store._conn.commit()
 
-        # Clear logs from migrations/setup to avoid noise
-        caplog.clear()
-        with caplog.at_level(
-            logging.WARNING, logger="better_code_review_graph.summarizer"
-        ):
+        with patch("better_code_review_graph.summarizer.logger") as mock_logger:
             with patch(
                 "better_code_review_graph.summarizer.summarize_node",
                 side_effect=RuntimeError("simulated failure"),
@@ -809,10 +803,10 @@ def test_batch_summarize_error_logging(tmp_path, monkeypatch, caplog):
                 result = batch_summarize(store, max_nodes=1)
 
         assert result.errors == 1
-        # Check records directly for more robust assertion
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert any("summarize_node failed for id=" in w.message for w in warnings)
-        assert any(str(nid) in w.message for w in warnings)
-        assert any("simulated failure" in w.message for w in warnings)
+        mock_logger.warning.assert_called_once()
+        args, _ = mock_logger.warning.call_args
+        assert "summarize_node failed for id=" in args[0]
+        assert args[1] == nid
+        assert "simulated failure" in str(args[2])
     finally:
         store.close()
