@@ -546,12 +546,11 @@ class GraphStore:
         the in-memory fallback used by the alembic migration so
         downstream temporal queries treat the two paths identically.
         """
-        sentinel_sha = "0" * 40
         node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         if "valid_from_sha" not in node_cols:
             self._conn.execute(
                 "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL "
-                f"DEFAULT '{sentinel_sha}'"
+                "DEFAULT '0000000000000000000000000000000000000000'"
             )
         if "valid_to_sha" not in node_cols:
             self._conn.execute("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT")
@@ -559,7 +558,7 @@ class GraphStore:
         if "valid_from_sha" not in edge_cols:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL "
-                f"DEFAULT '{sentinel_sha}'"
+                "DEFAULT '0000000000000000000000000000000000000000'"
             )
         if "valid_to_sha" not in edge_cols:
             self._conn.execute("ALTER TABLE edges ADD COLUMN valid_to_sha TEXT")
@@ -584,11 +583,15 @@ class GraphStore:
         connect.
         """
         existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
+        column_sqls = {
+            "summary": "ALTER TABLE nodes ADD COLUMN summary TEXT",
+            "summary_provider": "ALTER TABLE nodes ADD COLUMN summary_provider TEXT",
+            "source_hash": "ALTER TABLE nodes ADD COLUMN source_hash TEXT",
+            "source_text": "ALTER TABLE nodes ADD COLUMN source_text TEXT",
+        }
         for column in _SUMMARY_COLUMNS:
-            if column not in existing:
-                # Static column names from the module-level allowlist; safe
-                # against SQL injection (Bandit B608).
-                self._conn.execute(f"ALTER TABLE nodes ADD COLUMN {column} TEXT")
+            if column not in existing and column in column_sqls:
+                self._conn.execute(column_sqls[column])
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash)"
         )
