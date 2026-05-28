@@ -101,7 +101,7 @@ def graph(
     full_rebuild: bool = False,
     base: str = "HEAD~1",
     repo_root: str | None = None,
-    format: str = "graphml",
+    format: str = "json-ld",
     output_path: str | None = None,
     max_nodes: int = 500,
     roots: list[str] | None = None,
@@ -118,8 +118,8 @@ def graph(
     - update (-> base="HEAD~1", repo_root): Incremental update (alias for build)
     - stats (-> repo_root): Node/edge counts, languages, embedding status
     - embed (-> repo_root): Compute vector embeddings for semantic search
-    - export (-> format='graphml', output_path=None, repo_root): Export graph
-        in graphml | json-ld | dot | cypher format. Writes to output_path when
+    - export (-> format='json-ld', output_path=None, repo_root): Export graph
+        in json-ld | dot | cypher format. Writes to output_path when
         provided, otherwise returns payload inline.
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
         Function nodes. Provider auto-detected from env (GEMINI_API_KEY >

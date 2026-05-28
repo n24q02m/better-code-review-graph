@@ -76,7 +76,7 @@ def test_dispatch_inline_returns_payload(tmp_path):
 
 def test_dispatch_with_output_path_writes_file(tmp_path):
     """output_path provided → writes file, returns metadata only (no inline payload)."""
-    out_file = tmp_path / "out.graphml"
+    out_file = tmp_path / "out.dot"
     with patch("better_code_review_graph.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
@@ -84,13 +84,13 @@ def test_dispatch_with_output_path_writes_file(tmp_path):
             mock_get_store.return_value = (store, tmp_path)
             result = export_graph_dispatch(
                 repo_root=str(tmp_path),
-                format="graphml",
+                format="dot",
                 output_path=str(out_file),
             )
         finally:
             store.close()
     assert result["status"] == "ok"
-    assert result["format"] == "graphml"
+    assert result["format"] == "dot"
     assert result["output_path"] == str(out_file)
     assert result["bytes"] > 0
     assert "payload" not in result
@@ -98,7 +98,7 @@ def test_dispatch_with_output_path_writes_file(tmp_path):
     assert str(out_file) in result["summary"]
     # Verify the file actually exists + has the expected content shape
     written = out_file.read_text(encoding="utf-8")
-    assert "<graphml" in written
+    assert "digraph G" in written
     assert "alpha" in written
 
 

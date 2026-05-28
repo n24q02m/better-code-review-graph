@@ -2464,18 +2464,18 @@ def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
 
 def export_graph_dispatch(
     repo_root: str | None = None,
-    format: str = "graphml",
+    format: str = "json-ld",
     output_path: str | None = None,
 ) -> dict[str, Any]:
     """Export the code knowledge graph in an interoperable format.
 
-    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher.
+    Phase 1 v1.6.x feature. Supported formats: json-ld, dot, cypher.
     GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into Neo4j;
     JSON-LD drives JSON-aware tooling; DOT renders via Graphviz.
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
-        format: One of graphml | json-ld | dot | cypher (case-insensitive).
+        format: One of json-ld | dot | cypher (case-insensitive).
         output_path: When provided, payload is written to this path and only
             metadata is returned. When None, payload is returned inline.
 
