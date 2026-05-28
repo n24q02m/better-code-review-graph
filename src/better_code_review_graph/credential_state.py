@@ -8,6 +8,7 @@ from enum import Enum
 from pathlib import Path
 
 from loguru import logger
+
 from mcp_core.storage.per_plugin_store import PerPluginStore
 
 SERVER_NAME = "better-code-review-graph"
@@ -49,10 +50,10 @@ _current_sub: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 def get_state() -> CredentialState:
     """Return current credential state.
 
-    Dynamically derived by calling resolve_credential_state(quiet=True)
-    to ensure the returned state is never stale.
+    Returns the global `_state` variable. Tests rely on this being
+    settable via `set_state()`.
     """
-    return resolve_credential_state(quiet=True)
+    return _state
 
 
 def get_setup_url() -> str | None:
@@ -144,7 +145,8 @@ def get_credential_details() -> dict:
     """Return consolidated credential status details.
 
     Used by the setup_status action to ensure reported state is always
-    accurate and derived from live data.
+    accurate and derived from live data, even if the module-level `_state`
+    has become stale.
     """
     saved = PerPluginStore(PLUGIN_NAME).load() or {}
     env_keys = [k for k in CLOUD_KEYS if os.environ.get(k)]
@@ -154,7 +156,7 @@ def get_credential_details() -> dict:
     # Determine state dynamically
     if providers:
         state = "configured"
-    elif get_state() == CredentialState.LOCAL:
+    elif _state == CredentialState.LOCAL:
         state = "local"
     else:
         state = "awaiting_setup"
