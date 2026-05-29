@@ -30,7 +30,7 @@ dependencies = [
     "openai>=2.38.0",
     "httpx",
     "pydantic-settings",
-    "n24q02m-mcp-core>=1.14.0,<2",
+    "n24q02m-mcp-core>=1.17.0b1,<2",
     "Pygments>=2.20.0",
     "alembic>=1.18.4,<2",
 ]
