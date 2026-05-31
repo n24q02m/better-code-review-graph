@@ -27,7 +27,7 @@ caller leaves the edge as a within-repo bare reference.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
