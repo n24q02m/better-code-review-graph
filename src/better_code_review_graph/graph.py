@@ -1186,23 +1186,22 @@ class GraphStore:
             for qn in frontier:
                 visited.add(qn)
                 # Forward edges (things this node affects)
+                # Bolt: Replaced Python loops with set operations for faster BFS
                 if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor in visited:
-                            continue
-                        if repo_qns is not None and neighbor not in repo_qns:
-                            continue
-                        next_frontier.add(neighbor)
-                        impacted.add(neighbor)
+                    neighbors = set(nxg.neighbors(qn))
+                    if repo_qns is not None:
+                        neighbors.intersection_update(repo_qns)
+                    neighbors.difference_update(visited)
+                    next_frontier.update(neighbors)
+                    impacted.update(neighbors)
                 # Reverse edges (things that depend on this node)
                 if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred in visited:
-                            continue
-                        if repo_qns is not None and pred not in repo_qns:
-                            continue
-                        next_frontier.add(pred)
-                        impacted.add(pred)
+                    preds = set(nxg.predecessors(qn))
+                    if repo_qns is not None:
+                        preds.intersection_update(repo_qns)
+                    preds.difference_update(visited)
+                    next_frontier.update(preds)
+                    impacted.update(preds)
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True
