@@ -1183,26 +1183,17 @@ class GraphStore:
 
         while frontier and depth < max_depth:
             next_frontier: set[str] = set()
+            visited.update(frontier)
             for qn in frontier:
-                visited.add(qn)
-                # Forward edges (things this node affects)
                 if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor in visited:
-                            continue
-                        if repo_qns is not None and neighbor not in repo_qns:
-                            continue
-                        next_frontier.add(neighbor)
-                        impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred in visited:
-                            continue
-                        if repo_qns is not None and pred not in repo_qns:
-                            continue
-                        next_frontier.add(pred)
-                        impacted.add(pred)
+                    # Bolt: Use native C-level set operations for faster dense graph traversal
+                    neighbors = set(nxg.neighbors(qn))
+                    neighbors.update(nxg.predecessors(qn))
+                    neighbors.difference_update(visited)
+                    if repo_qns is not None:
+                        neighbors.intersection_update(repo_qns)
+                    next_frontier.update(neighbors)
+                    impacted.update(neighbors)
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True

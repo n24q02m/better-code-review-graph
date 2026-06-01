@@ -9,3 +9,9 @@
 **Learning:** When testing edge cases in environments with missing heavy dependencies (like `networkx` or `tree-sitter`), using `sys.modules` to mock these dependencies *before* importing the target module allows for reliable unit testing without triggering `ModuleNotFoundError`.
 
 **Action:** For specialized coverage tests, implement a `MockModule` that uses `__getattr__` to return `MagicMock()` and patch `sys.modules` prior to tool imports. This ensures that even deeply nested or lazy imports within the target module are safely handled during test execution.
+
+## 2024-05-29 - NetworkX BFS with Set Operations
+
+**Learning:** When performing Breadth-First Search (BFS) over NetworkX directed graphs (e.g., in `get_impact_radius` in `src/better_code_review_graph/graph.py`), Python `for` loops iterating over `nxg.neighbors()` and `nxg.predecessors()` to update frontiers have high overhead on dense graphs.
+
+**Action:** Use native C-level `set()` operations (`difference_update`, `intersection_update`, `update`) to combine `successors` and `predecessors`, filter visited/repo nodes, and update the frontier significantly faster.
