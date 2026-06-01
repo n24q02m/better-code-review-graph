@@ -91,11 +91,12 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.16.2"
+version = "3.16.3"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "cohere" },
+    { name = "defusedxml" },
     { name = "fastmcp" },
     { name = "google-genai" },
     { name = "httpx" },
@@ -131,6 +132,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.4,<2" },
     { name = "cohere", specifier = ">=7.0.0" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastmcp", specifier = ">=3.3.1,<4" },
     { name = "google-genai", specifier = ">=2.6.0" },
     { name = "httpx" },

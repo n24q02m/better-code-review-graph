@@ -16,7 +16,6 @@ return value; callers wanting file output write the string to disk.
 from __future__ import annotations
 
 import json
-import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -65,8 +64,10 @@ def export_graphml(store: GraphStore) -> str:
 
     Compatible with Gephi import, Cytoscape import, and ``networkx.read_graphml``.
     """
-    ET.register_namespace("", GRAPHML_NS)
-    root = ET.Element(f"{{{GRAPHML_NS}}}graphml")
+    import xml.etree.ElementTree as standard_ET
+
+    standard_ET.register_namespace("", GRAPHML_NS)
+    root = standard_ET.Element(f"{{{GRAPHML_NS}}}graphml")
 
     keys = [
         ("kind", "node", "string"),
@@ -81,18 +82,18 @@ def export_graphml(store: GraphStore) -> str:
         ("edge_line", "edge", "int"),
     ]
     for key_id, scope, attr_type in keys:
-        ET.SubElement(
+        standard_ET.SubElement(
             root,
             f"{{{GRAPHML_NS}}}key",
             {"id": key_id, "for": scope, "attr.name": key_id, "attr.type": attr_type},
         )
 
-    graph = ET.SubElement(
+    graph = standard_ET.SubElement(
         root, f"{{{GRAPHML_NS}}}graph", {"id": "G", "edgedefault": "directed"}
     )
 
     for node in store.get_all_nodes():
-        n_el = ET.SubElement(
+        n_el = standard_ET.SubElement(
             graph, f"{{{GRAPHML_NS}}}node", {"id": node.qualified_name}
         )
         for k, v in (
@@ -104,16 +105,16 @@ def export_graphml(store: GraphStore) -> str:
         ):
             if v is None or v == "":
                 continue
-            d = ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
+            d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
         for k, v in (("line_start", node.line_start), ("line_end", node.line_end)):
             if v is None:
                 continue
-            d = ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
+            d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
 
     for edge in store.get_all_edges():
-        e_el = ET.SubElement(
+        e_el = standard_ET.SubElement(
             graph,
             f"{{{GRAPHML_NS}}}edge",
             {"source": edge.source_qualified, "target": edge.target_qualified},
@@ -121,13 +122,15 @@ def export_graphml(store: GraphStore) -> str:
         for k, v in (("edge_kind", edge.kind), ("edge_file", edge.file_path)):
             if v is None or v == "":
                 continue
-            d = ET.SubElement(e_el, f"{{{GRAPHML_NS}}}data", {"key": k})
+            d = standard_ET.SubElement(e_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
         if edge.line is not None:
-            d = ET.SubElement(e_el, f"{{{GRAPHML_NS}}}data", {"key": "edge_line"})
+            d = standard_ET.SubElement(
+                e_el, f"{{{GRAPHML_NS}}}data", {"key": "edge_line"}
+            )
             d.text = str(edge.line)
 
-    return ET.tostring(root, encoding="unicode", xml_declaration=True)
+    return standard_ET.tostring(root, encoding="unicode", xml_declaration=True)
 
 
 def export_jsonld(store: GraphStore) -> str:
