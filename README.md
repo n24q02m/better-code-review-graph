@@ -125,7 +125,7 @@ graph(action="embed")
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
 | Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
-| Tool design | 9 individual tools | 6 tools: graph + query + review + config + setup + help |
+| Tool design | 9 individual tools | 6 tools: graph + query + review + config + security + help |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 ## Status
@@ -190,31 +190,35 @@ Actions: `query` | `search` | `impact` | `large_functions`
 
 Token-optimized review context with structural summary, source snippets, and review guidance. Auto-detects changed files from git diff.
 
-### `config` -- Server configuration
+### `config` -- Server configuration and credential setup
 
-Actions: `status` | `set` | `cache_clear`
+Actions: `status` | `set` | `cache_clear` | `setup_status` | `setup_start` | `setup_skip` | `setup_reset` | `setup_complete`
 
 | Action | Description |
 |:-------|:------------|
 | `status` | Server info: version, graph path, node/edge counts, embedding backend. |
 | `set` | Update runtime settings (e.g., `log_level`). |
 | `cache_clear` | Remove all computed embeddings. |
+| `setup_status` | Show current credential state and setup URL. |
+| `setup_start` | Start relay setup to configure API keys via browser. |
+| `setup_skip` | Set local mode (skip relay permanently, use ONNX only). |
+| `setup_reset` | Clear credentials and reset state. |
+| `setup_complete` | Re-resolve credentials from environment variables. |
 
-### `setup` -- Credential setup
+### `security` -- Security scanning
 
-Actions: `status` | `start` | `skip` | `reset` | `complete`
+Actions: `scan` | `report` | `suppress` | `rule_list`
 
 | Action | Description |
 |:-------|:------------|
-| `status` | Show current credential state and setup URL. |
-| `start` | Start relay setup to configure API keys via browser. |
-| `skip` | Set local mode (skip relay permanently, use ONNX only). |
-| `reset` | Clear credentials and reset state. |
-| `complete` | Re-resolve credentials from environment variables. |
+| `scan` | Run a security scan (`engine='heuristic'` default, or `'semgrep'`). Findings persist on `nodes.security_tags`. |
+| `report` | Re-emit cached findings as JSON (`format='json'`) or SARIF v2.1.0 (`format='sarif'`). |
+| `suppress` | Suppress a finding by `rule_id` (or `remove=true` to un-suppress). |
+| `rule_list` | List available rules for an engine. |
 
 ### `help` -- Full documentation
 
-Topics: `graph` | `query` | `review` | `config`
+Topics: `graph` | `query` | `review` | `config` | `recipes`
 
 Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
 
