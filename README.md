@@ -134,7 +134,7 @@ graph(action="embed")
 >
 > Past months saw significant churn around credential handling and the daemon-bridge auto-spawn pattern. This caused multi-process races, browser tab spam, and inconsistent setup UX across plugins. **As of v<auto>, the architecture is stable**: 2 clean modes (stdio + HTTP), no daemon-bridge layer, no auto-spawn from stdio.
 >
-> Apologies for the instability period. If you encountered issues with prior versions, please update to v<auto>+ and follow the current `docs/setup-manual.md` -- most prior workarounds are no longer needed.
+> Apologies for the instability period. If you encountered issues with prior versions, please update to v<auto>+ and follow the current [Setup guide](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- most prior workarounds are no longer needed.
 >
 > **Related plugins from the same author**:
 > - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
