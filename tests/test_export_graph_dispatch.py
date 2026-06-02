@@ -74,6 +74,25 @@ def test_dispatch_inline_returns_payload(tmp_path):
     assert "output_path" not in result
 
 
+def test_dispatch_output_path_traversal_blocked(tmp_path):
+    """output_path outside repository root should return an error."""
+    out_file = tmp_path.parent / "out.graphml"
+    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+        store = GraphStore(str(tmp_path / "test.db"))
+        try:
+            _populate_store(store)
+            mock_get_store.return_value = (store, tmp_path)
+            result = export_graph_dispatch(
+                repo_root=str(tmp_path),
+                format="graphml",
+                output_path=str(out_file),
+            )
+        finally:
+            store.close()
+    assert result["status"] == "error"
+    assert "within the repository root" in result["error"]
+
+
 def test_dispatch_with_output_path_writes_file(tmp_path):
     """output_path provided → writes file, returns metadata only (no inline payload)."""
     out_file = tmp_path / "out.graphml"
