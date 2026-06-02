@@ -1182,27 +1182,21 @@ class GraphStore:
         truncated = False
 
         while frontier and depth < max_depth:
+            visited.update(frontier)
             next_frontier: set[str] = set()
             for qn in frontier:
-                visited.add(qn)
-                # Forward edges (things this node affects)
                 if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor in visited:
-                            continue
-                        if repo_qns is not None and neighbor not in repo_qns:
-                            continue
-                        next_frontier.add(neighbor)
-                        impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred in visited:
-                            continue
-                        if repo_qns is not None and pred not in repo_qns:
-                            continue
-                        next_frontier.add(pred)
-                        impacted.add(pred)
+                    # Forward edges (things this node affects)
+                    next_frontier.update(nxg.neighbors(qn))
+                    # Reverse edges (things that depend on this node)
+                    next_frontier.update(nxg.predecessors(qn))
+
+            next_frontier.difference_update(visited)
+            if repo_qns is not None:
+                next_frontier.intersection_update(repo_qns)
+
+            impacted.update(next_frontier)
+
             # Cap total nodes to prevent resource exhaustion on dense graphs
             if len(visited) + len(next_frontier) > max_nodes:
                 truncated = True
