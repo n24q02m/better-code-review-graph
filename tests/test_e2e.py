@@ -44,6 +44,7 @@ async def test_all_tools(tmp_path):
                 "graph",
                 "query",
                 "review",
+                "security",
                 "config",
                 "help",
                 "config__open_relay",

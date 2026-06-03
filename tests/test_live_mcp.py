@@ -148,6 +148,7 @@ class TestLiveMCP:
                     "graph",
                     "query",
                     "review",
+                    "security",
                     "config",
                     "help",
                     "config__open_relay",
