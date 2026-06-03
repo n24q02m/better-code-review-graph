@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
@@ -72,6 +72,28 @@ def test_dispatch_inline_returns_payload(tmp_path):
     assert "payload" in result
     assert "alpha" in result["payload"]
     assert "output_path" not in result
+
+
+def test_dispatch_path_traversal_blocked(tmp_path):
+    """Ensure output_path cannot write outside the repository root."""
+    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+        mock_store = MagicMock()
+        mock_get_store.return_value = (mock_store, tmp_path)
+
+        with patch("better_code_review_graph.exporter.export_graph") as mock_export:
+            mock_export.return_value = "<graphml>...</graphml>"
+
+            # Try to write to a path outside tmp_path
+            out_file = tmp_path.parent / "sneaky_file.graphml"
+            result = export_graph_dispatch(
+                repo_root=str(tmp_path),
+                format="graphml",
+                output_path=str(out_file),
+            )
+
+            assert result["status"] == "error"
+            assert "relative to repo root" in result["error"]
+            assert not out_file.exists()
 
 
 def test_dispatch_with_output_path_writes_file(tmp_path):
