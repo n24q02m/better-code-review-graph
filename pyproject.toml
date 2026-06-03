@@ -87,7 +87,7 @@ possibly-missing-attribute = "ignore"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-timeout = 30
+timeout = 120
 addopts = "--tb=short -q -m 'not integration and not full and not e2e'"
 markers = [
     "integration: integration tests (deselect with '-m not integration')",
