@@ -2179,6 +2179,101 @@ def _looks_like_literal_identifier(query: str) -> bool:
     return all(ch in allowed for ch in q)
 
 
+def _perform_semantic_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    repo: str,
+    store: GraphStore,
+    emb_store: EmbeddingStore,
+) -> list[dict[str, Any]]:
+    """Helper for semantic_search_nodes that handles the vector path."""
+    raw = semantic_search(query, store, emb_store, limit=limit * 2)
+    if kind:
+        raw = [r for r in raw if r.get("kind") == kind]
+
+    if repo:
+        # The vector store has no repo_id column; cross-check
+        # each hit against the SQL row and drop misses. Batched
+        # via json_each so it stays O(1) queries regardless of
+        # how many hits the vector store returned.
+        repo_qns = [
+            r.get("qualified_name") for r in raw if r.get("qualified_name") is not None
+        ]
+        repo_map: dict[str, str] = {}
+        if repo_qns:
+            cursor = store._conn.execute(
+                "SELECT n.qualified_name, n.repo_id FROM nodes n "
+                "JOIN json_each(?) j ON n.qualified_name = j.value",
+                (json.dumps(repo_qns),),
+            )
+            repo_map = {row["qualified_name"]: row["repo_id"] for row in cursor}
+        filtered = []
+        for r in raw:
+            qn = r.get("qualified_name")
+            if qn is None:
+                continue
+            r_repo = repo_map.get(qn)
+            if r_repo is not None and (r_repo or "") == repo:
+                filtered.append(r)
+        raw = filtered
+
+    # Default-path filter: vector hits should also exclude
+    # rows that have been closed-out at a later commit. The
+    # vector store does not know about ``valid_to_sha`` so
+    # we cross-check via the SQL row — batched via json_each.
+    surv_qns = [
+        r.get("qualified_name") for r in raw if r.get("qualified_name") is not None
+    ]
+    surviving_set: set[str] = set()
+    if surv_qns:
+        cursor = store._conn.execute(
+            "SELECT n.qualified_name FROM nodes n "
+            "JOIN json_each(?) j ON n.qualified_name = j.value "
+            "WHERE n.valid_to_sha IS NULL",
+            (json.dumps(surv_qns),),
+        )
+        surviving_set = {row["qualified_name"] for row in cursor}
+
+    surviving: list[dict[str, Any]] = []
+    for r in raw:
+        qn = r.get("qualified_name")
+        if qn is None:
+            continue
+        if qn in surviving_set:
+            surviving.append(r)
+
+    return surviving[:limit]
+
+
+def _perform_keyword_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    repo: str,
+    as_of: str,
+    store: GraphStore,
+) -> list[dict[str, Any]]:
+    """Helper for semantic_search_nodes that handles the keyword path."""
+    results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
+
+    if kind:
+        results = [r for r in results if r.kind == kind]
+
+    def score(node):
+        name_lower = node.name.lower()
+        q_lower = query.lower()
+        if name_lower == q_lower:
+            return 0
+        if name_lower.startswith(q_lower):
+            return 1
+        return 2
+
+    results.sort(key=score)
+    results = results[:limit]
+    return [node_to_dict(r) for r in results]
+
+
 def semantic_search_nodes(
     query: str,
     kind: str | None = None,
@@ -2222,7 +2317,6 @@ def semantic_search_nodes(
         db_path = get_db_path(root)
         backend = init_backend()
         emb_store = EmbeddingStore(db_path, backend)
-        search_mode = "keyword"
 
         try:
             # Phase 3 Task 9: an explicit ``as_of`` skips the vector path —
@@ -2230,71 +2324,13 @@ def semantic_search_nodes(
             # safely return historical snapshots through it. Fall through
             # to the keyword path which threads ``as_of`` into the SQL.
             if as_of == "" and emb_store.available and emb_store.count() > 0:
-                # Vector search
-                search_mode = "semantic"
-                raw = semantic_search(query, store, emb_store, limit=limit * 2)
-                if kind:
-                    raw = [r for r in raw if r.get("kind") == kind]
-                if repo:
-                    # The vector store has no repo_id column; cross-check
-                    # each hit against the SQL row and drop misses. Batched
-                    # via json_each so it stays O(1) queries regardless of
-                    # how many hits the vector store returned.
-                    repo_qns = [
-                        r.get("qualified_name")
-                        for r in raw
-                        if r.get("qualified_name") is not None
-                    ]
-                    repo_map: dict[str, str] = {}
-                    if repo_qns:
-                        cursor = store._conn.execute(
-                            "SELECT n.qualified_name, n.repo_id FROM nodes n "
-                            "JOIN json_each(?) j ON n.qualified_name = j.value",
-                            (json.dumps(repo_qns),),
-                        )
-                        repo_map = {
-                            row["qualified_name"]: row["repo_id"] for row in cursor
-                        }
-                    filtered = []
-                    for r in raw:
-                        qn = r.get("qualified_name")
-                        if qn is None:
-                            continue
-                        r_repo = repo_map.get(qn)
-                        if r_repo is not None and (r_repo or "") == repo:
-                            filtered.append(r)
-                    raw = filtered
-                # Default-path filter: vector hits should also exclude
-                # rows that have been closed-out at a later commit. The
-                # vector store does not know about ``valid_to_sha`` so
-                # we cross-check via the SQL row — batched via json_each.
-                surv_qns = [
-                    r.get("qualified_name")
-                    for r in raw
-                    if r.get("qualified_name") is not None
-                ]
-                surviving_set: set[str] = set()
-                if surv_qns:
-                    cursor = store._conn.execute(
-                        "SELECT n.qualified_name FROM nodes n "
-                        "JOIN json_each(?) j ON n.qualified_name = j.value "
-                        "WHERE n.valid_to_sha IS NULL",
-                        (json.dumps(surv_qns),),
-                    )
-                    surviving_set = {row["qualified_name"] for row in cursor}
-                surviving: list[dict] = []
-                for r in raw:
-                    qn = r.get("qualified_name")
-                    if qn is None:
-                        continue
-                    if qn in surviving_set:
-                        surviving.append(r)
-                raw = surviving
-                raw = raw[:limit]
+                raw = _perform_semantic_search(
+                    query, kind, limit, repo, store, emb_store
+                )
                 return {
                     "status": "ok",
                     "query": query,
-                    "search_mode": search_mode,
+                    "search_mode": "semantic",
                     "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
                     + (f" (kind={kind})" if kind else ""),
                     "header": _build_response_header(
@@ -2306,31 +2342,16 @@ def semantic_search_nodes(
             emb_store.close()
 
         # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
-
-        if kind:
-            results = [r for r in results if r.kind == kind]
-
-        def score(node):
-            name_lower = node.name.lower()
-            q_lower = query.lower()
-            if name_lower == q_lower:
-                return 0
-            if name_lower.startswith(q_lower):
-                return 1
-            return 2
-
-        results.sort(key=score)
-        results = results[:limit]
+        results = _perform_keyword_search(query, kind, limit, repo, as_of, store)
 
         response: dict[str, Any] = {
             "status": "ok",
             "query": query,
-            "search_mode": search_mode,
+            "search_mode": "keyword",
             "summary": f"Found {len(results)} node(s) matching '{query}'"
             + (f" (kind={kind})" if kind else ""),
             "header": _build_response_header(store, db_path, keyword_only=True),
-            "results": [node_to_dict(r) for r in results],
+            "results": results,
         }
 
         # #317: warn when running keyword fallback on a query that looks
