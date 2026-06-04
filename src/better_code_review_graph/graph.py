@@ -280,6 +280,20 @@ class GraphStore:
         Imported lazily so ``alembic`` (and its SQLAlchemy dependency) are
         only loaded when a ``GraphStore`` is actually instantiated.
         """
+        cfg, command, ScriptDirectory, CommandError = self._get_alembic_config()
+
+        if self._handle_downgrade_request():
+            return
+
+        self._maybe_stamp_legacy_db(cfg, command)
+        self._maybe_take_backup_before_upgrade(cfg, ScriptDirectory)
+
+        try:
+            command.upgrade(cfg, "head")
+        except CommandError as exc:
+            self._handle_alembic_command_error(cfg, ScriptDirectory, exc)
+
+    def _get_alembic_config(self):
         from alembic import command
         from alembic.config import Config
         from alembic.script import ScriptDirectory
@@ -289,27 +303,15 @@ class GraphStore:
         cfg = Config()
         cfg.set_main_option("script_location", str(migrations_dir))
         cfg.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
+        return cfg, command, ScriptDirectory, CommandError
 
-        # Phase 3 Task 1 — early-exit downgrade path.
-        #
-        # When the operator sets ``CRG_DOWNGRADE_TO_1_X=1`` we restore
-        # the pre-2.0 backup BEFORE any alembic activity (including
-        # the auto-stamp branch below — stamping a v1.x DB to "002"
-        # is the same idempotent outcome as the restored DB already
-        # being at "002", but we still skip it to avoid touching the
-        # restored file at all).
+    def _handle_downgrade_request(self) -> bool:
         if os.environ.get(_DOWNGRADE_ENV_VAR) == "1":
             self._restore_pre_2_0_backup()
-            return
+            return True
+        return False
 
-        # Detect "legacy DB": pre-existing structural tables but alembic
-        # has not yet recorded a head revision. Two sub-cases:
-        #   1. ``alembic_version`` table is missing entirely.
-        #   2. ``alembic_version`` exists but has no row (an interrupted
-        #      prior run, or a test fixture that touched the DB before
-        #      alembic was wired up).
-        # In both cases we stamp at ``002`` so the baseline ``CREATE
-        # TABLE`` is skipped on the subsequent ``upgrade("head")``.
+    def _maybe_stamp_legacy_db(self, cfg, command) -> None:
         existing = {
             row[0]
             for row in self._conn.execute(
@@ -326,42 +328,30 @@ class GraphStore:
             if needs_stamp:
                 command.stamp(cfg, "002")
 
-        # Phase 3 Task 1 — backup before BREAKING migration crosses the
-        # 005 boundary.  Read the current recorded revision (post-stamp)
-        # and the script-directory head; if the chain crosses 005,
-        # snapshot the SQLite file via ``shutil.copy2`` so the operator
-        # can roll back via ``CRG_DOWNGRADE_TO_1_X=1`` if the BREAKING
-        # migration produces a worse outcome than expected.  Idempotent:
-        # an existing backup is preserved (could be from an earlier
-        # partial run that aborted mid-upgrade — that copy is closer to
-        # the true v1.x state than anything we'd produce now).
+    def _maybe_take_backup_before_upgrade(self, cfg, ScriptDirectory) -> None:
         current_rev = self._read_alembic_version()
         target_rev = ScriptDirectory.from_config(cfg).get_current_head()
         if _crosses_breaking_boundary(current_rev, target_rev):
             self._take_pre_2_0_backup()
 
+    def _handle_alembic_command_error(self, cfg, ScriptDirectory, exc) -> None:
+        import sqlite3
+
+        recorded: str | None
         try:
-            command.upgrade(cfg, "head")
-        except CommandError as exc:
-            # Most likely cause: ``alembic_version`` references a revision
-            # this package does not ship.  Re-raise with the unknown
-            # revision and the local head spelt out so the operator knows
-            # whether to downgrade the package or recreate the DB.
-            recorded: str | None
-            try:
-                row = self._conn.execute(
-                    "SELECT version_num FROM alembic_version"
-                ).fetchone()
-                recorded = row[0] if row else None
-            except sqlite3.Error:
-                recorded = None
-            head = ScriptDirectory.from_config(cfg).get_current_head()
-            raise RuntimeError(
-                f"Graph DB at {self.db_path} reports alembic revision "
-                f"{recorded!r} which is not shipped with this version of "
-                f"better-code-review-graph (head={head!r}). Either downgrade "
-                "the package or recreate the DB."
-            ) from exc
+            row = self._conn.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()
+            recorded = row[0] if row else None
+        except sqlite3.Error:
+            recorded = None
+        head = ScriptDirectory.from_config(cfg).get_current_head()
+        raise RuntimeError(
+            f"Graph DB at {self.db_path} reports alembic revision "
+            f"{recorded!r} which is not shipped with this version of "
+            f"better-code-review-graph (head={head!r}). Either downgrade "
+            "the package or recreate the DB."
+        ) from exc
 
     # ------------------------------------------------------------------
     # Phase 3 Task 1 — backup / restore helpers
