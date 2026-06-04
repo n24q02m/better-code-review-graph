@@ -274,6 +274,31 @@ class TestRenamedInDiffFilters:
         assert result["status"] == "ok"
         assert result["shifts"] == []
 
+    def test_path_resolve_oserror_skipped(self, tmp_path):
+        """A path that triggers OSError during resolve() is skipped."""
+        repo = _make_minimal_repo(tmp_path)
+        _run_git(repo, "init", "--initial-branch=main")
+
+        # We mock resolve() to fail for a specific file name.
+        from better_code_review_graph import tools
+
+        original_path = tools.Path
+
+        class MockPath(original_path):
+            def resolve(self, *args, **kwargs):
+                if self.name == "bad_resolve.py":
+                    raise OSError("Simulated resolve error")
+                return super().resolve(*args, **kwargs)
+
+        with patch("better_code_review_graph.tools.Path", MockPath):
+            result = renamed_in_diff(
+                base="HEAD",
+                changed_files=["bad_resolve.py"],
+                repo_root=str(repo),
+            )
+        assert result["status"] == "ok"
+        assert result["shifts"] == []
+
     def test_unsupported_language_skipped(self, tmp_path):
         """Files whose language the parser cannot detect are skipped."""
         repo = _make_minimal_repo(tmp_path)
