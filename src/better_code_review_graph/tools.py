@@ -381,19 +381,11 @@ def build_or_update_graph(
         store.close()
 
 
-def _full_build_federated(
+def _setup_federation(
     store: GraphStore, primary_root: Path, roots: list[Path]
-) -> dict[str, Any]:
-    """Federated full build over multiple registered roots (Task 10).
-
-    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
-    nodes/edges parsed under it inherit the matching ``repo_id``. The
-    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
-    the DB) is registered too so its files don't fall outside every
-    root and lose their ``repo_id``.
-    """
+) -> tuple[Any, list[Any]]:
+    """Helper to register roots and backfill commits (Task 10 & Phase 3 Task 7)."""
     from .federation import RepoRegistry, backfill_commits_for_repo
-    from .parser import CodeParser
     from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
@@ -404,35 +396,59 @@ def _full_build_federated(
     for r in roots:
         extra_repo_ids.append((r, registry.add(r)))
 
-    # Phase 3 Task 7: first-parent commit backfill. Runs once per
-    # registered root after the registry is set up so the FK to
-    # ``repos.repo_id`` resolves. The helper is best-effort — non-git
-    # roots return 0 silently; we don't surface per-root counts in the
-    # build summary because the caller only cares about node/edge
-    # counts. Errors are swallowed by the helper itself, so a failure
-    # to walk one repo's history does not abort the whole build.
+    # Phase 3 Task 7: first-parent commit backfill.
     backfill_commits_for_repo(store, primary_repo_id, primary_root)
     for root, rid in extra_repo_ids:
         backfill_commits_for_repo(store, rid, root)
 
-    # Phase 2 Task 12: build ``target_repos`` from the registry so the
-    # parser's cross-repo IMPORTS_FROM rewrite actually fires. Without
-    # this, ``_apply_federation`` early-returns at the ``if not
-    # target_repos`` guard and edges stay as bare local references
-    # (e.g. ``py_lib.retry``) instead of resolving to
-    # ``<repo_id>:src/py_lib/retry.py::retry``.
+    # Phase 2 Task 12: build ``target_repos`` from the registry.
     target_repos = [
         TargetRepo(repo_id=entry.repo_id, root=entry.path)
         for entry in registry.entries()
     ]
+    return registry, target_repos
 
-    parser = CodeParser()
+
+def _parse_and_store_file(
+    full_path: Path,
+    parser: Any,
+    registry: Any,
+    target_repos: list[Any],
+    store: GraphStore,
+) -> tuple[int, int, dict[str, Any] | None]:
+    """Helper to parse and store a single file's nodes and edges."""
+    try:
+        source = full_path.read_bytes()
+        fhash = hashlib.sha256(source).hexdigest()
+        nodes, edges = parser.parse_bytes(
+            full_path,
+            source,
+            repo_registry=registry,
+            target_repos=target_repos,
+        )
+        store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
+        return len(nodes), len(edges), None
+    except (OSError, PermissionError) as e:
+        return 0, 0, {"file": str(full_path), "error": str(e)}
+    except Exception as e:
+        return 0, 0, {"file": str(full_path), "error": str(e)}
+
+
+def _process_roots(
+    primary_root: Path,
+    roots: list[Path],
+    parser: Any,
+    registry: Any,
+    target_repos: list[Any],
+    store: GraphStore,
+) -> tuple[int, int, int, list[dict[str, Any]]]:
+    """Helper to iterate over roots and collect files (Task 10)."""
     total_files = 0
     total_nodes = 0
     total_edges = 0
     errors: list[dict[str, Any]] = []
-
     visited_files: set[Path] = set()
+
     for r in [primary_root, *roots]:
         r_resolved = r.resolve()
         try:
@@ -440,34 +456,40 @@ def _full_build_federated(
         except Exception as e:
             errors.append({"root": str(r), "error": str(e)})
             continue
+
         for rel_path in files:
             full_path = (r / rel_path).resolve()
             if not full_path.is_relative_to(r_resolved):
                 continue
             if full_path in visited_files:
-                # A child root inside the primary would otherwise be
-                # parsed twice; the registry's longest-match-wins means
-                # the child wins for assign(), so we skip on the second
-                # encounter.
                 continue
             visited_files.add(full_path)
-            try:
-                source = full_path.read_bytes()
-                fhash = hashlib.sha256(source).hexdigest()
-                nodes, edges = parser.parse_bytes(
-                    full_path,
-                    source,
-                    repo_registry=registry,
-                    target_repos=target_repos,
-                )
-                store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
-                total_nodes += len(nodes)
-                total_edges += len(edges)
+
+            n_count, e_count, err = _parse_and_store_file(
+                full_path, parser, registry, target_repos, store
+            )
+            if err:
+                errors.append(err)
+            else:
+                total_nodes += n_count
+                total_edges += e_count
                 total_files += 1
-            except (OSError, PermissionError) as e:
-                errors.append({"file": str(full_path), "error": str(e)})
-            except Exception as e:
-                errors.append({"file": str(full_path), "error": str(e)})
+
+    return total_files, total_nodes, total_edges, errors
+
+
+def _full_build_federated(
+    store: GraphStore, primary_root: Path, roots: list[Path]
+) -> dict[str, Any]:
+    """Federated full build over multiple registered roots (Task 10)."""
+    from .parser import CodeParser
+
+    registry, target_repos = _setup_federation(store, primary_root, roots)
+    parser = CodeParser()
+
+    total_files, total_nodes, total_edges, errors = _process_roots(
+        primary_root, roots, parser, registry, target_repos, store
+    )
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")
@@ -487,11 +509,6 @@ def _full_build_federated(
         "roots": [str(r) for r in [primary_root, *roots]],
         "errors": errors,
     }
-
-
-# ---------------------------------------------------------------------------
-# Tool 2: get_impact_radius
-# ---------------------------------------------------------------------------
 
 
 _DEFAULT_IMPACT_PAYLOAD_BYTES = 500_000  # #315: ~500KB ceiling on impact JSON
