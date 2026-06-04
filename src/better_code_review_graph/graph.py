@@ -1122,6 +1122,99 @@ class GraphStore:
 
     # --- Impact / Graph traversal ---
 
+    def _get_impact_seeds(
+        self, changed_files: list[str], repo: str = "", as_of: str = ""
+    ) -> set[str]:
+        """Fetch and filter seed nodes from changed files."""
+        seed_nodes = self.get_nodes_by_files(changed_files, as_of=as_of)
+        if repo:
+            seed_nodes = [n for n in seed_nodes if self._node_repo_id(n) == repo]
+        return {n.qualified_name for n in seed_nodes}
+
+    def _get_repo_qualified_names(self, repo: str) -> set[str] | None:
+        """Fetch all qualified names belonging to a repository."""
+        if not repo:
+            return None
+        cursor = self._conn.execute(
+            "SELECT qualified_name FROM nodes WHERE repo_id = ?",
+            (repo,),
+        )
+        return {r["qualified_name"] for r in cursor}
+
+    def _traverse_impact_graph(
+        self,
+        nxg,
+        seeds: set[str],
+        repo_qns: set[str] | None,
+        max_depth: int,
+        max_nodes: int,
+    ) -> tuple[set[str], bool]:
+        """Perform optimized BFS traversal to find impacted nodes."""
+        visited: set[str] = set()
+        frontier = seeds.copy()
+        depth = 0
+        impacted: set[str] = set()
+        truncated = False
+
+        while frontier and depth < max_depth:
+            visited.update(frontier)
+            next_frontier: set[str] = set()
+            for qn in frontier:
+                if qn not in nxg:
+                    continue
+                # Neighbors (outgoing) and Predecessors (incoming)
+                for neighbor in list(nxg.neighbors(qn)) + list(nxg.predecessors(qn)):
+                    if neighbor in visited:
+                        continue
+                    if repo_qns is not None and neighbor not in repo_qns:
+                        continue
+                    next_frontier.add(neighbor)
+                    impacted.add(neighbor)
+
+            if len(visited) + len(next_frontier) > max_nodes:
+                truncated = True
+                break
+            frontier = next_frontier
+            depth += 1
+        return impacted, truncated
+
+    def _resolve_impact_results(
+        self,
+        seeds: set[str],
+        impacted: set[str],
+        truncated: bool,
+        total_impacted: int,
+        repo: str = "",
+        as_of: str = "",
+    ) -> dict[str, Any]:
+        """Resolve node names into full metadata and edges for the response."""
+        changed_nodes = self.get_nodes_by_qualified_names(list(seeds), as_of=as_of)
+        impacted_nodes = self.get_nodes_by_qualified_names(
+            list(impacted - seeds), as_of=as_of
+        )
+
+        if repo:
+            changed_nodes = [n for n in changed_nodes if self._node_repo_id(n) == repo]
+            impacted_nodes = [
+                n for n in impacted_nodes if self._node_repo_id(n) == repo
+            ]
+
+        impacted_files = list({n.file_path for n in impacted_nodes})
+
+        relevant_edges = []
+        all_qns = seeds | impacted
+        if all_qns:
+            relevant_edges = self.get_edges_among(all_qns)
+
+        return {
+            "changed_nodes": changed_nodes,
+            "impacted_nodes": impacted_nodes,
+            "impacted_files": impacted_files,
+            "edges": relevant_edges,
+            "truncated": truncated,
+            "total_impacted": total_impacted,
+        }
+
     def get_impact_radius(
         self,
         changed_files: list[str],
@@ -1156,93 +1249,25 @@ class GraphStore:
         """
         nxg = self._build_networkx_graph()
 
-        # Seed: all qualified names in changed files (batched to avoid N+1).
-        # When ``repo`` is set, drop seed nodes that don't belong to it.
-        seed_nodes = self.get_nodes_by_files(changed_files, as_of=as_of)
-        if repo:
-            seed_nodes = [n for n in seed_nodes if self._node_repo_id(n) == repo]
-        seeds = {n.qualified_name for n in seed_nodes}
+        seeds = self._get_impact_seeds(changed_files, repo=repo, as_of=as_of)
 
-        # Pre-compute the set of qualified_names belonging to ``repo`` so
-        # the BFS expansion can prune cross-repo neighbours. Skipped when
-        # ``repo == ""`` to keep the legacy hot path zero-overhead.
-        repo_qns: set[str] | None = None
-        if repo:
-            cursor = self._conn.execute(
-                "SELECT qualified_name FROM nodes WHERE repo_id = ?",
-                (repo,),
-            )
-            repo_qns = {r["qualified_name"] for r in cursor}
+        repo_qns = self._get_repo_qualified_names(repo)
 
-        # BFS outward through all edge types
-        visited: set[str] = set()
-        frontier = seeds.copy()
-        depth = 0
-        impacted: set[str] = set()
-        truncated = False
-
-        while frontier and depth < max_depth:
-            next_frontier: set[str] = set()
-            for qn in frontier:
-                visited.add(qn)
-                # Forward edges (things this node affects)
-                if qn in nxg:
-                    for neighbor in nxg.neighbors(qn):
-                        if neighbor in visited:
-                            continue
-                        if repo_qns is not None and neighbor not in repo_qns:
-                            continue
-                        next_frontier.add(neighbor)
-                        impacted.add(neighbor)
-                # Reverse edges (things that depend on this node)
-                if qn in nxg:
-                    for pred in nxg.predecessors(qn):
-                        if pred in visited:
-                            continue
-                        if repo_qns is not None and pred not in repo_qns:
-                            continue
-                        next_frontier.add(pred)
-                        impacted.add(pred)
-            # Cap total nodes to prevent resource exhaustion on dense graphs
-            if len(visited) + len(next_frontier) > max_nodes:
-                truncated = True
-                break
-            frontier = next_frontier
-            depth += 1
+        impacted, truncated = self._traverse_impact_graph(
+            nxg, seeds, repo_qns, max_depth, max_nodes
+        )
 
         # Record total count before any truncation for the response
         total_impacted = len(impacted - seeds)
 
-        # Resolve to full node info using batch fetch to prevent N+1 queries
-        changed_nodes = self.get_nodes_by_qualified_names(list(seeds), as_of=as_of)
-        impacted_nodes = self.get_nodes_by_qualified_names(
-            list(impacted - seeds), as_of=as_of
+        return self._resolve_impact_results(
+            seeds=seeds,
+            impacted=impacted,
+            truncated=truncated,
+            total_impacted=total_impacted,
+            repo=repo,
+            as_of=as_of,
         )
-
-        # Defensive re-filter (qualified_name set above is already
-        # repo-scoped, but get_nodes_by_qualified_names is repo-blind).
-        if repo:
-            changed_nodes = [n for n in changed_nodes if self._node_repo_id(n) == repo]
-            impacted_nodes = [
-                n for n in impacted_nodes if self._node_repo_id(n) == repo
-            ]
-
-        impacted_files = list({n.file_path for n in impacted_nodes})
-
-        # Collect relevant edges in a single batch query
-        relevant_edges = []
-        all_qns = seeds | impacted
-        if all_qns:
-            relevant_edges = self.get_edges_among(all_qns)
-
-        return {
-            "changed_nodes": changed_nodes,
-            "impacted_nodes": impacted_nodes,
-            "impacted_files": impacted_files,
-            "edges": relevant_edges,
-            "truncated": truncated,
-            "total_impacted": total_impacted,
-        }
 
     def _node_repo_id(self, node: GraphNode) -> str:
         """Look up a GraphNode's persisted ``repo_id`` (column not on dataclass).
