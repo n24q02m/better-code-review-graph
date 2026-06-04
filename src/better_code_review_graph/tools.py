@@ -1675,6 +1675,60 @@ def spot_check_last_callers(
     }
 
 
+def _get_git_file_content(root: Path, ref: str, rel_path: str) -> bytes | None:
+    """Fetch file content from a specific git ref."""
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            ["git", "show", f"{ref}:{rel_path}"],
+            cwd=str(root),
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return proc.stdout
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _get_function_line_mapping(
+    parser: Any, path: Path, source: bytes
+) -> dict[str, int]:
+    """Extract mapping of function qualified names to their start lines."""
+    try:
+        nodes, _ = parser.parse_bytes(path, source)
+        return {
+            f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
+            for n in nodes
+            if n.kind == "Function" and n.line_start is not None
+        }
+    except Exception:
+        return {}
+
+
+def _calculate_shifts(
+    rel_path: str, base_lines: dict[str, int], head_lines: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Compare base and head line mappings to find shifted symbols."""
+    shifts = []
+    for symbol, base_line in base_lines.items():
+        head_line = head_lines.get(symbol)
+        if head_line is not None and head_line != base_line:
+            shifts.append(
+                {
+                    "symbol": symbol,
+                    "file": rel_path,
+                    "base_line": base_line,
+                    "head_line": head_line,
+                    "delta": head_line - base_line,
+                }
+            )
+    return shifts
+
+
 def renamed_in_diff(
     base: str = "HEAD~1",
     changed_files: list[str] | None = None,
@@ -1700,8 +1754,6 @@ def renamed_in_diff(
     Returns:
         ``shifts`` list of ``{symbol, file, base_line, head_line, delta}``.
     """
-    import subprocess
-
     from .parser import CodeParser
 
     store, root = _get_store(repo_root)
@@ -1724,68 +1776,30 @@ def renamed_in_diff(
             full_path_raw = root / rel_path
             try:
                 full_path = full_path_raw.resolve()
+                if (
+                    not full_path.is_relative_to(repo_resolved)
+                    or full_path_raw.is_symlink()
+                    or full_path.is_symlink()
+                    or not full_path.is_file()
+                    or parser.detect_language(full_path) is None
+                ):
+                    continue
             except OSError:
                 continue
-            if not full_path.is_relative_to(repo_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            if not full_path.is_file():
-                continue
-            if parser.detect_language(full_path) is None:
-                continue
 
-            # Fetch base-ref content via git.
-            try:
-                proc = subprocess.run(
-                    ["git", "show", f"{base}:{rel_path}"],
-                    cwd=str(root),
-                    capture_output=True,
-                    timeout=15,
-                    check=False,
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if proc.returncode != 0:
-                # File didn't exist at base (added file) -- skip.
-                continue
-            base_source = proc.stdout
+            base_source = _get_git_file_content(root, base, rel_path)
             if not base_source:
                 continue
 
             try:
-                base_nodes, _ = parser.parse_bytes(full_path, base_source)
                 head_source = full_path.read_bytes()
-                head_nodes, _ = parser.parse_bytes(full_path, head_source)
-            except Exception:
+            except OSError:
                 continue
 
-            base_lines = {
-                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
-                for n in base_nodes
-                if n.kind == "Function" and n.line_start is not None
-            }
-            head_lines = {
-                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
-                for n in head_nodes
-                if n.kind == "Function" and n.line_start is not None
-            }
+            base_lines = _get_function_line_mapping(parser, full_path, base_source)
+            head_lines = _get_function_line_mapping(parser, full_path, head_source)
 
-            for symbol, base_line in base_lines.items():
-                head_line = head_lines.get(symbol)
-                if head_line is None:
-                    continue  # removed -- out of scope for line-drift
-                if head_line == base_line:
-                    continue
-                shifts.append(
-                    {
-                        "symbol": symbol,
-                        "file": rel_path,
-                        "base_line": base_line,
-                        "head_line": head_line,
-                        "delta": head_line - base_line,
-                    }
-                )
+            shifts.extend(_calculate_shifts(rel_path, base_lines, head_lines))
 
         return {
             "status": "ok",
