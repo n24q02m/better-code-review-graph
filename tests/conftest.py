@@ -21,9 +21,9 @@ from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
 def _isolate_global_git_config() -> None:
     """Strip global git config so test-created repos commit deterministically.
 
-    Without this, tests that ``git init`` a throwaway repo and run
-    ``git commit`` inherit the developer/CI ``commit.gpgsign``,
-    ``gpg.format``, and ``user.signingkey`` from ``~/.gitconfig``.
+    Without this, tests that `git init` a throwaway repo and run
+    `git commit` inherit the developer/CI `commit.gpgsign`,
+    `gpg.format`, and `user.signingkey` from `~/.gitconfig`.
     When the signing program is not actually wired up for the
     sandboxed test environment (e.g. inside a CI runner image that
     pre-configures SSH signing), the commit aborts with a confusing
@@ -36,22 +36,22 @@ def _isolate_global_git_config() -> None:
 def _allow_temporal_migration_without_git() -> None:
     """Opt the test session into the no-git fallback path of migration 005.
 
-    The Phase 3 Task 6 BREAKING migration (``005_temporal_columns``)
-    reads ``git rev-parse HEAD`` from the repo containing the graph DB
-    so it can backfill ``valid_from_sha``. Production deployments
+    The Phase 3 Task 6 BREAKING migration (`005_temporal_columns`)
+    reads `git rev-parse HEAD` from the repo containing the graph DB
+    so it can backfill `valid_from_sha`. Production deployments
     always satisfy this invariant — CRG only indexes git repos. The
-    test suite, however, creates throwaway DBs in ``tmp_path`` /
-    ``tempfile.NamedTemporaryFile`` paths that live outside any git
+    test suite, however, creates throwaway DBs in `tmp_path` /
+    `tempfile.NamedTemporaryFile` paths that live outside any git
     repo, and many legacy tests deliberately probe code paths that
     assume those tmp dirs are NOT inside a git repo (see
-    ``test_incremental.py::TestFindRepoRoot::test_returns_none_without_git``).
+    `test_incremental.py::TestFindRepoRoot::test_returns_none_without_git`).
 
-    Setting ``CRG_TEST_ALLOW_NO_GIT=1`` flips migration 005 to use the
-    documented in-memory sentinel SHA (40 zeros) when no ``.git``
+    Setting `CRG_TEST_ALLOW_NO_GIT=1` flips migration 005 to use the
+    documented in-memory sentinel SHA (40 zeros) when no `.git`
     ancestor is reachable. The migration still aborts with the
     actionable :class:`RuntimeError` in production code paths where
     the env var is unset. Tests that exercise the abort path
-    explicitly clear this env var via ``monkeypatch.delenv``.
+    explicitly clear this env var via `monkeypatch.delenv`.
     """
     os.environ["CRG_TEST_ALLOW_NO_GIT"] = "1"
 
@@ -103,9 +103,9 @@ def _make_node(
 ) -> NodeInfo:
     """Helper to create a NodeInfo for testing.
 
-    The ``qualified_name`` is only used to derive defaults for ``file_path``
-    (everything before ``::``).  The actual qualified name stored in the DB is
-    computed by ``GraphStore._make_qualified()`` from the NodeInfo fields.
+    The `qualified_name` is only used to derive defaults for `file_path`
+    (everything before `::`).  The actual qualified name stored in the DB is
+    computed by `GraphStore._make_qualified()` from the NodeInfo fields.
 
     Common kwargs: file_path, line_start, line_end, language, parent_name,
     params, return_type, modifiers, is_test, extra.
@@ -142,7 +142,7 @@ def _make_edge(
 ) -> EdgeInfo:
     """Helper to create an EdgeInfo for testing.
 
-    ``source`` and ``target`` map to EdgeInfo.source and EdgeInfo.target
+    `source` and `target` map to EdgeInfo.source and EdgeInfo.target
     (which are stored as source_qualified / target_qualified in the DB).
     """
     return EdgeInfo(
@@ -153,3 +153,36 @@ def _make_edge(
         line=line,
         extra=kwargs.get("extra", {}),
     )
+
+
+@pytest.fixture(autouse=True)
+def mock_text_embedding(monkeypatch):
+    """Mock qwen3_embed.TextEmbedding to prevent downloads and slowness in tests."""
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    class MockTextEmbedding:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def embed(self, texts, **kwargs):
+            dim = kwargs.get("dim", 768)
+            for _ in texts:
+                yield np.zeros(dim, dtype=np.float32)
+
+        def query_embed(self, text, **kwargs):
+            dim = kwargs.get("dim", 768)
+            yield np.zeros(dim, dtype=np.float32)
+
+    # Use monkeypatch to intercept the import/class
+    try:
+        import qwen3_embed
+
+        monkeypatch.setattr(qwen3_embed, "TextEmbedding", MockTextEmbedding)
+    except ImportError:
+        # If not installed, we can still mock it in sys.modules if needed,
+        # but here it's in dependencies so it should be available.
+        mock_mod = MagicMock()
+        mock_mod.TextEmbedding = MockTextEmbedding
+        monkeypatch.setitem(os.sys.modules, "qwen3_embed", mock_mod)
