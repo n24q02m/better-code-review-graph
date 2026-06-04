@@ -184,24 +184,6 @@ def graph(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
-    description=(
-        "Query the code knowledge graph for relationships, search, and impact analysis. "
-        "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
-        "large_functions (min_lines), spot_check (n -- random callsite snippets from "
-        "last callers_of/callees_of/inheritors_of/importers_of result), "
-        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref), "
-        "diff (from_sha, to_sha -- nodes added/removed/modified between two commit SHAs). "
-        "Use `help` tool for full docs."
-    ),
-    annotations=ToolAnnotations(
-        title="Query",
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
-    ),
-)
 def _handle_query_action(
     pattern: str | None,
     target: str | None,
@@ -380,6 +362,24 @@ def _handle_unknown_action(action: str) -> str:
     )
 
 
+@mcp.tool(
+    description=(
+        "Query the code knowledge graph for relationships, search, and impact analysis. "
+        "Actions: query (pattern, target), search (search_query), impact (changed_files|base), "
+        "large_functions (min_lines), spot_check (n -- random callsite snippets from "
+        "last callers_of/callees_of/inheritors_of/importers_of result), "
+        "renamed_in_diff (base -- symbols whose callsite line shifted vs base ref), "
+        "diff (from_sha, to_sha -- nodes added/removed/modified between two commit SHAs). "
+        "Use `help` tool for full docs."
+    ),
+    annotations=ToolAnnotations(
+        title="Query",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
 def query(
     action: str,
     # query params
