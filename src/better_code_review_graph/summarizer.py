@@ -7,11 +7,10 @@ live in later tasks of the same phase.
 
 Cache key shape: ``"{sha256_hex}:{provider}"``. Switching provider
 invalidates the cached summary because the provider tag is part of the
-key, even when the source bytes are identical. Pre-computed hashes are
-trusted verbatim (the caller has likely already paid the SHA-256 cost
-when persisting ``nodes.source_hash`` -- recomputing here is wasteful and
-also gives subtle "rehash drift" bugs if the caller passes a normalised
-form of the source).
+key, even when the source bytes are identical. The source is always
+rehashed here (after stripping leading/trailing whitespace) to ensure
+consistency and avoid "rehash drift" bugs that occur if callers pass
+inconsistent or unnormalised forms of the source.
 
 Provider priority: Gemini wins over OpenAI when both keys are set, and
 ``GOOGLE_API_KEY`` is treated as a Gemini alias. This matches the
@@ -44,8 +43,9 @@ class NodeNeedingSummary:
         node_id: Qualified-name primary key (``file_path::name``).
         source_text: Raw function source code that the LLM will summarize.
         source_hash: Optional pre-computed SHA-256 hex digest of
-            ``source_text`` -- when provided the cache key trusts it
-            verbatim and skips rehashing.
+            ``source_text``. Note that ``compute_summary_cache_key``
+            always recomputes the hash from ``source_text`` to ensure
+            normalization.
     """
 
     node_id: str
@@ -59,21 +59,18 @@ def compute_source_hash(source_text: str) -> str:
     Pure function, no I/O. ``source_text=""`` is well-defined and returns
     ``hashlib.sha256(b"").hexdigest()``.
     """
-    return hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    return hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()
 
 
 def compute_summary_cache_key(node: NodeNeedingSummary, provider: str) -> str:
     """Derive the LLM-summary cache key for ``node`` under ``provider``.
 
-    Uses ``node.source_hash`` if present (trusted verbatim, no
-    recomputation), otherwise hashes ``node.source_text`` on demand.
+    Always rehashes ``node.source_text`` to ensure a normalized key
+    (stripping whitespace) and avoid "rehash drift" from potentially
+    unnormalized ``node.source_hash`` values provided by callers.
     Format: ``"{hash}:{provider}"``.
     """
-    hash_value = (
-        node.source_hash
-        if node.source_hash is not None
-        else compute_source_hash(node.source_text)
-    )
+    hash_value = compute_source_hash(node.source_text)
     return f"{hash_value}:{provider}"
 
 

@@ -33,7 +33,7 @@ from better_code_review_graph.summarizer import (
 
 def test_compute_source_hash_is_sha256():
     source = "def add(a, b):\n    return a + b\n"
-    expected = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    expected = hashlib.sha256(source.strip().encode("utf-8")).hexdigest()
     actual = compute_source_hash(source)
 
     # SHA-256 hex digest is 64 lowercase hex chars.
@@ -53,10 +53,20 @@ def test_compute_source_hash_empty_string():
 def test_compute_source_hash_handles_unicode():
     """Unicode source code (non-ASCII) must hash via UTF-8 encoding."""
     src = "def greet(): return 'café'"
-    expected = hashlib.sha256(src.encode("utf-8")).hexdigest()
+    expected = hashlib.sha256(src.strip().encode("utf-8")).hexdigest()
     assert compute_source_hash(src) == expected
     # Also verify it's not the latin-1 hash (which would be different)
     assert compute_source_hash(src) != hashlib.sha256(src.encode("latin-1")).hexdigest()
+
+
+def test_compute_source_hash_normalizes_whitespace():
+    """Leading/trailing whitespace must be stripped before hashing."""
+    s1 = "def f(): return 1"
+    s2 = "  def f(): return 1\n\n  "
+    h1 = compute_source_hash(s1)
+    h2 = compute_source_hash(s2)
+    assert h1 == h2
+    assert h1 == hashlib.sha256(s1.encode("utf-8")).hexdigest()
 
 
 def test_node_needing_summary_is_frozen():
@@ -68,7 +78,7 @@ def test_node_needing_summary_is_frozen():
 
 def test_cache_key_combines_source_hash_and_provider():
     source = "def add(a, b):\n    return a + b\n"
-    expected_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    expected_hash = hashlib.sha256(source.strip().encode("utf-8")).hexdigest()
 
     node = NodeNeedingSummary(
         node_id="src/x.py::add",
@@ -97,21 +107,24 @@ def test_cache_key_changes_when_provider_changes():
     assert gemini_key.split(":", 1)[0] == openai_key.split(":", 1)[0]
 
 
-def test_cache_key_uses_precomputed_hash_when_provided():
-    """When ``source_hash`` is set the cache key MUST trust it verbatim.
+def test_cache_key_ignores_precomputed_hash_to_avoid_drift():
+    """When ``source_hash`` is set the cache key MUST NOT trust it verbatim.
 
-    We pass a fake hash that does NOT match the source text; the key must
-    still embed the fake hash, proving no recomputation occurred.
+    Always recompute from ``source_text`` to ensure normalization and
+    avoid "rehash drift" bugs where callers provide inconsistent hashes.
     """
     fake_hash = "deadbeef" * 8  # 64 hex chars, intentionally wrong
+    source = "def add(a, b):\n    return a + b\n"
+    expected_hash = hashlib.sha256(source.strip().encode("utf-8")).hexdigest()
     node = NodeNeedingSummary(
         node_id="src/x.py::add",
-        source_text="def add(a, b):\n    return a + b\n",
+        source_text=source,
         source_hash=fake_hash,
     )
     key = compute_summary_cache_key(node, "gemini")
 
-    assert key == f"{fake_hash}:gemini"
+    assert key == f"{expected_hash}:gemini"
+    assert key != f"{fake_hash}:gemini"
 
 
 # ---------------------------------------------------------------------------
