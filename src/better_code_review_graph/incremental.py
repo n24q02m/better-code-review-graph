@@ -415,16 +415,24 @@ def _snapshot_pre_functions(
     """Create per-file snapshot of pre-update Function qualified_names."""
     pre_functions: dict[str, dict[str, str]] = {}
     repo_resolved = repo_root.resolve()
+
+    abs_to_rel: dict[str, str] = {}
     for rel_path in all_files:
-        abs_pre = (repo_root / rel_path).resolve()
-        if not abs_pre.is_relative_to(repo_resolved):
-            continue
-        existing = store.get_nodes_by_file(str(abs_pre))
-        pre_functions[rel_path] = {
-            n.qualified_name: (n.file_hash or "")
-            for n in existing
-            if n.kind == "Function"
-        }
+        abs_path = (repo_root / rel_path).resolve()
+        if abs_path.is_relative_to(repo_resolved):
+            abs_to_rel[str(abs_path)] = rel_path
+            pre_functions[rel_path] = {}
+
+    if not abs_to_rel:
+        return pre_functions
+
+    # Batch fetch all nodes for these files to avoid N+1 query.
+    all_nodes = store.get_nodes_by_files(list(abs_to_rel.keys()))
+    for n in all_nodes:
+        rel_path = abs_to_rel.get(n.file_path)
+        if rel_path and n.kind == "Function":
+            pre_functions[rel_path][n.qualified_name] = n.file_hash or ""
+
     return pre_functions
 
 
