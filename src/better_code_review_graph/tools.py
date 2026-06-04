@@ -2385,18 +2385,20 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
             summary_parts.append(f"  {kind}: {count}")
 
         # Add embedding info if available
-        backend = init_backend()
-        emb_store = EmbeddingStore(get_db_path(root), backend)
         try:
-            emb_count = emb_store.count()
-            mode = resolve_backend()
-            summary_parts.append("")
-            summary_parts.append(
-                f"Embeddings: {emb_count} nodes embedded (backend: {mode})"
-            )
-        finally:
-            emb_store.close()
-
+            backend = init_backend()
+            emb_store = EmbeddingStore(get_db_path(root), backend)
+            try:
+                emb_count = emb_store.count()
+                mode = resolve_backend()
+                summary_parts.append("")
+                summary_parts.append(
+                    f"Embeddings: {emb_count} nodes embedded (backend: {mode})"
+                )
+            finally:
+                emb_store.close()
+        except Exception:
+            emb_count = None
         return {
             "status": "ok",
             "summary": "\n".join(summary_parts),
