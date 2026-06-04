@@ -623,13 +623,23 @@ def _build_reviewer_summary(
     functions_modified: list[str] = []
     repo_resolved = repo_root.resolve()
 
+    # Batch fetch nodes by file to avoid N+1 query.
+    path_map = {}
     for rel_path in changed_set:
         if rel_path not in actually_updated:
             continue
         abs_path = (repo_root / rel_path).resolve()
         if not abs_path.is_relative_to(repo_resolved):
             continue
-        post_nodes = store.get_nodes_by_file(str(abs_path))
+        path_map[rel_path] = str(abs_path)
+
+    all_post_nodes = store.get_nodes_by_files(list(path_map.values()))
+    nodes_by_file = {}
+    for node in all_post_nodes:
+        nodes_by_file.setdefault(node.file_path, []).append(node)
+
+    for rel_path, abs_path_str in path_map.items():
+        post_nodes = nodes_by_file.get(abs_path_str, [])
         post_qns = {n.qualified_name for n in post_nodes if n.kind == "Function"}
         pre_qns = set(pre_functions.get(rel_path, {}).keys())
 
