@@ -2485,7 +2485,7 @@ def export_graph_dispatch(
     """
     from .exporter import export_graph
 
-    store, _ = _get_store(repo_root)
+    store, root = _get_store(repo_root)
     try:
         payload = export_graph(store, format=format)
     except ValueError as e:
@@ -2495,7 +2495,15 @@ def export_graph_dispatch(
     byte_count = len(payload.encode("utf-8"))
 
     if output_path:
-        Path(output_path).write_text(payload, encoding="utf-8")
+        out_p = Path(output_path).resolve()
+        # Security: Prevent path traversal by ensuring the output path stays within the repository
+        if not out_p.is_relative_to(root.resolve()):
+            return {
+                "status": "error",
+                "error": f"Invalid output path: {output_path} resolves outside repository root.",
+            }
+
+        out_p.write_text(payload, encoding="utf-8")
         return {
             "status": "ok",
             "format": fmt,
