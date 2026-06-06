@@ -9,3 +9,7 @@
 **Learning:** When testing edge cases in environments with missing heavy dependencies (like `networkx` or `tree-sitter`), using `sys.modules` to mock these dependencies *before* importing the target module allows for reliable unit testing without triggering `ModuleNotFoundError`.
 
 **Action:** For specialized coverage tests, implement a `MockModule` that uses `__getattr__` to return `MagicMock()` and patch `sys.modules` prior to tool imports. This ensures that even deeply nested or lazy imports within the target module are safely handled during test execution.
+
+## 2024-05-29 - Use native set operations for Breadth-First Search (BFS) graph traversals
+**Learning:** During BFS graph traversals, especially on dense graphs like NetworkX directional graphs, using Python `for` loops to iterate through neighbors and predecessors is slow.
+**Action:** Replace `for` loops with native C-level `set()` operations (e.g., `update`, `difference_update`, `intersection_update`) to efficiently filter out already-visited nodes and compute the next frontier, significantly improving traversal performance. Add the entire frontier to the visited set upfront to avoid redundant processing within the same tier.
