@@ -90,11 +90,12 @@ class RepoRegistry:
 
     def _load_from_store(self) -> None:
         """Populate the in-memory caches from the ``repos`` table."""
-        rows = self._store._conn.execute(
+        # Performance optimization: iterate directly over the cursor to avoid materializing all rows in memory
+        cursor = self._store._conn.execute(
             "SELECT repo_id, path, remote_url, last_indexed_sha, "
             "first_indexed_at, last_indexed_at FROM repos"
-        ).fetchall()
-        for row in rows:
+        )
+        for row in cursor:
             entry = RepoEntry(
                 repo_id=row["repo_id"],
                 path=Path(row["path"]),
