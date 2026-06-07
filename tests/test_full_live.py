@@ -113,19 +113,20 @@ export { Circle, Rectangle, totalArea };
 """
 
 
-def _parse_result_text(result) -> dict[str, Any]:
-    """Extract text from MCP call_tool result and parse as JSON.
+def _parse_result_text(result) -> Any:
+    """Extract text from MCP call_tool result and try to parse as JSON.
 
-    All tools in better-code-review-graph return JSON-encoded dicts; a
-    non-dict payload indicates a test setup bug, so we fail loudly here.
+    Most tools return JSON-encoded dicts, but some (like "help") may
+    return raw markdown strings.
     """
     text = result.content[0].text
-    payload = json.loads(text)
-    if not isinstance(payload, dict):
-        raise TypeError(
-            f"Expected JSON object from MCP tool, got {type(payload).__name__}: {text!r}"
-        )
-    return payload
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return text
 
 
 def _server_params() -> StdioServerParameters:
@@ -761,3 +762,24 @@ class TestFullCloudEmbed:
                     n in names for n in ("add", "multiply", "calculate", "Calculator")
                 )
                 assert found, f"Expected calculator nodes, got {names}"
+
+
+# ---------------------------------------------------------------------------
+# TestFullHelp
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.full
+class TestFullHelp:
+    """Test help tool functionality."""
+
+    async def test_help_graph(self):
+        """help topic=graph returns markdown documentation."""
+        async with stdio_client(_server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("help", {"topic": "graph"})
+                data = _parse_result_text(result)
+                # Should be a string (markdown), not a dict
+                assert isinstance(data, str)
+                assert "# Graph" in data or "graph" in data.lower()
