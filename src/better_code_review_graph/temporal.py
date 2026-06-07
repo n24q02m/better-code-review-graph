@@ -108,6 +108,64 @@ class TemporalIndex:
         self._current_sha = current_sha
         self._ensure_temporal_friendly_schema()
 
+    def _has_legacy_nodes_autoindex(self) -> bool:
+        """Detect the legacy UNIQUE autoindex."""
+        legacy = self._store._conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='index' AND tbl_name='nodes' "
+            "AND name LIKE 'sqlite_autoindex_nodes_%'"
+        ).fetchone()
+        return legacy is not None
+
+    def _get_nodes_column_metadata(self) -> list[tuple]:
+        """Retrieve table column information using PRAGMA."""
+        return self._store._conn.execute("PRAGMA table_info(nodes)").fetchall()
+
+    def _rebuild_nodes_table(
+        self, col_names: list[str], column_defs: list[str]
+    ) -> None:
+        """Perform the table rebuild to remove the UNIQUE constraint."""
+        conn = self._store._conn
+        # Drop conflicting helpers first so the rename succeeds without
+        # collisions on a re-run that aborted mid-way.
+        conn.execute("DROP TABLE IF EXISTS nodes_temporal_new")
+        conn.execute(f"CREATE TABLE nodes_temporal_new ({', '.join(column_defs)})")
+
+        col_list = ", ".join(_quote_identifier(c) for c in col_names)
+        conn.execute(
+            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608 — quoted names
+        )
+        conn.execute("DROP TABLE nodes")
+        conn.execute("ALTER TABLE nodes_temporal_new RENAME TO nodes")
+
+    def _create_nodes_temporal_indexes(self, col_names: list[str]) -> None:
+        """Recreate the secondary indexes on the temporal-aware nodes table."""
+        conn = self._store._conn
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file_path)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_qualified ON nodes(qualified_name)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash)"
+        )
+        if "repo_id" in col_names:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo_id, kind)"
+            )
+        if "valid_from_sha" in col_names:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_nodes_temporal "
+                "ON nodes(valid_from_sha, valid_to_sha)"
+            )
+        # Partial unique index — at most one currently-valid row per
+        # qualified_name. Historical rows (valid_to_sha IS NOT NULL)
+        # are NOT covered, so multiple supersede generations coexist.
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_qualified_active "
+            "ON nodes(qualified_name) WHERE valid_to_sha IS NULL"
+        )
+
     def _ensure_temporal_friendly_schema(self) -> None:
         """Relax the legacy ``UNIQUE(qualified_name)`` constraint on ``nodes``.
 
@@ -137,13 +195,7 @@ class TemporalIndex:
         """
         conn = self._store._conn
 
-        # Detect the legacy autoindex. If it's gone we already migrated.
-        legacy = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='index' AND tbl_name='nodes' "
-            "AND name LIKE 'sqlite_autoindex_nodes_%'"
-        ).fetchone()
-        if legacy is None:
+        if not self._has_legacy_nodes_autoindex():
             # Already temporal-friendly; just make sure the partial
             # unique index exists so re-runs converge to the same state.
             conn.execute(
@@ -153,18 +205,12 @@ class TemporalIndex:
             conn.commit()
             return
 
-        # Read existing column list verbatim — we want to mirror whatever
-        # alembic last left on the table (Phase 2/3 columns included).
-        cols_info = conn.execute("PRAGMA table_info(nodes)").fetchall()
+        cols_info = self._get_nodes_column_metadata()
         col_names = [row[1] for row in cols_info]
 
-        # Build the new-table DDL. ``id`` keeps its PK + AUTOINCREMENT;
-        # ``qualified_name`` keeps NOT NULL but loses UNIQUE.
+        # Build the new-table DDL.
         column_defs: list[str] = []
         for cid, name, typ, notnull, dflt, pk in cols_info:  # noqa: B007
-            # Security: Validate column names from PRAGMA (Bandit B608).
-            # PRAGMA results are normally safe, but we verify they only contain
-            # alphanumeric characters and underscores as a defense-in-depth.
             if not all(c.isalnum() or c == "_" for c in name):
                 raise RuntimeError(f"Unsafe column name detected in schema: {name}")
 
@@ -178,45 +224,8 @@ class TemporalIndex:
                 parts.append(f"DEFAULT {dflt}")
             column_defs.append(" ".join(parts))
 
-        # Drop conflicting helpers first so the rename succeeds without
-        # collisions on a re-run that aborted mid-way.
-        conn.execute("DROP TABLE IF EXISTS nodes_temporal_new")
-        conn.execute(f"CREATE TABLE nodes_temporal_new ({', '.join(column_defs)})")
-
-        col_list = ", ".join(_quote_identifier(c) for c in col_names)
-        conn.execute(
-            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608 — quoted names
-        )
-        conn.execute("DROP TABLE nodes")
-        conn.execute("ALTER TABLE nodes_temporal_new RENAME TO nodes")
-
-        # Recreate the secondary indexes on ``nodes``. We deliberately
-        # do NOT recreate the autoindex; the partial unique index below
-        # replaces it for the temporal-aware invariant.
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_file ON nodes(file_path)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind)")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_qualified ON nodes(qualified_name)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash)"
-        )
-        if "repo_id" in col_names:
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo_id, kind)"
-            )
-        if "valid_from_sha" in col_names:
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_nodes_temporal "
-                "ON nodes(valid_from_sha, valid_to_sha)"
-            )
-        # Partial unique index — at most one currently-valid row per
-        # qualified_name. Historical rows (valid_to_sha IS NOT NULL)
-        # are NOT covered, so multiple supersede generations coexist.
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_qualified_active "
-            "ON nodes(qualified_name) WHERE valid_to_sha IS NULL"
-        )
+        self._rebuild_nodes_table(col_names, column_defs)
+        self._create_nodes_temporal_indexes(col_names)
         conn.commit()
 
     # ------------------------------------------------------------------
