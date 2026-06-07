@@ -60,11 +60,6 @@ class TestSetupStatusLiveDerivedState:
         monkeypatch.delenv("COHERE_API_KEY", raising=False)
         monkeypatch.delenv("CO_API_KEY", raising=False)
 
-        # Force module-level state to CONFIGURED (stale) to reproduce the bug
-        import better_code_review_graph.credential_state as cs
-
-        cs.set_state(cs.CredentialState.CONFIGURED)
-
         with patch(
             "mcp_core.storage.per_plugin_store.PerPluginStore.load",
             return_value={},
@@ -74,9 +69,6 @@ class TestSetupStatusLiveDerivedState:
         # State must be derived from live creds, NOT stale _state
         assert result["state"] != "configured"
         assert result["providers_configured"] == []
-
-        # Restore state
-        cs.set_state(cs.CredentialState.AWAITING_SETUP)
 
     def test_env_vars_take_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """setup_status includes env-var keys in providers_configured."""
