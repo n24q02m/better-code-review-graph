@@ -359,6 +359,34 @@ class TestRenamedInDiffFilters:
         # Removed functions are out of scope -> not reported.
         assert "removed_fn" not in symbols
 
+    def test_path_resolve_oserror_skipped(self, tmp_path):
+        """OSError during Path.resolve() in renamed_in_diff is caught and skips the file."""
+        repo = _make_minimal_repo(tmp_path)
+        _run_git(repo, "init", "--initial-branch=main")
+        _run_git(repo, "config", "user.email", "t@t.com")
+        _run_git(repo, "config", "user.name", "t")
+        (repo / "a.py").write_text("def alpha():\n    return 1\n")
+        _run_git(repo, "add", "a.py")
+        _run_git(repo, "commit", "-m", "feat: initial")
+
+        path_cls = type(Path())
+        original_resolve = path_cls.resolve
+
+        def side_effect(self, *args, **kwargs):
+            if self.name == "a.py":
+                raise OSError("Mocked resolution error")
+            return original_resolve(self, *args, **kwargs)
+
+        with patch.object(path_cls, "resolve", side_effect):
+            result = renamed_in_diff(
+                base="HEAD",
+                changed_files=["a.py"],
+                repo_root=str(repo),
+            )
+
+        assert result["status"] == "ok"
+        assert result["shifts"] == []
+
 
 # ---------------------------------------------------------------------------
 # _looks_like_literal_identifier (#317)
