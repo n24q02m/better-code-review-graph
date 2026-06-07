@@ -381,19 +381,11 @@ def build_or_update_graph(
         store.close()
 
 
-def _full_build_federated(
+def _setup_federation(
     store: GraphStore, primary_root: Path, roots: list[Path]
-) -> dict[str, Any]:
-    """Federated full build over multiple registered roots (Task 10).
-
-    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
-    nodes/edges parsed under it inherit the matching ``repo_id``. The
-    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
-    the DB) is registered too so its files don't fall outside every
-    root and lose their ``repo_id``.
-    """
+) -> tuple[Any, list[Any]]:
+    """Register roots and backfill commits (Task 10 & Phase 3 Task 7)."""
     from .federation import RepoRegistry, backfill_commits_for_repo
-    from .parser import CodeParser
     from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
@@ -425,8 +417,45 @@ def _full_build_federated(
         TargetRepo(repo_id=entry.repo_id, root=entry.path)
         for entry in registry.entries()
     ]
+    return registry, target_repos
 
-    parser = CodeParser()
+
+def _parse_and_store_file(
+    full_path: Path,
+    parser: Any,
+    store: GraphStore,
+    registry: Any,
+    target_repos: list[Any],
+    errors: list[dict[str, Any]],
+) -> tuple[int, int, int]:
+    """Parse a single file and store its nodes/edges."""
+    try:
+        source = full_path.read_bytes()
+        fhash = hashlib.sha256(source).hexdigest()
+        nodes, edges = parser.parse_bytes(
+            full_path,
+            source,
+            repo_registry=registry,
+            target_repos=target_repos,
+        )
+        store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
+        return 1, len(nodes), len(edges)
+    except (OSError, PermissionError) as e:
+        errors.append({"file": str(full_path), "error": str(e)})
+    except Exception as e:
+        errors.append({"file": str(full_path), "error": str(e)})
+    return 0, 0, 0
+
+
+def _process_roots(
+    primary_root: Path,
+    roots: list[Path],
+    parser: Any,
+    store: GraphStore,
+    registry: Any,
+    target_repos: list[Any],
+) -> tuple[int, int, int, list[dict[str, Any]]]:
+    """Iterate over roots and files to build the graph."""
     total_files = 0
     total_nodes = 0
     total_edges = 0
@@ -451,23 +480,36 @@ def _full_build_federated(
                 # encounter.
                 continue
             visited_files.add(full_path)
-            try:
-                source = full_path.read_bytes()
-                fhash = hashlib.sha256(source).hexdigest()
-                nodes, edges = parser.parse_bytes(
-                    full_path,
-                    source,
-                    repo_registry=registry,
-                    target_repos=target_repos,
-                )
-                store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
-                total_nodes += len(nodes)
-                total_edges += len(edges)
-                total_files += 1
-            except (OSError, PermissionError) as e:
-                errors.append({"file": str(full_path), "error": str(e)})
-            except Exception as e:
-                errors.append({"file": str(full_path), "error": str(e)})
+
+            f_inc, n_inc, e_inc = _parse_and_store_file(
+                full_path, parser, store, registry, target_repos, errors
+            )
+            total_files += f_inc
+            total_nodes += n_inc
+            total_edges += e_inc
+
+    return total_files, total_nodes, total_edges, errors
+
+
+def _full_build_federated(
+    store: GraphStore, primary_root: Path, roots: list[Path]
+) -> dict[str, Any]:
+    """Federated full build over multiple registered roots (Task 10).
+
+    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
+    nodes/edges parsed under it inherit the matching ``repo_id``. The
+    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
+    the DB) is registered too so its files don't fall outside every
+    root and lose their ``repo_id``.
+    """
+    from .parser import CodeParser
+
+    registry, target_repos = _setup_federation(store, primary_root, roots)
+
+    parser = CodeParser()
+    total_files, total_nodes, total_edges, errors = _process_roots(
+        primary_root, roots, parser, store, registry, target_repos
+    )
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")

@@ -1,0 +1,108 @@
+def _setup_federation(
+    store: GraphStore, primary_root: Path, roots: list[Path]
+) -> tuple[Any, list[Any]]:
+    """Register roots and backfill commits (Task 10 & Phase 3 Task 7)."""
+    from .federation import RepoRegistry, backfill_commits_for_repo
+    from .resolver import TargetRepo
+
+    registry = RepoRegistry(store)
+    # Register primary first so it's always present, then each extra
+    # root supplied by the caller. ``add`` is idempotent on re-add.
+    primary_repo_id = registry.add(primary_root)
+    extra_repo_ids: list[tuple[Path, str]] = []
+    for r in roots:
+        extra_repo_ids.append((r, registry.add(r)))
+
+    # Phase 3 Task 7: first-parent commit backfill. Runs once per
+    # registered root after the registry is set up so the FK to
+    # ``repos.repo_id`` resolves. The helper is best-effort — non-git
+    # roots return 0 silently; we don't surface per-root counts in the
+    # build summary because the caller only cares about node/edge
+    # counts. Errors are swallowed by the helper itself, so a failure
+    # to walk one repo's history does not abort the whole build.
+    backfill_commits_for_repo(store, primary_repo_id, primary_root)
+    for root, rid in extra_repo_ids:
+        backfill_commits_for_repo(store, rid, root)
+
+    # Phase 2 Task 12: build ``target_repos`` from the registry so the
+    # parser's cross-repo IMPORTS_FROM rewrite actually fires. Without
+    # this, ``_apply_federation`` early-returns at the ``if not
+    # target_repos`` guard and edges stay as bare local references
+    # (e.g. ``py_lib.retry``) instead of resolving to
+    # ``<repo_id>:src/py_lib/retry.py::retry``.
+    target_repos = [
+        TargetRepo(repo_id=entry.repo_id, root=entry.path)
+        for entry in registry.entries()
+    ]
+    return registry, target_repos
+
+
+def _parse_and_store_file(
+    full_path: Path,
+    parser: Any,
+    store: GraphStore,
+    registry: Any,
+    target_repos: list[Any],
+    errors: list[dict[str, Any]],
+) -> tuple[int, int, int]:
+    """Parse a single file and store its nodes/edges."""
+    try:
+        source = full_path.read_bytes()
+        fhash = hashlib.sha256(source).hexdigest()
+        nodes, edges = parser.parse_bytes(
+            full_path,
+            source,
+            repo_registry=registry,
+            target_repos=target_repos,
+        )
+        store.store_file_nodes_edges(str(full_path), nodes, edges, fhash)
+        return 1, len(nodes), len(edges)
+    except (OSError, PermissionError) as e:
+        errors.append({"file": str(full_path), "error": str(e)})
+    except Exception as e:
+        errors.append({"file": str(full_path), "error": str(e)})
+    return 0, 0, 0
+
+
+def _process_roots(
+    primary_root: Path,
+    roots: list[Path],
+    parser: Any,
+    store: GraphStore,
+    registry: Any,
+    target_repos: list[Any],
+) -> tuple[int, int, int, list[dict[str, Any]]]:
+    """Iterate over roots and files to build the graph."""
+    total_files = 0
+    total_nodes = 0
+    total_edges = 0
+    errors: list[dict[str, Any]] = []
+
+    visited_files: set[Path] = set()
+    for r in [primary_root, *roots]:
+        r_resolved = r.resolve()
+        try:
+            files = collect_all_files(r)
+        except Exception as e:
+            errors.append({"root": str(r), "error": str(e)})
+            continue
+        for rel_path in files:
+            full_path = (r / rel_path).resolve()
+            if not full_path.is_relative_to(r_resolved):
+                continue
+            if full_path in visited_files:
+                # A child root inside the primary would otherwise be
+                # parsed twice; the registry's longest-match-wins means
+                # the child wins for assign(), so we skip on the second
+                # encounter.
+                continue
+            visited_files.add(full_path)
+
+            f_inc, n_inc, e_inc = _parse_and_store_file(
+                full_path, parser, store, registry, target_repos, errors
+            )
+            total_files += f_inc
+            total_nodes += n_inc
+            total_edges += e_inc
+
+    return total_files, total_nodes, total_edges, errors
