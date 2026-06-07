@@ -390,6 +390,8 @@ def _get_dependent_files(
     """Find dependent files (files that import from changed files)."""
     dependent_files: set[str] = set()
     repo_resolved = repo_root.resolve()
+
+    valid_abs_paths = []
     for rel_path in changed_files:
         full_path_raw = repo_root / rel_path
         full_path = full_path_raw.resolve()
@@ -397,14 +399,39 @@ def _get_dependent_files(
             continue
         if full_path_raw.is_symlink() or full_path.is_symlink():
             continue
+        valid_abs_paths.append(str(full_path))
 
-        deps = find_dependents(store, str(full_path))
-        for d in deps:
-            try:
-                dependent_files.add(str(Path(d).relative_to(repo_root)))
-            except ValueError:
-                dependent_files.add(d)
-    return dependent_files
+    if not valid_abs_paths:
+        return set()
+
+    # Batch fetch to avoid N+1 queries (#342)
+    # 1. Edges targeting the files directly (IMPORTS_FROM)
+    direct_edges = store.get_edges_by_targets(valid_abs_paths)
+    for e in direct_edges:
+        if e.kind == "IMPORTS_FROM":
+            dependent_files.add(e.file_path)
+
+    # 2. Nodes in these files, and edges targeting those nodes
+    all_nodes = store.get_nodes_by_files(valid_abs_paths)
+    all_qns = [n.qualified_name for n in all_nodes]
+    if all_qns:
+        node_edges = store.get_edges_by_targets(all_qns)
+        for e in node_edges:
+            if e.kind in ("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS"):
+                dependent_files.add(e.file_path)
+
+    # Convert to relative paths and exclude the original changed files
+    results = set()
+    valid_abs_set = set(valid_abs_paths)
+    for d in dependent_files:
+        if d in valid_abs_set:
+            continue
+        try:
+            results.add(str(Path(d).relative_to(repo_root)))
+        except ValueError:
+            results.add(d)
+
+    return results
 
 
 def _snapshot_pre_functions(
@@ -415,11 +442,27 @@ def _snapshot_pre_functions(
     """Create per-file snapshot of pre-update Function qualified_names."""
     pre_functions: dict[str, dict[str, str]] = {}
     repo_resolved = repo_root.resolve()
+
+    # Batch fetch all pre-update nodes to avoid N+1 queries (#342)
+    files_to_query = []
+    rel_to_abs = {}
     for rel_path in all_files:
         abs_pre = (repo_root / rel_path).resolve()
         if not abs_pre.is_relative_to(repo_resolved):
             continue
-        existing = store.get_nodes_by_file(str(abs_pre))
+        files_to_query.append(str(abs_pre))
+        rel_to_abs[rel_path] = str(abs_pre)
+
+    all_pre_nodes = store.get_nodes_by_files(files_to_query)
+    nodes_by_file: dict[str, list] = {}
+    for n in all_pre_nodes:
+        nodes_by_file.setdefault(n.file_path, []).append(n)
+
+    for rel_path in all_files:
+        if rel_path not in rel_to_abs:
+            continue
+        abs_str = rel_to_abs[rel_path]
+        existing = nodes_by_file.get(abs_str, [])
         pre_functions[rel_path] = {
             n.qualified_name: (n.file_hash or "")
             for n in existing
@@ -623,13 +666,28 @@ def _build_reviewer_summary(
     functions_modified: list[str] = []
     repo_resolved = repo_root.resolve()
 
+    # Batch fetch post-update nodes to avoid N+1 queries (#342)
+    files_to_query = []
+    rel_to_abs = {}
     for rel_path in changed_set:
         if rel_path not in actually_updated:
             continue
         abs_path = (repo_root / rel_path).resolve()
         if not abs_path.is_relative_to(repo_resolved):
             continue
-        post_nodes = store.get_nodes_by_file(str(abs_path))
+        files_to_query.append(str(abs_path))
+        rel_to_abs[rel_path] = str(abs_path)
+
+    all_post_nodes = store.get_nodes_by_files(files_to_query)
+    nodes_by_file: dict[str, list] = {}
+    for n in all_post_nodes:
+        nodes_by_file.setdefault(n.file_path, []).append(n)
+
+    for rel_path in changed_set:
+        if rel_path not in rel_to_abs:
+            continue
+        abs_str = rel_to_abs[rel_path]
+        post_nodes = nodes_by_file.get(abs_str, [])
         post_qns = {n.qualified_name for n in post_nodes if n.kind == "Function"}
         pre_qns = set(pre_functions.get(rel_path, {}).keys())
 
