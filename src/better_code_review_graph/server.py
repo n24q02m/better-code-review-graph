@@ -546,104 +546,15 @@ async def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
-            from mcp_core.storage.per_plugin_store import PerPluginStore
-
-            from . import credential_state as _cs
-
-            # Derive providers_configured from live PerPluginStore load + env
-            # so status is accurate even if module-level _state is stale.
-            _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
-            _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
-            _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
-            _providers = list(dict.fromkeys(_env_keys + _store_keys))
-            if _providers:
-                _derived_state = "configured"
-            elif _cs.get_state() == _cs.CredentialState.LOCAL:
-                _derived_state = "local"
-            else:
-                _derived_state = "awaiting_setup"
-            return _json(
-                {
-                    "state": _derived_state,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": _env_keys,
-                    "providers_configured": _providers,
-                }
-            )
+            return _config_setup_status()
         case "setup_start":
-            from .credential_state import CredentialState, get_state
-
-            if get_state() == CredentialState.CONFIGURED and not force:
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use force=true to reconfigure.",
-                    }
-                )
-            # In stdio mode (default after spec 2026-05-01) the server reads
-            # API keys from env vars only; the browser-based relay form is
-            # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
-            public_url = os.environ.get("PUBLIC_URL")
-            if public_url:
-                url = f"{public_url.rstrip('/')}/authorize"
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {
-                    "status": "stdio_mode",
-                    "message": (
-                        "Stdio mode reads API keys from env vars only. "
-                        "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
-                        "COHERE_API_KEY in the plugin config, or switch to HTTP "
-                        "mode to use the browser-based setup form."
-                    ),
-                }
-            )
+            return _config_setup_start(force)
         case "setup_skip":
-            from mcp_core import set_local_mode
-
-            from .credential_state import CredentialState, set_state
-
-            set_local_mode(SERVER_NAME)
-            set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
+            return _config_setup_skip()
         case "setup_reset":
-            from .credential_state import reset_state
-
-            reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
+            return _config_setup_reset()
         case "setup_complete":
-            from .credential_state import (
-                get_state as _get_state,
-            )
-            from .credential_state import (
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = _get_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
+            return _config_setup_complete()
         case _:
             import difflib
 
@@ -774,6 +685,120 @@ def _config_cache_clear(repo_root: str | None) -> str:
             store.close()
     except (RuntimeError, ValueError):
         return _json({"status": "cache cleared", "embeddings_removed": 0})
+
+
+def _config_setup_status() -> str:
+    """Return current credential state and setup URL."""
+    from mcp_core.storage.per_plugin_store import PerPluginStore
+
+    from . import credential_state as _cs
+
+    # Derive providers_configured from live PerPluginStore load + env
+    # so status is accurate even if module-level _state is stale.
+    _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
+    _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
+    _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
+    _providers = list(dict.fromkeys(_env_keys + _store_keys))
+    if _providers:
+        _derived_state = "configured"
+    elif _cs.get_state() == _cs.CredentialState.LOCAL:
+        _derived_state = "local"
+    else:
+        _derived_state = "awaiting_setup"
+    return _json(
+        {
+            "state": _derived_state,
+            "setup_url": _cs.get_setup_url(),
+            "cloud_keys_in_env": _env_keys,
+            "providers_configured": _providers,
+        }
+    )
+
+
+def _config_setup_start(force: bool) -> str:
+    """Start relay setup to configure API keys via browser."""
+    from .credential_state import CredentialState, get_state
+
+    if get_state() == CredentialState.CONFIGURED and not force:
+        return _json(
+            {
+                "status": "already_configured",
+                "message": "Already configured. Use force=true to reconfigure.",
+            }
+        )
+    # In stdio mode (default after spec 2026-05-01) the server reads
+    # API keys from env vars only; the browser-based relay form is
+    # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
+    public_url = os.environ.get("PUBLIC_URL")
+    if public_url:
+        url = f"{public_url.rstrip('/')}/authorize"
+        return _json(
+            {
+                "status": "setup_started",
+                "setup_url": url,
+                "message": "Open this URL to configure API keys.",
+            }
+        )
+    return _json(
+        {
+            "status": "stdio_mode",
+            "message": (
+                "Stdio mode reads API keys from env vars only. "
+                "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
+                "COHERE_API_KEY in the plugin config, or switch to HTTP "
+                "mode to use the browser-based setup form."
+            ),
+        }
+    )
+
+
+def _config_setup_skip() -> str:
+    """Set local mode (skip relay permanently)."""
+    from mcp_core import set_local_mode
+
+    from .credential_state import CredentialState, set_state
+
+    set_local_mode(SERVER_NAME)
+    set_state(CredentialState.LOCAL)
+    return _json(
+        {
+            "status": "ok",
+            "message": "Local mode set. Relay will not trigger on restart.",
+        }
+    )
+
+
+def _config_setup_reset() -> str:
+    """Clear credentials and reset to awaiting_setup."""
+    from .credential_state import reset_state
+
+    reset_state()
+    return _json(
+        {
+            "status": "ok",
+            "message": "Credentials cleared. Next tool call will offer setup.",
+        }
+    )
+
+
+def _config_setup_complete() -> str:
+    """Re-resolve credentials from env vars."""
+    from .credential_state import (
+        get_state as _get_state,
+    )
+    from .credential_state import (
+        resolve_credential_state,
+    )
+
+    resolve_credential_state()
+    state = _get_state()
+    return _json(
+        {
+            "status": "ok",
+            "state": state.value,
+            "message": "Credential state refreshed.",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
