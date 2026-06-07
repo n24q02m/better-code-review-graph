@@ -359,6 +359,29 @@ class TestRenamedInDiffFilters:
         # Removed functions are out of scope -> not reported.
         assert "removed_fn" not in symbols
 
+    def test_parse_exception_skipped(self, tmp_path):
+        """If parse_bytes raises an Exception, the file is skipped."""
+        repo = _make_minimal_repo(tmp_path)
+        _run_git(repo, "init", "--initial-branch=main")
+        _run_git(repo, "config", "user.email", "t@t.com")
+        _run_git(repo, "config", "user.name", "t")
+        src = repo / "broken.py"
+        src.write_text("def boom():\n    pass\n")
+        _run_git(repo, "add", "broken.py")
+        _run_git(repo, "commit", "-m", "feat: initial")
+        src.write_text("def boom():\n    return 1\n")
+        _run_git(repo, "add", "broken.py")
+        _run_git(repo, "commit", "-m", "fix: change")
+
+        with patch(
+            "better_code_review_graph.parser.CodeParser.parse_bytes",
+            side_effect=RuntimeError("parse boom"),
+        ):
+            result = renamed_in_diff(base="HEAD~1", repo_root=str(repo))
+
+        assert result["status"] == "ok"
+        assert result["shifts"] == []
+
 
 # ---------------------------------------------------------------------------
 # _looks_like_literal_identifier (#317)
