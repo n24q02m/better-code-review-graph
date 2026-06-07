@@ -72,3 +72,11 @@ docs/superpowers/
 .Jules/
 .superpower/
 clean.ps1
+
+# Bot/merge junk artifacts (prevent accidental commits) — 2026-06-07
+*.orig
+*.rej
+*.cover
+*.bak
+/*.patch
+/*.diff
