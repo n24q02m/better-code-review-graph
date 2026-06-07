@@ -180,6 +180,154 @@ def graph(
 
 
 # ---------------------------------------------------------------------------
+def _handle_query_action(
+    pattern: str | None,
+    target: str | None,
+    repo_root: str | None,
+    languages: list[str] | None,
+    repo: str,
+    as_of: str,
+) -> str:
+    if not pattern:
+        return _json(
+            {
+                "error": "pattern is required for query action",
+                "valid_patterns": [
+                    "callers_of",
+                    "callees_of",
+                    "imports_of",
+                    "importers_of",
+                    "children_of",
+                    "tests_for",
+                    "inheritors_of",
+                    "file_summary",
+                ],
+            }
+        )
+    if not target:
+        return _json({"error": "target is required for query action"})
+    return _json(
+        query_graph(
+            pattern=pattern,
+            target=target,
+            repo_root=repo_root,
+            languages=languages,
+            repo=repo,
+            as_of=as_of,
+        )
+    )
+
+
+def _handle_search_action(
+    search_query: str | None,
+    kind: str | None,
+    limit: int,
+    repo_root: str | None,
+    repo: str,
+    as_of: str,
+) -> str:
+    if not search_query:
+        return _json({"error": "search_query is required for search action"})
+    result = semantic_search_nodes(
+        query=search_query,
+        kind=kind,
+        limit=limit,
+        repo_root=repo_root,
+        repo=repo,
+        as_of=as_of,
+    )
+    result = _maybe_include_setup_hint(result)
+    return _json(result)
+
+
+def _handle_impact_action(
+    changed_files: list[str] | None,
+    max_depth: int,
+    max_results: int,
+    repo_root: str | None,
+    base: str,
+    max_payload_bytes: int,
+    repo: str,
+    as_of: str,
+) -> str:
+    return _json(
+        get_impact_radius(
+            changed_files=changed_files,
+            max_depth=max_depth,
+            max_results=max_results,
+            repo_root=repo_root,
+            base=base,
+            max_payload_bytes=max_payload_bytes,
+            repo=repo,
+            as_of=as_of,
+        )
+    )
+
+
+def _handle_large_functions_action(
+    min_lines: int,
+    kind: str | None,
+    file_path_pattern: str | None,
+    limit: int,
+    repo_root: str | None,
+    repo: str,
+) -> str:
+    return _json(
+        find_large_functions(
+            min_lines=min_lines,
+            kind=kind,
+            file_path_pattern=file_path_pattern,
+            limit=limit,
+            repo_root=repo_root,
+            repo=repo,
+        )
+    )
+
+
+def _handle_spot_check_action(
+    n: int,
+    repo_root: str | None,
+    context_lines: int,
+) -> str:
+    return _json(
+        spot_check_last_callers(
+            n=n,
+            repo_root=repo_root,
+            context_lines=context_lines,
+        )
+    )
+
+
+def _handle_renamed_in_diff_action(
+    base: str,
+    changed_files: list[str] | None,
+    repo_root: str | None,
+) -> str:
+    return _json(
+        renamed_in_diff(
+            base=base,
+            changed_files=changed_files,
+            repo_root=repo_root,
+        )
+    )
+
+
+def _handle_diff_action(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    repo: str,
+) -> str:
+    return _json(
+        diff_graph(
+            repo_root=repo_root,
+            from_sha=from_sha,
+            to_sha=to_sha,
+            repo=repo,
+        )
+    )
+
+
 # Tool 2: query -- read operations (query, search, impact, large_functions)
 # ---------------------------------------------------------------------------
 
@@ -254,96 +402,34 @@ def query(
     """
     match action:
         case "query":
-            if not pattern:
-                return _json(
-                    {
-                        "error": "pattern is required for query action",
-                        "valid_patterns": [
-                            "callers_of",
-                            "callees_of",
-                            "imports_of",
-                            "importers_of",
-                            "children_of",
-                            "tests_for",
-                            "inheritors_of",
-                            "file_summary",
-                        ],
-                    }
-                )
-            if not target:
-                return _json({"error": "target is required for query action"})
-            return _json(
-                query_graph(
-                    pattern=pattern,
-                    target=target,
-                    repo_root=repo_root,
-                    languages=languages,
-                    repo=repo,
-                    as_of=as_of,
-                )
+            return _handle_query_action(
+                pattern, target, repo_root, languages, repo, as_of
             )
         case "search":
-            if not search_query:
-                return _json({"error": "search_query is required for search action"})
-            result = semantic_search_nodes(
-                query=search_query,
-                kind=kind,
-                limit=limit,
-                repo_root=repo_root,
-                repo=repo,
-                as_of=as_of,
+            return _handle_search_action(
+                search_query, kind, limit, repo_root, repo, as_of
             )
-            result = _maybe_include_setup_hint(result)
-            return _json(result)
         case "impact":
-            return _json(
-                get_impact_radius(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    max_results=max_results,
-                    repo_root=repo_root,
-                    base=base,
-                    max_payload_bytes=max_payload_bytes,
-                    repo=repo,
-                    as_of=as_of,
-                )
+            return _handle_impact_action(
+                changed_files,
+                max_depth,
+                max_results,
+                repo_root,
+                base,
+                max_payload_bytes,
+                repo,
+                as_of,
             )
         case "large_functions":
-            return _json(
-                find_large_functions(
-                    min_lines=min_lines,
-                    kind=kind,
-                    file_path_pattern=file_path_pattern,
-                    limit=limit,
-                    repo_root=repo_root,
-                    repo=repo,
-                )
+            return _handle_large_functions_action(
+                min_lines, kind, file_path_pattern, limit, repo_root, repo
             )
         case "spot_check":
-            return _json(
-                spot_check_last_callers(
-                    n=n,
-                    repo_root=repo_root,
-                    context_lines=context_lines,
-                )
-            )
+            return _handle_spot_check_action(n, repo_root, context_lines)
         case "renamed_in_diff":
-            return _json(
-                renamed_in_diff(
-                    base=base,
-                    changed_files=changed_files,
-                    repo_root=repo_root,
-                )
-            )
+            return _handle_renamed_in_diff_action(base, changed_files, repo_root)
         case "diff":
-            return _json(
-                diff_graph(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    repo=repo,
-                )
-            )
+            return _handle_diff_action(repo_root, from_sha, to_sha, repo)
         case _:
             import difflib
 
