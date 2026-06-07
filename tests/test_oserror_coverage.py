@@ -7,9 +7,9 @@ from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import NodeInfo
 from better_code_review_graph.tools import (
     _LAST_CALLERS_RESULT,
+    _get_source_snippets,
     get_review_context,
     spot_check_last_callers,
-    _get_source_snippets,
 )
 
 
@@ -123,12 +123,12 @@ def test_get_source_snippets_handles_resolve_oserror(tmp_path):
             return original_resolve(self, *args, **kwargs)
 
         # parent_raw.resolve(strict=True) on line 1882 should fail to put None in cache
-        if self == repo: # parent_raw
-             raise OSError("Parent resolve error")
+        if self == repo:  # parent_raw
+            raise OSError("Parent resolve error")
 
         # full_path_raw.resolve() on line 1890 should fail
         if str(self).endswith("bad_resolve.py"):
-             raise OSError("Resolve error")
+            raise OSError("Resolve error")
 
         return original_resolve(self, *args, **kwargs)
 
