@@ -1044,7 +1044,9 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(abs_target, kind="IMPORTS_FROM", as_of=as_of):
+    for e in store.get_edges_by_target(
+        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
+    ):
         results.append({"importer": e.source_qualified, "file": e.file_path})
         edges_out.append(edge_to_dict(e))
 
@@ -1073,7 +1075,9 @@ def _handle_tests_for(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(qn, kind="TESTED_BY", as_of=as_of):
+    for e in store.get_edges_by_target(
+        qn, kind="TESTED_BY", as_of=as_of, fallback=False
+    ):
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1101,7 +1105,7 @@ def _handle_inheritors_of(
 ) -> None:
     qns = []
     for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
     ):
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))

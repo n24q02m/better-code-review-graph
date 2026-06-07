@@ -960,6 +960,7 @@ class GraphStore:
         kind: str | tuple[str, ...] | None = None,
         *,
         as_of: str = "",
+        fallback: bool = True,
     ) -> list[GraphEdge]:
         frag, frag_params = self._temporal_filter(as_of)
         kind_frag, kind_params = self._kind_filter(kind)
@@ -974,7 +975,7 @@ class GraphStore:
         # enough to trigger the fallback — that would wrongly pull in edges
         # belonging to a different qualified target that happens to share the
         # bare name.
-        if not first_row and "::" in qualified_name:
+        if fallback and not first_row and "::" in qualified_name:
             if kind is not None:
                 exists = self._conn.execute(
                     f"SELECT 1 FROM edges WHERE target_qualified = ?{frag} LIMIT 1",  # noqa: S608
