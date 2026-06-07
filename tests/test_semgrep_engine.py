@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +24,7 @@ from better_code_review_graph.security import (
 from better_code_review_graph.security.semgrep_engine import (
     _parse_semgrep_findings,
     _resolve_overlay_rules_dir,
+    _semgrep_executable,
     _semgrep_python_module_available,
 )
 
@@ -38,6 +40,22 @@ def test_semgrep_scanner_raises_when_cli_not_found():
     ):
         with pytest.raises(SemgrepNotAvailable, match="semgrep CLI not found"):
             SemgrepScanner()
+
+
+def test_semgrep_executable_found():
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        return_value="/usr/bin/semgrep",
+    ):
+        assert _semgrep_executable() == "/usr/bin/semgrep"
+
+
+def test_semgrep_executable_not_found():
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        return_value=None,
+    ):
+        assert _semgrep_executable() is None
 
 
 def test_semgrep_scanner_uses_provided_executable():
@@ -89,6 +107,17 @@ def test_scanner_python_module_check_passes_when_present():
 def test_semgrep_python_module_helper_returns_bool():
     # Real probe: result depends on environment but must be boolean.
     assert isinstance(_semgrep_python_module_available(), bool)
+
+
+def test_semgrep_python_module_available_true():
+    with patch.dict(sys.modules, {"semgrep": MagicMock()}):
+        assert _semgrep_python_module_available() is True
+
+
+def test_semgrep_python_module_available_false():
+    with patch.dict(sys.modules, {"semgrep": None}):
+        # When set to None, it raises ImportError on import
+        assert _semgrep_python_module_available() is False
 
 
 # ---------------------------------------------------------------------------
