@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as pkg_version
 from importlib.resources import files
 
 from fastmcp import FastMCP
@@ -63,8 +65,15 @@ def _maybe_include_setup_hint(result: dict) -> dict:
     return result
 
 
+try:
+    _pkg_version = pkg_version("better-code-review-graph")
+except PackageNotFoundError:
+    _pkg_version = "dev"
+
+
 mcp = FastMCP(
     "better-code-review-graph",
+    version=_pkg_version,
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
         "context-aware code reviews. 5 tools: graph (build/embed/stats), "
@@ -669,14 +678,9 @@ async def config(
 
 def _config_status(repo_root: str | None) -> str:
     """Return server status as JSON."""
-    from importlib.metadata import version as pkg_version
-
     from .tools import _get_store
 
-    try:
-        version = pkg_version("better-code-review-graph")
-    except Exception:
-        version = "dev"
+    version = _pkg_version
 
     try:
         store, root = _get_store(repo_root)
