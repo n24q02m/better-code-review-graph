@@ -415,16 +415,31 @@ def _snapshot_pre_functions(
     """Create per-file snapshot of pre-update Function qualified_names."""
     pre_functions: dict[str, dict[str, str]] = {}
     repo_resolved = repo_root.resolve()
+
+    valid_abs_paths = {}
     for rel_path in all_files:
-        abs_pre = (repo_root / rel_path).resolve()
-        if not abs_pre.is_relative_to(repo_resolved):
+        abs_path = (repo_root / rel_path).resolve()
+        if abs_path.is_relative_to(repo_resolved):
+            valid_abs_paths[str(abs_path)] = rel_path
+
+    if not valid_abs_paths:
+        return pre_functions
+
+    # Batch fetch
+    nodes = store.get_nodes_by_files(list(valid_abs_paths.keys()))
+
+    # Initialize empty dicts for all valid files
+    for rel_path in valid_abs_paths.values():
+        pre_functions[rel_path] = {}
+
+    # Group by rel_path
+    for node in nodes:
+        if node.kind != "Function":
             continue
-        existing = store.get_nodes_by_file(str(abs_pre))
-        pre_functions[rel_path] = {
-            n.qualified_name: (n.file_hash or "")
-            for n in existing
-            if n.kind == "Function"
-        }
+        rel_path = valid_abs_paths.get(node.file_path)
+        if rel_path:
+            pre_functions[rel_path][node.qualified_name] = node.file_hash or ""
+
     return pre_functions
 
 
@@ -441,6 +456,29 @@ def _update_files_in_store(
     actually_updated: set[str] = set()
     errors = []
     repo_resolved = repo_root.resolve()
+
+    # Pre-calculate which files might need a hash check to avoid N+1
+    potential_abs_to_rel = {}
+    for rel_path in all_files:
+        if _should_ignore(rel_path, ignore_patterns):
+            continue
+        abs_path_raw = repo_root / rel_path
+        abs_path = abs_path_raw.resolve()
+        if not abs_path.is_relative_to(repo_resolved) or not abs_path.is_file():
+            continue
+        if abs_path_raw.is_symlink() or abs_path.is_symlink():
+            continue
+        if parser.detect_language(abs_path) is None:
+            continue
+        potential_abs_to_rel[str(abs_path)] = rel_path
+
+    # Batch fetch existing hashes
+    existing_hashes = {}
+    if potential_abs_to_rel:
+        nodes = store.get_nodes_by_files(list(potential_abs_to_rel.keys()))
+        for node in nodes:
+            if node.file_path not in existing_hashes:
+                existing_hashes[node.file_path] = node.file_hash or ""
 
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
@@ -461,8 +499,10 @@ def _update_files_in_store(
         try:
             source_preview = abs_path.read_bytes()
             fhash = hashlib.sha256(source_preview).hexdigest()
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
-            if existing_nodes and existing_nodes[0].file_hash == fhash:
+
+            # Use batched hash if available
+            existing_hash = existing_hashes.get(str(abs_path))
+            if existing_hash == fhash:
                 continue
 
             n_nodes, n_edges = _update_single_file(
@@ -623,13 +663,31 @@ def _build_reviewer_summary(
     functions_modified: list[str] = []
     repo_resolved = repo_root.resolve()
 
+    # Pre-resolve valid paths that were actually updated
+    valid_abs_to_rel = {}
     for rel_path in changed_set:
         if rel_path not in actually_updated:
             continue
         abs_path = (repo_root / rel_path).resolve()
-        if not abs_path.is_relative_to(repo_resolved):
+        if abs_path.is_relative_to(repo_resolved):
+            valid_abs_to_rel[str(abs_path)] = rel_path
+
+    # Batch fetch post-update nodes
+    post_nodes_by_rel = {rel: [] for rel in valid_abs_to_rel.values()}
+    if valid_abs_to_rel:
+        all_post_nodes = store.get_nodes_by_files(list(valid_abs_to_rel.keys()))
+        for n in all_post_nodes:
+            rel = valid_abs_to_rel.get(n.file_path)
+            if rel:
+                post_nodes_by_rel[rel].append(n)
+
+    for rel_path in changed_set:
+        if rel_path not in actually_updated:
             continue
-        post_nodes = store.get_nodes_by_file(str(abs_path))
+        if rel_path not in post_nodes_by_rel:
+            continue
+
+        post_nodes = post_nodes_by_rel[rel_path]
         post_qns = {n.qualified_name for n in post_nodes if n.kind == "Function"}
         pre_qns = set(pre_functions.get(rel_path, {}).keys())
 
