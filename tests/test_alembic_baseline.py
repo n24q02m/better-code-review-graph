@@ -572,7 +572,11 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
     fake_dir = Path(__file__).resolve().parent.parent / "migrations"
 
     def _files(name: str) -> object:
-        return _FakeMultiplexedPath(fake_dir)
+        obj = _FakeMultiplexedPath(fake_dir)
+        # Some library versions had an issue where __str__ behavior was altered.
+        # returns an object whose ``__str__`` is the repr (the historical bug).
+        assert str(obj) == f"MultiplexedPath('{fake_dir}')"
+        return obj
 
     monkeypatch.setattr(_resources, "files", _files)
 

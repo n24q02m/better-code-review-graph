@@ -74,10 +74,10 @@ def _resolve_overlay_rules_dir() -> Path | None:
     """
 
     try:
-        ref = files("better_code_review_graph_security_rules") / "semgrep"
-        path = Path(str(ref))
-        if path.is_dir():
-            return path
+        ref = files("better_code_review_graph_security_rules")
+        curated = ref.joinpath("semgrep", "curated.yaml")
+        if isinstance(curated, Path) and curated.is_file():
+            return curated.parent
     except (ModuleNotFoundError, OSError):
         pass
     fallback = (

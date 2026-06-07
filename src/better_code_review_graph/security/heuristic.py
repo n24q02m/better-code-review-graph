@@ -155,10 +155,10 @@ def _default_rules_dir() -> Path:
     """
 
     try:
-        ref = files("better_code_review_graph_security_rules") / "heuristic"
-        path = Path(str(ref))
-        if path.is_dir():
-            return path
+        ref = files("better_code_review_graph_security_rules")
+        probe = ref.joinpath("heuristic", "hardcoded-secret.yaml")
+        if isinstance(probe, Path) and probe.is_file():
+            return probe.parent
     except (ModuleNotFoundError, OSError):
         pass
     return Path(__file__).resolve().parent.parent.parent.parent / "rules" / "heuristic"
