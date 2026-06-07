@@ -1375,6 +1375,65 @@ def query_graph(
 # ---------------------------------------------------------------------------
 
 
+def _fetch_diff_rows(
+    store: GraphStore, to_sha: str, repo: str
+) -> tuple[list[Any], list[Any]]:
+    """Query the database for nodes added or removed at to_sha."""
+    if repo:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_from_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_to_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        removed_rows = list(removed_cursor)
+    else:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
+            (to_sha,),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
+            (to_sha,),
+        )
+        removed_rows = list(removed_cursor)
+    return added_rows, removed_rows
+
+
+def _compute_diff_payload(
+    from_sha: str, to_sha: str, added_rows: list[Any], removed_rows: list[Any]
+) -> dict[str, Any]:
+    """Process database rows into a diff payload with added/removed/modified sets."""
+    closed_qns = {row["qualified_name"] for row in removed_rows}
+    new_qns = {row["qualified_name"] for row in added_rows}
+    modified_qns = closed_qns & new_qns
+
+    purely_added = [r for r in added_rows if r["qualified_name"] not in modified_qns]
+    purely_removed = [
+        r for r in removed_rows if r["qualified_name"] not in modified_qns
+    ]
+
+    return {
+        "from_sha": from_sha,
+        "to_sha": to_sha,
+        "added": [
+            {"id": r["id"], "qualified_name": r["qualified_name"], "kind": r["kind"]}
+            for r in purely_added
+        ],
+        "removed": [
+            {"id": r["id"], "qualified_name": r["qualified_name"], "kind": r["kind"]}
+            for r in purely_removed
+        ],
+        "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+    }
+
+
 def diff_graph(
     repo_root: str | None = None,
     *,
@@ -1421,66 +1480,8 @@ def diff_graph(
 
     store, _ = _get_store(repo_root)
     try:
-        # Build the optional repo filter once. The base SQL stays
-        # static — Bandit B608 is happy because both branches expand
-        # to a fixed string literal at f-string interpolation time.
-        if repo:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_from_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_to_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            removed_rows = list(removed_cursor)
-        else:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
-                (to_sha,),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
-                (to_sha,),
-            )
-            removed_rows = list(removed_cursor)
-
-        closed_qns = {row["qualified_name"] for row in removed_rows}
-        new_qns = {row["qualified_name"] for row in added_rows}
-        modified_qns = closed_qns & new_qns
-
-        purely_added = [
-            r for r in added_rows if r["qualified_name"] not in modified_qns
-        ]
-        purely_removed = [
-            r for r in removed_rows if r["qualified_name"] not in modified_qns
-        ]
-
-        return {
-            "from_sha": from_sha,
-            "to_sha": to_sha,
-            "added": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_added
-            ],
-            "removed": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_removed
-            ],
-            "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
-        }
+        added_rows, removed_rows = _fetch_diff_rows(store, to_sha, repo)
+        return _compute_diff_payload(from_sha, to_sha, added_rows, removed_rows)
     finally:
         store.close()
 
