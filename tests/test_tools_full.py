@@ -6,6 +6,7 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from better_code_review_graph.graph import GraphStore
@@ -738,6 +739,15 @@ class TestEmbedGraph:
     @pytest.fixture(autouse=True)
     def force_local_backend(self, monkeypatch):
         monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+        with patch("qwen3_embed.TextEmbedding") as mock_te:
+            mock_instance = mock_te.return_value
+            mock_instance.embed.side_effect = lambda texts, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768)) for _ in texts
+            ]
+            mock_instance.query_embed.side_effect = lambda text, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768))
+            ]
+            yield mock_te
 
     def test_embed_graph(self, repo_with_graph):
         with patch(
@@ -904,6 +914,15 @@ class TestSemanticSearchWithEmbeddings:
     @pytest.fixture(autouse=True)
     def force_local_backend(self, monkeypatch):
         monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+        with patch("qwen3_embed.TextEmbedding") as mock_te:
+            mock_instance = mock_te.return_value
+            mock_instance.embed.side_effect = lambda texts, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768)) for _ in texts
+            ]
+            mock_instance.query_embed.side_effect = lambda text, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768))
+            ]
+            yield mock_te
 
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from better_code_review_graph.embeddings import (
@@ -220,6 +221,20 @@ class TestInitBackend:
 
 
 class TestQwen3EmbedBackend:
+    @pytest.fixture(autouse=True)
+    def mock_qwen3_embed(self):
+        with patch("qwen3_embed.TextEmbedding") as mock_te:
+            mock_instance = mock_te.return_value
+            # Mock embed to return vectors of length 768
+            mock_instance.embed.side_effect = lambda texts, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768)) for _ in texts
+            ]
+            # Mock query_embed to return a single vector of length 768
+            mock_instance.query_embed.side_effect = lambda text, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768))
+            ]
+            yield mock_te
+
     def test_embed_produces_768_dim(self):
         backend = Qwen3EmbedBackend()
         vectors = backend.embed_texts(["hello world"], dimensions=768)
@@ -688,6 +703,18 @@ def _insert_file_and_functions(
 
 
 class TestEmbedAllNodes:
+    @pytest.fixture(autouse=True)
+    def mock_qwen3_embed(self):
+        with patch("qwen3_embed.TextEmbedding") as mock_te:
+            mock_instance = mock_te.return_value
+            mock_instance.embed.side_effect = lambda texts, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768)) for _ in texts
+            ]
+            mock_instance.query_embed.side_effect = lambda text, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768))
+            ]
+            yield mock_te
+
     def test_embed_all_nodes(self, tmp_path):
         db_path = tmp_path / "graph.db"
         graph_store = GraphStore(db_path)
@@ -705,6 +732,18 @@ class TestEmbedAllNodes:
 
 
 class TestSemanticSearch:
+    @pytest.fixture(autouse=True)
+    def mock_qwen3_embed(self):
+        with patch("qwen3_embed.TextEmbedding") as mock_te:
+            mock_instance = mock_te.return_value
+            mock_instance.embed.side_effect = lambda texts, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768)) for _ in texts
+            ]
+            mock_instance.query_embed.side_effect = lambda text, **kwargs: [
+                np.array([0.1] * (kwargs.get("dim") or 768))
+            ]
+            yield mock_te
+
     def test_semantic_search_with_embeddings(self, tmp_path):
         db_path = tmp_path / "graph.db"
         graph_store = GraphStore(db_path)
