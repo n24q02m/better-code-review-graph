@@ -220,10 +220,3 @@ class TestTools:
         mock_store._conn.execute.side_effect = Exception("boom")
         result = _list_kinds_in_graph(mock_store)
         assert result == []
-
-    def test_list_kinds_in_graph_success(self):
-        """Verify that _list_kinds_in_graph returns distinct kinds."""
-        # This uses the real seeded store
-        result = _list_kinds_in_graph(self.store)
-        # Seeded kinds: File, Class, Function, Test (see _seed_data)
-        assert set(result) == {"File", "Class", "Function", "Test"}
