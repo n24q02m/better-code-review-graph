@@ -1,34 +1,41 @@
-"""Tests for the Tier-2 Semgrep security scanner.
-
-These tests never invoke real ``semgrep``: ``shutil.which`` and
-``subprocess.run`` are patched throughout so the suite stays fast and
-does not require the optional ``[security]`` extra to be installed.
-"""
-
 from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.security import (
+from better_code_review_graph.security.heuristic import Tag
+from better_code_review_graph.security.semgrep_engine import (
     SemgrepNotAvailable,
     SemgrepResult,
     SemgrepScanner,
-    Tag,
-)
-from better_code_review_graph.security.semgrep_engine import (
     _parse_semgrep_findings,
     _resolve_overlay_rules_dir,
+    _semgrep_executable,
     _semgrep_python_module_available,
 )
 
 # ---------------------------------------------------------------------------
 # Constructor / executable discovery
 # ---------------------------------------------------------------------------
+
+
+def test_semgrep_executable_helper_found():
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        return_value="/fake/semgrep",
+    ):
+        assert _semgrep_executable() == "/fake/semgrep"
+
+
+def test_semgrep_executable_helper_not_found():
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        return_value=None,
+    ):
+        assert _semgrep_executable() == "semgrep"
 
 
 def test_semgrep_scanner_raises_when_cli_not_found():
@@ -52,18 +59,14 @@ def test_semgrep_scanner_uses_default_config():
 
 def test_semgrep_scanner_uses_custom_config():
     scanner = SemgrepScanner(config="./rules/semgrep", executable="/fake/semgrep")
-    assert (
-        scanner._config == "rules/semgrep"
-        or scanner._config.endswith("rules/semgrep")
-        or scanner._config.endswith("rules\\semgrep")
-    )
+    assert scanner._config == "./rules/semgrep"
 
 
-def test_semgrep_scanner_uses_path_object_config():
-    scanner = SemgrepScanner(
-        config=Path("custom-config.yaml"), executable="/fake/semgrep"
-    )
-    assert "custom-config.yaml" in scanner._config
+def test_semgrep_scanner_uses_path_object_config(tmp_path):
+    config_dir = tmp_path / "rules"
+    config_dir.mkdir()
+    scanner = SemgrepScanner(config=config_dir, executable="/fake/semgrep")
+    assert scanner._config == str(config_dir)
 
 
 def test_scanner_python_module_check_raises_when_missing():
@@ -89,6 +92,16 @@ def test_scanner_python_module_check_passes_when_present():
 def test_semgrep_python_module_helper_returns_bool():
     # Real probe: result depends on environment but must be boolean.
     assert isinstance(_semgrep_python_module_available(), bool)
+
+
+def test_semgrep_python_module_available_true():
+    with patch("builtins.__import__", return_value=MagicMock()):
+        assert _semgrep_python_module_available() is True
+
+
+def test_semgrep_python_module_available_false():
+    with patch("builtins.__import__", side_effect=ImportError):
+        assert _semgrep_python_module_available() is False
 
 
 # ---------------------------------------------------------------------------

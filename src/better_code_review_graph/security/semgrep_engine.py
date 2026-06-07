@@ -48,10 +48,14 @@ class SemgrepResult:
 # ---------------------------------------------------------------------------
 
 
-def _semgrep_executable() -> str | None:
-    """Return path to the ``semgrep`` CLI, or ``None`` if not on PATH."""
+def _semgrep_executable() -> str:
+    """Find the semgrep executable."""
+    import shutil
 
-    return shutil.which("semgrep")
+    path = shutil.which("semgrep")
+    if path:
+        return path
+    return "semgrep"
 
 
 def _semgrep_python_module_available() -> bool:
@@ -118,18 +122,23 @@ class SemgrepScanner:
         require_python_module: bool = False,
     ) -> None:
         self._config = str(config)
-        resolved = executable or _semgrep_executable()
-        if resolved is None:
-            raise SemgrepNotAvailable(
-                "semgrep CLI not found on PATH. Install with: "
-                "uv add 'better-code-review-graph[security]'"
-            )
-        self._executable: str = resolved
-        if require_python_module and not _semgrep_python_module_available():
-            raise SemgrepNotAvailable(
-                "semgrep Python module not importable. Install with: "
-                "uv add 'better-code-review-graph[security]'"
-            )
+        if executable:
+            self._executable = executable
+        else:
+            resolved = _semgrep_executable()
+            if shutil.which(resolved) is None:
+                raise SemgrepNotAvailable(
+                    "semgrep CLI not found on PATH. Install with: "
+                    "uv add 'better-code-review-graph[security]'"
+                )
+            self._executable = resolved
+
+        if require_python_module:
+            if not _semgrep_python_module_available():
+                raise SemgrepNotAvailable(
+                    "semgrep Python module not importable. Install with: "
+                    "uv add 'better-code-review-graph[security]'"
+                )
 
     def scan_path(
         self,
