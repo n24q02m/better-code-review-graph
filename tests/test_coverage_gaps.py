@@ -338,12 +338,10 @@ class TestConfigStatusVersionFallback:
             assert result["version"] == "dev"
 
     def test_version_fallback_direct(self):
-        """Test _config_status directly with mocked version."""
+        """Test _config_status reports the module-level resolved version."""
         from better_code_review_graph.server import _config_status
 
-        with patch(
-            "importlib.metadata.version", side_effect=Exception("not installed")
-        ):
+        with patch("better_code_review_graph.server._pkg_version", "dev"):
             result = json.loads(_config_status(repo_root=None))
             assert result["version"] == "dev"
 

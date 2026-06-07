@@ -65,10 +65,15 @@ def _maybe_include_setup_hint(result: dict) -> dict:
     return result
 
 
-try:
-    _pkg_version = pkg_version("better-code-review-graph")
-except PackageNotFoundError:
-    _pkg_version = "dev"
+def _resolve_version() -> str:
+    """Resolve the installed package version, falling back to 'dev'."""
+    try:
+        return pkg_version("better-code-review-graph")
+    except PackageNotFoundError:
+        return "dev"
+
+
+_pkg_version = _resolve_version()
 
 
 mcp = FastMCP(
