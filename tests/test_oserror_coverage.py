@@ -9,6 +9,7 @@ from better_code_review_graph.tools import (
     _LAST_CALLERS_RESULT,
     get_review_context,
     spot_check_last_callers,
+    _get_source_snippets,
 )
 
 
@@ -21,9 +22,6 @@ def repo_with_cache(tmp_path):
 
     file_path = tmp_path / "test.py"
     file_path.write_text("def hello(): pass")
-
-    # Ensure _get_store won't trigger heavy logic if we can help it,
-    # but here it's fine as long as we don't mock read_text too early.
 
     _LAST_CALLERS_RESULT[str(tmp_path.resolve())] = {
         "pattern": "callers_of",
@@ -88,7 +86,6 @@ def test_get_review_context_source_snippets_handles_oserror(tmp_path):
     original_read_text = Path.read_text
 
     def side_effect(self, *args, **kwargs):
-        # We check if the path ends with changed.py because of how resolve() might work
         if str(self).endswith("changed.py"):
             raise OSError("Read error")
         return original_read_text(self, *args, **kwargs)
@@ -104,3 +101,38 @@ def test_get_review_context_source_snippets_handles_oserror(tmp_path):
     snippets = result["context"].get("source_snippets", {})
     assert "changed.py" in snippets
     assert snippets["changed.py"] == "(could not read file)"
+
+
+def test_get_source_snippets_handles_resolve_oserror(tmp_path):
+    """Cover the OSError/ValueError branch in _get_source_snippets loop."""
+    repo = tmp_path
+    (repo / ".git").mkdir()
+
+    file_path = repo / "bad_resolve.py"
+    file_path.write_text("print(1)")
+
+    original_resolve = Path.resolve
+
+    # Track calls to resolve()
+    calls = []
+
+    def side_effect(self, *args, **kwargs):
+        calls.append(str(self))
+        # Initial root.resolve() must pass
+        if self == repo and len(calls) == 1:
+            return original_resolve(self, *args, **kwargs)
+
+        # parent_raw.resolve(strict=True) on line 1882 should fail to put None in cache
+        if self == repo: # parent_raw
+             raise OSError("Parent resolve error")
+
+        # full_path_raw.resolve() on line 1890 should fail
+        if str(self).endswith("bad_resolve.py"):
+             raise OSError("Resolve error")
+
+        return original_resolve(self, *args, **kwargs)
+
+    with patch("better_code_review_graph.tools.Path.resolve", side_effect):
+        snippets = _get_source_snippets(repo, ["bad_resolve.py"], [], 100)
+
+    assert snippets == {}
