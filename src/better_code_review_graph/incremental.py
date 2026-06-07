@@ -185,7 +185,7 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
 
     try:
         result = subprocess.run(
-            [git_bin, "diff", "--name-only", base],
+            [git_bin, "diff", "--name-only", "--end-of-options", base],
             capture_output=True,
             text=True,
             cwd=str(repo_root),

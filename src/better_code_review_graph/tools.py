@@ -1738,7 +1738,7 @@ def renamed_in_diff(
             # Fetch base-ref content via git.
             try:
                 proc = subprocess.run(
-                    ["git", "show", f"{base}:{rel_path}"],
+                    ["git", "show", "--end-of-options", f"{base}:{rel_path}"],
                     cwd=str(root),
                     capture_output=True,
                     timeout=15,

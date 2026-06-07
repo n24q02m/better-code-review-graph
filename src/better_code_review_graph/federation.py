@@ -285,6 +285,7 @@ def backfill_commits_for_repo(
                 "log",
                 "--first-parent",
                 f"--format={_GIT_LOG_FORMAT}",
+                "--",
             ],
             cwd=str(repo_root),
             capture_output=True,
