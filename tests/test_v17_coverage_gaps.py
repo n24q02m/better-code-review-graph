@@ -515,7 +515,9 @@ class TestServerSpotCheckAndRenamedInDiff:
 
         with (
             patch("mcp_core.storage.per_plugin_store.PerPluginStore") as mock_store,
-            patch.object(cs, "get_state", return_value=cs.CredentialState.LOCAL),
+            patch.object(
+                cs, "resolve_credential_state", return_value=cs.CredentialState.LOCAL
+            ),
         ):
             mock_store.return_value.load.return_value = {}
             result = json.loads(asyncio.run(config(action="setup_status")))

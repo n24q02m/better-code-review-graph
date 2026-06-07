@@ -33,6 +33,7 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status returns configured when PerPluginStore has cloud keys."""
+        monkeypatch.setenv("TRANSPORT_MODE", "http")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
