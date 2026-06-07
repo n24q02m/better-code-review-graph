@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, cast
 import tree_sitter_language_pack as tslp
 
 if TYPE_CHECKING:
-
     from .federation import RepoRegistry
     from .resolver import TargetRepo
 
