@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, cast
 import tree_sitter_language_pack as tslp
 
 if TYPE_CHECKING:
-    from tree_sitter_language_pack import SupportedLanguage
 
     from .federation import RepoRegistry
     from .resolver import TargetRepo
@@ -277,7 +276,7 @@ class CodeParser:
                 # and fall back on ValueError/KeyError via the generic except
                 # below, so narrowing through cast is safe here.
                 self._parsers[language] = tslp.get_parser(
-                    cast("SupportedLanguage", language)
+                    cast("tslp.SupportedLanguage", language)
                 )
             except Exception:
                 return None
