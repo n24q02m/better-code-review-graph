@@ -1074,10 +1074,16 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
+    search_targets = [qn]
+    if "::" in qn:
+        search_targets.append(qn.rsplit("::", 1)[-1])
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="TESTED_BY", as_of=as_of
+    )
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1103,10 +1109,16 @@ def _handle_inheritors_of(
     *,
     as_of: str = "",
 ) -> None:
+    search_targets = [qn]
+    if "::" in qn:
+        search_targets.append(qn.rsplit("::", 1)[-1])
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    )
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:

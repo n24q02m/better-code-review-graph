@@ -17,10 +17,24 @@ def store(tmp_path):
     s.close()
 
 
-def test_inheritors_of_no_bare_fallback(store):
-    # Add a node that exists but has NO edges targeting it.
+def test_inheritors_of_enables_bare_fallback(store):
+    """inheritors_of / tests_for should find relationships even when
+    the edge uses an unqualified (bare) target name, even if the qualified
+    target exists (e.g. has a CONTAINS edge).
+    """
+    # Add a node that exists (qualified name)
     store.upsert_node(
         NodeInfo(kind="Class", name="Base", file_path="a.py", line_start=1, line_end=10)
+    )
+    # It has a CONTAINS edge (so it is not 'truly empty' of edges)
+    store.upsert_edge(
+        EdgeInfo(
+            kind="CONTAINS",
+            source="a.py",
+            target="a.py::Base",
+            file_path="a.py",
+            line=1,
+        )
     )
 
     # Add another node that inherits from a BARE name "Base"
@@ -39,15 +53,26 @@ def test_inheritors_of_no_bare_fallback(store):
     edges_out = []
     _handle_inheritors_of(store, "a.py::Base", results, edges_out)
 
-    # It should NOT find b.py::Sub because we disabled fallback.
-    assert len(results) == 0
-    assert len(edges_out) == 0
+    # It SHOULD now find b.py::Sub because we enabled fallback for these tools.
+    assert len(results) == 1
+    assert results[0]["qualified_name"] == "b.py::Sub"
+    assert len(edges_out) == 1
 
 
-def test_tests_for_no_bare_fallback(store):
+def test_tests_for_enables_bare_fallback(store):
     store.upsert_node(
         NodeInfo(
             kind="Function", name="target", file_path="a.py", line_start=1, line_end=10
+        )
+    )
+    # It has a CONTAINS edge
+    store.upsert_edge(
+        EdgeInfo(
+            kind="CONTAINS",
+            source="a.py",
+            target="a.py::target",
+            file_path="a.py",
+            line=1,
         )
     )
 
@@ -74,16 +99,18 @@ def test_tests_for_no_bare_fallback(store):
     store.commit()
 
     results = []
-    # node argument is not used for TESTED_BY if qn is provided, but we pass it anyway
     node = store.get_node("a.py::target")
     _handle_tests_for(store, node, "target", "a.py::target", results)
 
-    assert len(results) == 0
+    # It SHOULD now find the test
+    assert len(results) >= 1
+    assert any(r["qualified_name"] == "test_a.py::test_func" for r in results)
 
 
 def test_importers_of_no_bare_fallback(store):
     # importers_of for a file
     # If we query importers of "app/a.py", it should not find someone importing bare "a.py"
+    # because importers_of still uses fallback=False implicitly by not being refactored yet.
 
     store.upsert_node(
         NodeInfo(
