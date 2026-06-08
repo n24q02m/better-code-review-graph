@@ -9,3 +9,9 @@
 **Learning:** When testing edge cases in environments with missing heavy dependencies (like `networkx` or `tree-sitter`), using `sys.modules` to mock these dependencies *before* importing the target module allows for reliable unit testing without triggering `ModuleNotFoundError`.
 
 **Action:** For specialized coverage tests, implement a `MockModule` that uses `__getattr__` to return `MagicMock()` and patch `sys.modules` prior to tool imports. This ensures that even deeply nested or lazy imports within the target module are safely handled during test execution.
+
+## 2025-05-22 - Improving Coverage with Mocking
+
+**Learning:** Testing fallback logic for resource discovery (e.g., `importlib.resources.files`) requires mocking multiple failure modes, including `ModuleNotFoundError` and `path.is_dir() == False`.
+
+**Action:** Use `unittest.mock.patch` to simulate `ModuleNotFoundError` and mock the return value of `files()` to return a mock object that returns `False` for `is_dir()`. This ensures all fallback paths in discovery functions like `_default_rules_dir` are fully exercised.
