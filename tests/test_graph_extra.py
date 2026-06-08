@@ -317,6 +317,37 @@ class TestGraphStoreExtra:
         assert len(edges) == 2
         store.close()
 
+    def test_get_all_nodes(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="func1",
+                file_path="/file1.py",
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
+        )
+        store.upsert_node(
+            NodeInfo(
+                kind="Class",
+                name="Class1",
+                file_path="/file2.py",
+                line_start=1,
+                line_end=20,
+                language="python",
+            )
+        )
+        store.commit()
+
+        nodes = store.get_all_nodes()
+        assert len(nodes) == 2
+        qualified_names = [n.qualified_name for n in nodes]
+        assert "/file1.py::func1" in qualified_names
+        assert "/file2.py::Class1" in qualified_names
+        store.close()
+
     def test_get_edges_among_empty_set(self, tmp_path):
         store = GraphStore(str(tmp_path / "t.db"))
         assert store.get_edges_among(set()) == []
