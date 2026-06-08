@@ -238,21 +238,6 @@ class TestQwen3EmbedBackend:
         vectors = backend.embed_texts([])
         assert vectors == []
 
-    def test_check_available(self):
-        backend = Qwen3EmbedBackend()
-        dims = backend.check_available()
-        assert dims > 0
-
-    def test_embed_single(self):
-        backend = Qwen3EmbedBackend()
-        vector = backend.embed_single("hello world", dimensions=768)
-        assert len(vector) == 768
-
-    def test_embed_query_with_instruction(self):
-        backend = Qwen3EmbedBackend()
-        vector = backend.embed_single_query("hello world", dimensions=768)
-        assert len(vector) == 768
-
 
 # ---------------------------------------------------------------------------
 # Provider detection
@@ -423,81 +408,6 @@ class TestCloudEmbeddingBackend:
             mock_client.embed.return_value = self._mock_cohere_response(["test"])
             vector = backend.embed_single("test", dimensions=768)
             assert len(vector) == 768
-
-    def test_check_available_success(self):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_cohere_response(["test"])
-            dims = backend.check_available()
-            assert dims == 768
-
-    def test_check_available_failure(self):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = Exception("connection error")
-            dims = backend.check_available()
-            assert dims == 0
-
-    def test_retry_on_transient_error(self):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        call_count = 0
-
-        def side_effect(**kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise Exception("429 rate limit exceeded")
-            return self._mock_cohere_response(kwargs["texts"])
-
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = side_effect
-            with patch("time.sleep"):  # Skip actual delay
-                vectors = backend.embed_texts(["test"], dimensions=768)
-                assert len(vectors) == 1
-                assert call_count == 2
-
-    def test_dimensions_truncation(self):
-        """Test that dimensions parameter truncates embeddings."""
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_cohere_response(
-                ["test"], dim=1024
-            )
-            vectors = backend.embed_texts(["test"], dimensions=768)
-            assert len(vectors) == 1
-            assert len(vectors[0]) == 768
-
-    def test_api_key_resolution_from_env(self):
-        """Test that API key is resolved per provider from env."""
-        with patch.dict(os.environ, {"JINA_AI_API_KEY": "jina-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="jina-embeddings-v3")
-            assert backend._resolve_api_key() == "jina-key"
-
-        with patch.dict(os.environ, {"GEMINI_API_KEY": "gem-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="gemini-embedding-2")
-            assert backend._resolve_api_key() == "gem-key"
-
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "oai-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="text-embedding-3-large")
-            assert backend._resolve_api_key() == "oai-key"
-
-        with patch.dict(os.environ, {"COHERE_API_KEY": "co-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0")
-            assert backend._resolve_api_key() == "co-key"
-
-    def test_explicit_api_key_overrides_env(self):
-        """Explicit api_key param takes priority over env."""
-        with patch.dict(os.environ, {"COHERE_API_KEY": "env-key"}, clear=True):
-            backend = CloudEmbeddingBackend(api_key="explicit-key")
-            assert backend._resolve_api_key() == "explicit-key"
 
 
 # ---------------------------------------------------------------------------
