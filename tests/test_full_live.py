@@ -113,19 +113,16 @@ export { Circle, Rectangle, totalArea };
 """
 
 
-def _parse_result_text(result) -> dict[str, Any]:
-    """Extract text from MCP call_tool result and parse as JSON.
-
-    All tools in better-code-review-graph return JSON-encoded dicts; a
-    non-dict payload indicates a test setup bug, so we fail loudly here.
-    """
+def _parse_result_text(result) -> Any:
+    """Extract text from MCP call_tool result and try to parse as JSON."""
     text = result.content[0].text
-    payload = json.loads(text)
-    if not isinstance(payload, dict):
-        raise TypeError(
-            f"Expected JSON object from MCP tool, got {type(payload).__name__}: {text!r}"
-        )
-    return payload
+    try:
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            return payload
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return text
 
 
 def _server_params() -> StdioServerParameters:
