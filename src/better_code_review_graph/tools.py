@@ -1005,16 +1005,28 @@ def _handle_callers_of(
 
 def _handle_callees_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving callees (issue #342).
+    # We look for CALLS edges originating from either the qualified name or the bare name.
+    search_sources = [qn]
+    if node and node.name and node.name != qn:
+        search_sources.append(node.name)
+
+    edges = store.search_edges_by_source_names(
+        search_sources, kind="CALLS", as_of=as_of
+    )
+
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
+
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1243,7 +1255,7 @@ def query_graph(
             )
         elif pattern == "callees_of":
             _handle_callees_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
             )
         elif pattern == "imports_of":
             _handle_imports_of(
