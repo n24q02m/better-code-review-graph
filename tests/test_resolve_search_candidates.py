@@ -19,6 +19,7 @@ def make_node(kind, name, qualified_name):
         return_type=None,
         is_test=False,
         file_hash=None,
+        repo_id="",
         extra={},
     )
 

@@ -194,6 +194,7 @@ class GraphNode:
     return_type: str | None
     is_test: bool
     file_hash: str | None
+    repo_id: str
     extra: dict
 
 
@@ -1432,6 +1433,7 @@ class GraphStore:
             return_type=row["return_type"],
             is_test=bool(row["is_test"]),
             file_hash=row["file_hash"],
+            repo_id=row["repo_id"] or "",
             extra=json.loads(row["extra"]) if row["extra"] else {},
         )
 

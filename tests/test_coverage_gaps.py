@@ -48,6 +48,7 @@ def _make_graph_node(**kwargs) -> GraphNode:
         "is_test": False,
         "file_hash": None,
         "extra": {},
+        "repo_id": "",
     }
     defaults.update(kwargs)
     return GraphNode(**defaults)

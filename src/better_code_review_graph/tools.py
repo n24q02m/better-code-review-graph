@@ -852,11 +852,7 @@ def _resolve_query_target(
     # requested repo so the search-by-name fallback below can pick a
     # repo-scoped candidate instead of returning the cross-repo match.
     if node is not None and repo:
-        row = store._conn.execute(
-            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-            (node.qualified_name,),
-        ).fetchone()
-        if row is None or (row["repo_id"] or "") != repo:
+        if (node.repo_id or "") != repo:
             node = None
 
     # 2. Search by name if not found directly
