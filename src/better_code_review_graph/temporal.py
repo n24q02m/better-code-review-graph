@@ -446,6 +446,7 @@ class TemporalIndex:
         Returns:
             Number of nodes whose ``valid_to_sha`` was set in this call.
         """
+        # We need fetchall() here because we are modifying the DB inside the loop
         rows = self._store._conn.execute(
             "SELECT id, qualified_name FROM nodes "
             "WHERE file_path = ? AND valid_to_sha IS NULL",

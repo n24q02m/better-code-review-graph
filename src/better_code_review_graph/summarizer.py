@@ -271,17 +271,17 @@ def batch_summarize(
         )
     provider, api_key = resolved
 
-    rows = store._conn.execute(
+    cursor = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
         "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
         (max_nodes,),
-    ).fetchall()
+    )
 
     generated = 0
     cached = 0
     errors = 0
 
-    for row in rows:
+    for row in cursor:
         row_id = row[0]
         src = row[1]
         stored_hash = row[2]
