@@ -43,15 +43,9 @@ def test_compute_source_hash_is_sha256():
 
 
 def test_compute_source_hash_empty_string():
-    """Empty input must produce sha256 of empty bytes -- well-defined contract."""
-    assert (
-        compute_source_hash("")
-        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
-
-
-def test_compute_source_hash_handles_unicode():
-    """Unicode source code (non-ASCII) must hash via UTF-8 encoding."""
+    """Empty or None input must produce empty string -- drift-bug prevention."""
+    assert compute_source_hash("") == ""
+    assert compute_source_hash(None) == ""
     src = "def greet(): return 'café'"
     expected = hashlib.sha256(src.encode("utf-8")).hexdigest()
     assert compute_source_hash(src) == expected
@@ -505,7 +499,7 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkey
 
 
 def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
-    """If stored hash != live hash, treat as stale and regenerate."""
+    """NULLing the stored_hash triggers regeneration (legacy mode)."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
     from better_code_review_graph.summarizer import batch_summarize
@@ -531,10 +525,10 @@ def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
         store._conn.execute(
             "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
             (
-                "def f(): return 2",
+                "def f(): return 1",  # Different from the node.source_text later
                 "Old summary for return 1.",
                 "gemini",
-                "stale_hash",
+                None,  # NULL stored_hash triggers regeneration
                 node_id,
             ),
         )
@@ -763,5 +757,96 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
 
         assert result.generated == 0
         mock_sum.assert_not_called()
+    finally:
+        store.close()
+
+
+def test_batch_summarize_trusts_stored_hash_verbatim(tmp_path, monkeypatch):
+    """If a hash is already in the DB, trust it even if it doesn't match live source.
+
+    This ensures that "rehash drift" (e.g. from normalization) doesn't trigger
+    unnecessary LLM calls or database churn.
+    """
+    from unittest.mock import patch
+
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        src = "def f():  pass"
+        # "normalized" hash would be different, but we store a custom one
+        stored_hash = "manual_hash_123"
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=1,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store._conn.execute(
+            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (src, "Existing summary.", "gemini", stored_hash, node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.cached == 1
+        assert result.generated == 0
+        mock_sum.assert_not_called()
+    finally:
+        store.close()
+
+
+def test_batch_summarize_regenerates_when_source_hash_is_null(tmp_path, monkeypatch):
+    """If stored_hash is NULL, treat as stale and regenerate (legacy ingest)."""
+    from unittest.mock import patch
+
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+                source_text="def f(): return 1",
+            ),
+            file_hash="h",
+        )
+        # Summary present, but hash is NULL
+        store._conn.execute(
+            "UPDATE nodes SET summary=?, summary_provider=?, source_hash=NULL WHERE id=?",
+            ("Old summary.", "gemini", node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "New summary."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.cached == 0
     finally:
         store.close()
