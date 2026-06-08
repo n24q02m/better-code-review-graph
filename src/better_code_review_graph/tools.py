@@ -1052,11 +1052,15 @@ def _handle_importers_of(
 
 
 def _handle_children_of(
-    store: Any, qn: str, results: list[dict], *, as_of: str = ""
+    store: Any, node: Any, qn: str, results: list[dict], *, as_of: str = ""
 ) -> None:
-    qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
-        qns.append(e.target_qualified)
+    # Bolt: Use batched search to avoid N+1 queries when resolving children (issue #342).
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+
+    edges = store.get_edges_by_sources(search_targets, kind="CONTAINS", as_of=as_of)
+    qns = [e.target_qualified for e in edges]
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1254,7 +1258,7 @@ def query_graph(
                 store, resolved_qn_or_path, results, edges_out, as_of=as_of
             )
         elif pattern == "children_of":
-            _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
+            _handle_children_of(store, node, resolved_qn_or_path, results, as_of=as_of)
         elif pattern == "tests_for":
             _handle_tests_for(
                 store, node, target, resolved_qn_or_path, results, as_of=as_of
