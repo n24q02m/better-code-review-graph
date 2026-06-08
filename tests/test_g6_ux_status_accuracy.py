@@ -33,6 +33,7 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status returns configured when PerPluginStore has cloud keys."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -60,7 +61,9 @@ class TestSetupStatusLiveDerivedState:
         monkeypatch.delenv("COHERE_API_KEY", raising=False)
         monkeypatch.delenv("CO_API_KEY", raising=False)
 
-        # Force module-level state to CONFIGURED (stale) to reproduce the bug
+        # In the past, we forced module-level state to CONFIGURED (stale)
+        # to reproduce the bug. Now that we call resolve_credential_state(),
+        # it should automatically refresh and fix the staleness.
         import better_code_review_graph.credential_state as cs
 
         cs.set_state(cs.CredentialState.CONFIGURED)
@@ -71,12 +74,9 @@ class TestSetupStatusLiveDerivedState:
         ):
             result = _call_config_setup_status_sync()
 
-        # State must be derived from live creds, NOT stale _state
+        # State must be derived from live creds (or refreshed state), NOT stale _state
         assert result["state"] != "configured"
         assert result["providers_configured"] == []
-
-        # Restore state
-        cs.set_state(cs.CredentialState.AWAITING_SETUP)
 
     def test_env_vars_take_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """setup_status includes env-var keys in providers_configured."""
@@ -119,6 +119,7 @@ class TestSetupStatusLiveDerivedState:
 
     def test_no_duplicate_providers(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If same key appears in both env and store, it should appear only once."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.setenv("GEMINI_API_KEY", "key-from-env")
 
         with patch(
