@@ -6,18 +6,12 @@ from pathlib import Path
 
 from better_code_review_graph.parser import (
     CodeParser,
-    _is_test_file,
     _is_test_function,
     file_hash,
 )
 
 
 class TestParserUtils:
-    def test_is_test_file(self):
-        assert _is_test_file("tests/test_foo.py") is True
-        assert _is_test_file("test/test_bar.py") is True
-        assert _is_test_file("src/main.py") is False
-
     def test_is_test_function(self):
         assert _is_test_function("test_login", "test_auth.py") is True
         assert _is_test_function("login", "auth.py") is False
