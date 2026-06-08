@@ -836,53 +836,38 @@ class GraphStore:
 
     # --- Read operations ---
 
-    @staticmethod
     def _temporal_filter(
-        as_of: str, *, table_alias: str = ""
-    ) -> tuple[str, tuple[str, ...]]:
-        """Return ``(sql_fragment, bind_params)`` for the temporal scope.
+        self, as_of: str, *, table_alias: str = ""
+    ) -> tuple[str, tuple[str, str, str, str]]:
+        """Return a SQL fragment and parameters for temporal filtering.
 
-        Phase 3 Task 9 — encodes the "snapshot at SHA" semantics used by
-        the v2 query layer. The fragment is always prefixed with
-        ``AND`` so callers can append it to an existing ``WHERE``
-        clause without rewriting the query shape.
+        Phase 3 Task 9 — filter nodes/edges to a temporal snapshot.
+        * as_of == "" (default) → snapshot of currently-valid rows.
+        * as_of == "<sha>" → snapshot of rows active at or closed by the SHA.
 
-        * ``as_of == ""`` → ``AND <prefix>valid_to_sha IS NULL``. Returns
-          only currently-valid rows. This is the new default and the
-          first use of the temporal columns by the read layer; legacy
-          ingest writes ``valid_to_sha = NULL`` so existing rows pass
-          through untouched.
-        * ``as_of == "<sha>"`` → ``AND (<prefix>valid_from_sha = ? OR
-          <prefix>valid_to_sha = ?)``. Snapshot semantics: rows
-          introduced exactly at the requested SHA OR rows that were
-          closed out at the requested SHA both qualify. Approximation
-          of full ancestor walk against the ``commits`` table —
-          deferred to Task 9.5.
+        This implementation returns a fixed-shape fragment and parameter
+        tuple to ensure the calling SQL is static and safe from injection
+        (ref: Task 10 Security Fix).
 
         Args:
             as_of: Empty string for "currently-valid" or a 40-char SHA.
-            table_alias: When the surrounding query references multiple
-                tables (``nodes n JOIN edges e``) callers pass the
-                alias so the fragment qualifies the column name. Empty
-                string (default) emits unqualified column names.
+            table_alias: Optional table prefix (e.g. "n").
 
         Returns:
-            ``(fragment, params)`` — fragment includes the leading
-            ``AND`` so callers always emit the same shape regardless
-            of whether the SHA is set.
+            (fragment, params) — fragment includes leading AND.
         """
         prefix = f"{table_alias}." if table_alias else ""
-        if not as_of:
-            return f" AND {prefix}valid_to_sha IS NULL", ()
-        return (
-            f" AND ({prefix}valid_from_sha = ? OR {prefix}valid_to_sha = ?)",
-            (as_of, as_of),
+        # Unified clause handles both empty and non-empty as_of via positional params.
+        clause = (
+            f" AND ((? = '' AND {prefix}valid_to_sha IS NULL) "
+            f"OR (? != '' AND ({prefix}valid_from_sha = ? OR {prefix}valid_to_sha = ?)))"
         )
+        return clause, (as_of, as_of, as_of, as_of)
 
     def get_node(self, qualified_name: str, *, as_of: str = "") -> GraphNode | None:
         frag, frag_params = self._temporal_filter(as_of)
         row = self._conn.execute(
-            f"SELECT * FROM nodes WHERE qualified_name = ?{frag}",  # noqa: S608
+            "SELECT * FROM nodes WHERE qualified_name = ?" + frag,
             (qualified_name, *frag_params),
         ).fetchone()
         return self._row_to_node(row) if row else None
@@ -890,7 +875,7 @@ class GraphStore:
     def get_nodes_by_file(self, file_path: str, *, as_of: str = "") -> list[GraphNode]:
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            f"SELECT * FROM nodes WHERE file_path = ?{frag}",  # noqa: S608
+            "SELECT * FROM nodes WHERE file_path = ?" + frag,
             (file_path, *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -911,8 +896,8 @@ class GraphStore:
         unique_files = list(set(file_paths))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE file_path IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM nodes WHERE file_path IN "
+            "(SELECT value FROM json_each(?))" + frag,
             (json.dumps(unique_files), *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -931,8 +916,8 @@ class GraphStore:
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE qualified_name IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM nodes WHERE qualified_name IN "
+            "(SELECT value FROM json_each(?))" + frag,
             (json.dumps(unique_qns), *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -949,7 +934,7 @@ class GraphStore:
         frag, frag_params = self._temporal_filter(as_of)
         kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
-            f"SELECT * FROM edges WHERE source_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            "SELECT * FROM edges WHERE source_qualified = ?" + kind_frag + frag,
             (qualified_name, *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -965,7 +950,7 @@ class GraphStore:
         frag, frag_params = self._temporal_filter(as_of)
         kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
-            f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            "SELECT * FROM edges WHERE target_qualified = ?" + kind_frag + frag,
             (qualified_name, *kind_params, *frag_params),
         )
         first_row = cursor.fetchone()
@@ -978,14 +963,16 @@ class GraphStore:
         if fallback and not first_row and "::" in qualified_name:
             if kind is not None:
                 exists = self._conn.execute(
-                    f"SELECT 1 FROM edges WHERE target_qualified = ?{frag} LIMIT 1",  # noqa: S608
+                    "SELECT 1 FROM edges WHERE target_qualified = ?"
+                    + frag
+                    + " LIMIT 1",
                     (qualified_name, *frag_params),
                 ).fetchone()
                 if exists is not None:
                     return []
             bare_name = qualified_name.rsplit("::", 1)[-1]
             cursor = self._conn.execute(
-                f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+                "SELECT * FROM edges WHERE target_qualified = ?" + kind_frag + frag,
                 (bare_name, *kind_params, *frag_params),
             )
             return [self._row_to_edge(r) for r in cursor]
@@ -999,15 +986,21 @@ class GraphStore:
     @staticmethod
     def _kind_filter(
         kind: str | tuple[str, ...] | None,
-    ) -> tuple[str, tuple[str, ...]]:
-        if kind is None:
-            return "", ()
-        if isinstance(kind, str):
-            return " AND kind = ?", (kind,)
-        if not kind:
-            return "", ()
-        placeholders = ",".join("?" for _ in kind)
-        return f" AND kind IN ({placeholders})", tuple(kind)
+    ) -> tuple[str, tuple[str | None, str | None]]:
+        """Return a SQL fragment and parameters for kind filtering.
+
+        Uses json_each(?) to handle single kind, multiple kinds, or no
+        filter (when kind is None or empty) in a fixed-shape query to
+        ensure security and static analysis compatibility.
+        """
+        clause = " AND (? IS NULL OR kind IN (SELECT value FROM json_each(?)))"
+        kind_json = None
+        if kind is not None:
+            if isinstance(kind, str):
+                kind_json = json.dumps([kind])
+            elif kind:
+                kind_json = json.dumps(list(kind))
+        return clause, (kind_json, kind_json)
 
     def get_edges_by_targets(
         self, qualified_names: list[str], *, as_of: str = ""
@@ -1019,8 +1012,8 @@ class GraphStore:
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM edges WHERE target_qualified IN "
+            "(SELECT value FROM json_each(?))" + frag,
             (json.dumps(unique_qns), *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -1052,8 +1045,8 @@ class GraphStore:
         unique_names = list(set(names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)) AND kind = ?{frag}",
+            "SELECT * FROM edges WHERE target_qualified IN "
+            "(SELECT value FROM json_each(?)) AND kind = ?" + frag,
             (json.dumps(unique_names), kind, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -1096,7 +1089,7 @@ class GraphStore:
         # ``_temporal_filter`` from a hard-coded set of strings, so the
         # f-string interpolation is safe (Bandit B608 already lints).
         cursor = self._conn.execute(
-            f"""
+            """
             SELECT * FROM nodes
             WHERE (
                 SELECT COUNT(*)
@@ -1105,9 +1098,11 @@ class GraphStore:
                    OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
               AND (? IS NULL OR kind = ?)
-              AND (? = '' OR repo_id = ?){frag}
+              AND (? = '' OR repo_id = ?) """
+            + frag
+            + """
             ORDER BY name LIMIT ?
-            """,  # noqa: S608
+            """,
             [
                 json.dumps(words),
                 json.dumps(words),
