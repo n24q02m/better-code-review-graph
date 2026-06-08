@@ -576,6 +576,11 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
 
     monkeypatch.setattr(_resources, "files", _files)
 
+    # Verify the mock correctly simulates the historical bug.
+    obj = _files("better_code_review_graph_migrations")
+    expected_repr = f"MultiplexedPath('{fake_dir}')"
+    assert str(obj) == expected_repr
+
     # Falls through installed-wheel branch (joinpath result not a Path)
     # → resolves via source-checkout fallback. Both paths exist in the
     # checkout, so we should get a working migrations dir back.
