@@ -1038,14 +1038,15 @@ def _handle_imports_of(
 
 def _handle_importers_of(
     store: Any,
-    abs_target: str,
+    abs_targets: list[str],
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
+    # Bolt: Optimized to prevent N+1 queries when resolving multiple importers (issue #342).
+    for e in store.search_edges_by_target_names(
+        abs_targets, kind="IMPORTS_FROM", as_of=as_of
     ):
         results.append({"importer": e.source_qualified, "file": e.file_path})
         edges_out.append(edge_to_dict(e))
@@ -1251,7 +1252,7 @@ def query_graph(
             )
         elif pattern == "importers_of":
             _handle_importers_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+                store, [resolved_qn_or_path], results, edges_out, as_of=as_of
             )
         elif pattern == "children_of":
             _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
