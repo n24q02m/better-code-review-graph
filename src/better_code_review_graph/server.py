@@ -564,6 +564,8 @@ async def config(
 
             from . import credential_state as _cs
 
+            # Resolve state first to ensure accuracy and update module-level _state.
+            _cs.resolve_credential_state()
             # Derive providers_configured from live PerPluginStore load + env
             # so status is accurate even if module-level _state is stale.
             _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
@@ -571,7 +573,7 @@ async def config(
             _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
             _providers = list(dict.fromkeys(_env_keys + _store_keys))
             if _providers:
-                _derived_state = "configured"
+                _derived_state = _cs.get_state().value
             elif _cs.get_state() == _cs.CredentialState.LOCAL:
                 _derived_state = "local"
             else:

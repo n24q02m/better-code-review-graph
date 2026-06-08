@@ -33,6 +33,7 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status returns configured when PerPluginStore has cloud keys."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -53,6 +54,7 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status returns awaiting_setup when store empty and no env vars."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -80,6 +82,7 @@ class TestSetupStatusLiveDerivedState:
 
     def test_env_vars_take_precedence(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """setup_status includes env-var keys in providers_configured."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
@@ -101,6 +104,7 @@ class TestSetupStatusLiveDerivedState:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """setup_status always includes providers_configured key in response."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -119,6 +123,7 @@ class TestSetupStatusLiveDerivedState:
 
     def test_no_duplicate_providers(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If same key appears in both env and store, it should appear only once."""
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
         monkeypatch.setenv("GEMINI_API_KEY", "key-from-env")
 
         with patch(
