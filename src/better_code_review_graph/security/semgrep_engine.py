@@ -117,7 +117,10 @@ class SemgrepScanner:
         executable: str | None = None,
         require_python_module: bool = False,
     ) -> None:
-        self._config = str(config)
+        config_str = str(config)
+        if config_str.startswith("-"):
+            raise ValueError(f"Semgrep config cannot start with a hyphen: {config_str}")
+        self._config = config_str
         resolved = executable or _semgrep_executable()
         if resolved is None:
             raise SemgrepNotAvailable(
@@ -162,6 +165,7 @@ class SemgrepScanner:
             self._config,
             "--json",
             "--quiet",
+            "--",
             str(target),
         ]
         proc = subprocess.run(

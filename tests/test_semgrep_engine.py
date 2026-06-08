@@ -394,3 +394,28 @@ def test_security_module_reexports_semgrep_symbols():
     assert "SemgrepScanner" in security.__all__
     assert "SemgrepResult" in security.__all__
     assert "SemgrepNotAvailable" in security.__all__
+
+
+# ---------------------------------------------------------------------------
+# Security: Argument Injection
+# ---------------------------------------------------------------------------
+
+
+def test_scan_path_uses_double_dash_separator(tmp_path):
+    target = tmp_path / "--version"
+    target.write_text("print(1)")
+    scanner = SemgrepScanner(executable="/fake/semgrep")
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        return_value=_mock_completed(0, stdout='{"results": []}'),
+    ) as run_mock:
+        scanner.scan_path(target)
+
+    cmd = run_mock.call_args[0][0]
+    assert "--" in cmd
+    assert cmd.index("--") == cmd.index(str(target)) - 1
+
+
+def test_init_raises_on_config_starting_with_hyphen():
+    with pytest.raises(ValueError, match="Semgrep config cannot start with a hyphen"):
+        SemgrepScanner(config="--some-flag", executable="/fake/semgrep")
