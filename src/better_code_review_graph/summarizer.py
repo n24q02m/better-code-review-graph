@@ -291,17 +291,9 @@ def batch_summarize(
         stored_summary = row[3]
         stored_provider = row[4]
 
-        # Use pre-computed hash if available to avoid "rehash drift" bugs
-        # and redundant SHA-256 work.
-        if stored_hash is not None:
-            effective_hash = stored_hash
-        else:
-            effective_hash = compute_source_hash(src)
+        live_hash = compute_source_hash(src)
 
-        if stored_summary and stored_hash is not None and stored_provider == provider:
-            # We have a summary and a hash, and they match the current provider.
-            # We trust the stored_hash is current for the stored source_text
-            # (no redundant re-hashing to detect legacy changes).
+        if stored_summary and stored_hash == live_hash and stored_provider == provider:
             cached += 1
             continue
 
@@ -310,7 +302,7 @@ def batch_summarize(
                 NodeNeedingSummary(
                     node_id=str(row_id),
                     source_text=src,
-                    source_hash=effective_hash,
+                    source_hash=live_hash,
                 ),
                 provider=provider,
                 api_key=api_key,
@@ -324,7 +316,7 @@ def batch_summarize(
             row_id,
             summary=summary,
             provider=provider,
-            source_hash=effective_hash,
+            source_hash=live_hash,
         )
         generated += 1
 

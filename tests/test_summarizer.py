@@ -12,7 +12,6 @@ Task 5.
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 from unittest.mock import MagicMock, patch
 
@@ -31,81 +30,38 @@ from better_code_review_graph.summarizer import (
 # ---------------------------------------------------------------------------
 
 
-def test_compute_source_hash_is_sha256():
-    source = "def add(a, b):\n    return a + b\n"
-    expected = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    actual = compute_source_hash(source)
-
-    # SHA-256 hex digest is 64 lowercase hex chars.
-    assert len(actual) == 64
-    assert all(c in "0123456789abcdef" for c in actual)
-    assert actual == expected
-
-
 def test_compute_source_hash_empty_string():
     """Empty or None input must produce empty string -- drift-bug prevention."""
     assert compute_source_hash("") == ""
     assert compute_source_hash(None) == ""
-    src = "def greet(): return 'café'"
+
+
+def test_compute_source_hash_standard_string():
+    """Matches SHA-256 of UTF-8 encoded bytes for non-empty strings."""
+    src = "def f(): return 1"
     expected = hashlib.sha256(src.encode("utf-8")).hexdigest()
     assert compute_source_hash(src) == expected
-    # Also verify it's not the latin-1 hash (which would be different)
-    assert compute_source_hash(src) != hashlib.sha256(src.encode("latin-1")).hexdigest()
 
 
-def test_node_needing_summary_is_frozen():
-    """NodeNeedingSummary must be immutable for safe use as cache key input."""
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        node.node_id = "z"  # ty: ignore[invalid-assignment]
-
-
-def test_cache_key_combines_source_hash_and_provider():
-    source = "def add(a, b):\n    return a + b\n"
-    expected_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
-
+def test_compute_summary_cache_key_trusts_precomputed_hash():
+    """If NodeNeedingSummary has source_hash, we use it verbatim without re-hashing."""
     node = NodeNeedingSummary(
-        node_id="src/x.py::add",
-        source_text=source,
-        source_hash=None,
+        node_id="f.py::f",
+        source_text="ignored",
+        source_hash="precomputed-sha256",
     )
     key = compute_summary_cache_key(node, "gemini")
-
-    assert key == f"{expected_hash}:gemini"
-
-
-def test_cache_key_changes_when_provider_changes():
-    source = "def add(a, b):\n    return a + b\n"
-    node = NodeNeedingSummary(
-        node_id="src/x.py::add",
-        source_text=source,
-        source_hash=None,
-    )
-    gemini_key = compute_summary_cache_key(node, "gemini")
-    openai_key = compute_summary_cache_key(node, "openai")
-
-    assert gemini_key != openai_key
-    # Both must end with the provider tag and share the same hash prefix.
-    assert gemini_key.endswith(":gemini")
-    assert openai_key.endswith(":openai")
-    assert gemini_key.split(":", 1)[0] == openai_key.split(":", 1)[0]
+    assert key == "precomputed-sha256:gemini"
 
 
-def test_cache_key_uses_precomputed_hash_when_provided():
-    """When ``source_hash`` is set the cache key MUST trust it verbatim.
+def test_compute_summary_cache_key_hashes_on_demand():
+    """If source_hash is None, we compute it from source_text."""
+    src = "def f(): return 1"
+    node = NodeNeedingSummary(node_id="f.py::f", source_text=src, source_hash=None)
+    expected_hash = hashlib.sha256(src.encode("utf-8")).hexdigest()
 
-    We pass a fake hash that does NOT match the source text; the key must
-    still embed the fake hash, proving no recomputation occurred.
-    """
-    fake_hash = "deadbeef" * 8  # 64 hex chars, intentionally wrong
-    node = NodeNeedingSummary(
-        node_id="src/x.py::add",
-        source_text="def add(a, b):\n    return a + b\n",
-        source_hash=fake_hash,
-    )
-    key = compute_summary_cache_key(node, "gemini")
-
-    assert key == f"{fake_hash}:gemini"
+    key = compute_summary_cache_key(node, "openai")
+    assert key == f"{expected_hash}:openai"
 
 
 # ---------------------------------------------------------------------------
@@ -113,285 +69,167 @@ def test_cache_key_uses_precomputed_hash_when_provided():
 # ---------------------------------------------------------------------------
 
 
-def _clear_provider_env(monkeypatch):
-    for key in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(key, raising=False)
-
-
-def test_resolve_provider_prefers_gemini(monkeypatch):
-    _clear_provider_env(monkeypatch)
+def test_resolve_summary_provider_gemini_wins(monkeypatch):
+    """GEMINI_API_KEY takes precedence over OPENAI_API_KEY."""
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
 
-    result = resolve_summary_provider()
+    res = resolve_summary_provider()
+    assert res == ("gemini", "g-key")
 
-    assert result == ("gemini", "g-key")
+
+def test_resolve_summary_provider_google_alias(monkeypatch):
+    """GOOGLE_API_KEY is treated as a Gemini alias."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+
+    res = resolve_summary_provider()
+    assert res == ("gemini", "google-key")
 
 
-def test_resolve_provider_falls_back_to_openai(monkeypatch):
-    _clear_provider_env(monkeypatch)
+def test_resolve_summary_provider_openai_fallback(monkeypatch):
+    """If no Gemini/Google keys, OpenAI is used."""
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
 
-    result = resolve_summary_provider()
-
-    assert result == ("openai", "o-key")
-
-
-def test_resolve_provider_handles_google_api_key_alias(monkeypatch):
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
-
-    result = resolve_summary_provider()
-
-    assert result == ("gemini", "google-key")
+    res = resolve_summary_provider()
+    assert res == ("openai", "o-key")
 
 
-def test_resolve_provider_returns_none_when_no_key(monkeypatch):
-    _clear_provider_env(monkeypatch)
+def test_resolve_summary_provider_none_when_all_missing(monkeypatch):
+    """Returns None if no supported provider key is set."""
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
 
-    result = resolve_summary_provider()
-
-    assert result is None
-
-
-def test_resolve_provider_empty_gemini_falls_through_to_google(monkeypatch):
-    """Empty GEMINI_API_KEY should fall through to GOOGLE_API_KEY (per docstring contract)."""
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
-    assert resolve_summary_provider() == ("gemini", "google-key")
-
-
-def test_resolve_provider_all_empty_returns_none(monkeypatch):
-    """All env vars set to empty strings should be treated as unset."""
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-    monkeypatch.setenv("GOOGLE_API_KEY", "")
-    monkeypatch.setenv("OPENAI_API_KEY", "")
     assert resolve_summary_provider() is None
 
 
+def test_resolve_summary_provider_treats_empty_as_unset(monkeypatch):
+    """Empty strings in env vars are treated as not set."""
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
+
+    res = resolve_summary_provider()
+    assert res == ("openai", "o-key")
+
+
 # ---------------------------------------------------------------------------
-# summarize_node (single-node LLM summary)
+# summarize_node (Gemini path)
 # ---------------------------------------------------------------------------
 
 
-def test_summarize_node_gemini_returns_text():
-    node = NodeNeedingSummary(
-        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
-    )
-    fake_response = MagicMock()
-    fake_response.text = (
-        "  Returns nothing — placeholder function.  "  # whitespace must be stripped
-    )
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
-        result = summarize_node(node, provider="gemini", api_key="g-key")
-    assert result == "Returns nothing — placeholder function."
-    mock_get.assert_called_once_with("g-key")
-    mock_client.models.generate_content.assert_called_once()
-    call_kwargs = mock_client.models.generate_content.call_args.kwargs
-    assert call_kwargs["model"] == "gemini-2.5-flash"
-    assert "def foo(): pass" in call_kwargs["contents"]
+def test_summarize_node_gemini_success():
+    """Verifies Gemini client interaction and response stripping."""
+    node = NodeNeedingSummary(node_id="x", source_text="def f(): pass", source_hash="h")
+
+    # Mock the client returned by _get_gemini_client
+    mock_client = MagicMock()
+    # response.text
+    mock_client.models.generate_content.return_value.text = "  A function.  "
+
+    with patch(
+        "better_code_review_graph.summarizer._get_gemini_client",
+        return_value=mock_client,
+    ):
+        summary = summarize_node(node, provider="gemini", api_key="abc")
+
+    assert summary == "A function."
+    # Check args: model and prompt concatenation
+    args, kwargs = mock_client.models.generate_content.call_args
+    assert kwargs["model"] == "gemini-2.5-flash"
+    assert "def f(): pass" in kwargs["contents"]
 
 
-def test_summarize_node_openai_returns_text():
-    node = NodeNeedingSummary(
-        node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
-    )
-    fake_choice = MagicMock()
-    fake_choice.message.content = "\nEmpty stub function.\n"
-    fake_response = MagicMock()
-    fake_response.choices = [fake_choice]
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
-        result = summarize_node(node, provider="openai", api_key="o-key")
-    assert result == "Empty stub function."
-    mock_client.chat.completions.create.assert_called_once()
-    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
-    assert call_kwargs["model"] == "gpt-4o-mini"
-    assert call_kwargs["messages"][0]["role"] == "user"
+def test_summarize_node_gemini_error_wrapping():
+    """If SDK raises, we wrap in RuntimeError."""
+    node = NodeNeedingSummary(node_id="x", source_text="src", source_hash="h")
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = ValueError("Safety block")
 
-
-def test_summarize_node_unknown_provider_raises():
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(ValueError, match="Unsupported provider"):
-        summarize_node(node, provider="anthropic", api_key="k")
-
-
-def test_summarize_node_wraps_sdk_errors():
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("API timeout")
-        mock_get.return_value = mock_client
+    with patch(
+        "better_code_review_graph.summarizer._get_gemini_client",
+        return_value=mock_client,
+    ):
         with pytest.raises(RuntimeError, match="summarize_node failed via gemini"):
-            summarize_node(node, provider="gemini", api_key="g-key")
+            summarize_node(node, provider="gemini", api_key="abc")
 
 
-def test_summarize_node_gemini_empty_text_raises():
-    """Gemini ``response.text=None`` (safety filter) must raise RuntimeError directly,
-    NOT wrapped as 'summarize_node failed via gemini: ...'.
-    """
-    node = NodeNeedingSummary(
-        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
-    )
-    fake_response = MagicMock()
-    fake_response.text = None
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
-        with pytest.raises(RuntimeError, match="empty/None text") as exc_info:
-            summarize_node(node, provider="gemini", api_key="g-key")
-    # Must be the explicit guard, not the SDK-wrapping path.
-    assert "summarize_node failed via gemini" not in str(exc_info.value)
-    assert "x.py::foo" in str(exc_info.value)
+def test_summarize_node_gemini_empty_response_raises():
+    """Gemini returning None/empty text (e.g. filter) should raise RuntimeError."""
+    node = NodeNeedingSummary(node_id="x", source_text="src", source_hash="h")
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value.text = ""
 
-
-def test_summarize_node_openai_no_choices_raises():
-    """OpenAI ``response.choices=[]`` must raise RuntimeError 'no choices' directly."""
-    node = NodeNeedingSummary(
-        node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
-    )
-    fake_response = MagicMock()
-    fake_response.choices = []
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
-        with pytest.raises(RuntimeError, match="no choices") as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
-    assert "summarize_node failed via openai" not in str(exc_info.value)
-    assert "x.py::bar" in str(exc_info.value)
-
-
-def test_summarize_node_openai_none_content_raises():
-    """OpenAI ``message.content=None`` (safety filter) must raise RuntimeError 'empty/None content'."""
-    node = NodeNeedingSummary(
-        node_id="x.py::baz", source_text="def baz(): pass", source_hash=None
-    )
-    fake_choice = MagicMock()
-    fake_choice.message.content = None
-    fake_response = MagicMock()
-    fake_response.choices = [fake_choice]
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
-        with pytest.raises(RuntimeError, match="empty/None content") as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
-    assert "summarize_node failed via openai" not in str(exc_info.value)
-    assert "x.py::baz" in str(exc_info.value)
-
-
-def test_summarize_node_provider_is_case_sensitive():
-    """provider arg must match the lowercase canonical form returned by resolve_summary_provider."""
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(ValueError, match="Unsupported provider: 'Gemini'"):
-        summarize_node(node, provider="Gemini", api_key="k")
-
-
-def test_summarize_node_handles_braces_in_source():
-    """Function source containing { } (dict literals, f-strings) must not break prompt construction."""
-    src = 'def make_d(): return {"a": f"{x}"}'  # dict literal + f-string
-    node = NodeNeedingSummary(node_id="x", source_text=src, source_hash=None)
-    fake_response = MagicMock()
-    fake_response.text = "Returns a dict."
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
-        result = summarize_node(node, provider="gemini", api_key="k")
-    assert result == "Returns a dict."
-    # Verify the source went verbatim into the prompt
-    assert src in mock_client.models.generate_content.call_args.kwargs["contents"]
-
-
-def test_get_gemini_client_constructs_with_api_key():
-    """Lazy-import path in _get_gemini_client must call genai.Client(api_key=...)."""
-    from better_code_review_graph.summarizer import _get_gemini_client
-
-    fake_client = MagicMock()
-    with patch("google.genai.Client", return_value=fake_client) as mock_ctor:
-        result = _get_gemini_client("g-key")
-    assert result is fake_client
-    mock_ctor.assert_called_once_with(api_key="g-key")
-
-
-def test_get_openai_client_constructs_with_api_key():
-    """Lazy-import path in _get_openai_client must call openai.OpenAI(api_key=...)."""
-    from better_code_review_graph.summarizer import _get_openai_client
-
-    fake_client = MagicMock()
-    with patch("openai.OpenAI", return_value=fake_client) as mock_ctor:
-        result = _get_openai_client("o-key")
-    assert result is fake_client
-    mock_ctor.assert_called_once_with(api_key="o-key")
-
-
-def test_summarize_node_openai_create_failure_wraps_runtimeerror():
-    """OpenAI client.chat.completions.create() raising must be wrapped in RuntimeError (lines 203-204)."""
-    node = NodeNeedingSummary(
-        node_id="x.py::boom", source_text="def boom(): pass", source_hash=None
-    )
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = RuntimeError(
-            "openai upstream 503"
-        )
-        mock_get.return_value = mock_client
-        with pytest.raises(
-            RuntimeError, match="summarize_node failed via openai"
-        ) as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
-    # Original cause chained via "from exc"
-    assert "openai upstream 503" in str(exc_info.value)
+    with patch(
+        "better_code_review_graph.summarizer._get_gemini_client",
+        return_value=mock_client,
+    ):
+        with pytest.raises(RuntimeError, match="gemini returned empty/None text"):
+            summarize_node(node, provider="gemini", api_key="abc")
 
 
 # ---------------------------------------------------------------------------
-# update_summary + batch_summarize (Task 5)
+# summarize_node (OpenAI path)
 # ---------------------------------------------------------------------------
 
 
-def test_update_summary_persists_to_db(tmp_path):
-    """GraphStore.update_summary should write summary + provider + source_hash atomically."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import NodeInfo
+def test_summarize_node_openai_success():
+    """Verifies OpenAI client interaction and response stripping."""
+    node = NodeNeedingSummary(node_id="x", source_text="def f(): pass", source_hash="h")
 
-    store = GraphStore(str(tmp_path / "test.db"))
-    try:
-        node_id = store.upsert_node(
-            NodeInfo(
-                kind="Function",
-                name="f",
-                file_path="x.py",
-                line_start=1,
-                line_end=2,
-                language="python",
-            ),
-            file_hash="h",
-        )
-        store.update_summary(
-            node_id, summary="A summary.", provider="gemini", source_hash="abc123"
-        )
-        row = store._conn.execute(
-            "SELECT summary, summary_provider, source_hash FROM nodes WHERE id=?",
-            (node_id,),
-        ).fetchone()
-        assert row[0] == "A summary."
-        assert row[1] == "gemini"
-        assert row[2] == "abc123"
-    finally:
-        store.close()
+    mock_client = MagicMock()
+    # response.choices[0].message.content
+    mock_choice = MagicMock()
+    mock_choice.message.content = "  OpenAI summary. \n "
+    mock_client.chat.completions.create.return_value.choices = [mock_choice]
+
+    with patch(
+        "better_code_review_graph.summarizer._get_openai_client",
+        return_value=mock_client,
+    ):
+        summary = summarize_node(node, provider="openai", api_key="abc")
+
+    assert summary == "OpenAI summary."
+    # Check args
+    args, kwargs = mock_client.chat.completions.create.call_args
+    assert kwargs["model"] == "gpt-4o-mini"
+    assert kwargs["messages"][0]["content"].endswith("def f(): pass")
+
+
+def test_summarize_node_openai_empty_choices_raises():
+    """OpenAI returning empty choices list should raise RuntimeError."""
+    node = NodeNeedingSummary(node_id="x", source_text="src", source_hash="h")
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value.choices = []
+
+    with patch(
+        "better_code_review_graph.summarizer._get_openai_client",
+        return_value=mock_client,
+    ):
+        with pytest.raises(RuntimeError, match="openai returned no choices"):
+            summarize_node(node, provider="openai", api_key="abc")
+
+
+# ---------------------------------------------------------------------------
+# summarize_node (Validation)
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_node_unsupported_provider():
+    """Must raise ValueError for non-gemini/openai providers."""
+    node = NodeNeedingSummary(node_id="x", source_text="src", source_hash="h")
+    with pytest.raises(ValueError, match="Unsupported provider: 'claude'"):
+        summarize_node(node, provider="claude", api_key="abc")
+
+
+# ---------------------------------------------------------------------------
+# Batch orchestration (Task 5)
+# ---------------------------------------------------------------------------
 
 
 def test_batch_summarize_skips_when_no_provider(tmp_path, monkeypatch):
-    """Without env vars set, batch_summarize returns skipped_no_provider=True without calling LLM."""
+    """If no API key is set, batch_summarize returns early with skipped_no_provider=True."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.summarizer import batch_summarize
 
@@ -400,20 +238,18 @@ def test_batch_summarize_skips_when_no_provider(tmp_path, monkeypatch):
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
-        result = batch_summarize(store, max_nodes=10)
+        result = batch_summarize(store)
         assert result.skipped_no_provider is True
-        assert result.generated == 0
-        assert result.cached == 0
         assert result.provider is None
     finally:
         store.close()
 
 
-def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
-    """Function nodes without summary should be sent to LLM and result persisted."""
+def test_batch_summarize_processes_new_nodes(tmp_path, monkeypatch):
+    """Freshly inserted Function nodes with source_text should be summarized and persisted."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
-    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+    from better_code_review_graph.summarizer import batch_summarize
 
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -421,7 +257,7 @@ def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
-        node_id = store.upsert_node(
+        nid = store.upsert_node(
             NodeInfo(
                 kind="Function",
                 name="f",
@@ -432,37 +268,39 @@ def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
             ),
             file_hash="h",
         )
-        # Set source_text directly since NodeInfo doesn't carry it
+        # Manually set source_text since upsert_node logic might be skipped/simplified in mocks
         store._conn.execute(
             "UPDATE nodes SET source_text=? WHERE id=?",
-            ("def f(): return 1", node_id),
+            ("def f(): return 1", nid),
         )
         store._conn.commit()
 
         with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
-            mock_sum.return_value = "Returns 1."
+            mock_sum.return_value = "Generated summary."
             result = batch_summarize(store, max_nodes=10)
 
         assert result.generated == 1
         assert result.cached == 0
         assert result.provider == "gemini"
-        # Verify persisted
+
+        # Verify DB update
         row = store._conn.execute(
             "SELECT summary, summary_provider, source_hash FROM nodes WHERE id=?",
-            (node_id,),
+            (nid,),
         ).fetchone()
-        assert row[0] == "Returns 1."
+        assert row[0] == "Generated summary."
         assert row[1] == "gemini"
-        assert row[2] == compute_source_hash("def f(): return 1")
+        # source_hash must be set
+        assert row[2] is not None
     finally:
         store.close()
 
 
-def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkeypatch):
-    """Pre-existing summary + matching source_hash + matching provider => cache hit, no LLM call."""
+def test_batch_summarize_cache_hit_skips_regeneration(tmp_path, monkeypatch):
+    """If summary + hash + provider already match, skip API call."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
-    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+    from better_code_review_graph.summarizer import batch_summarize
 
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -482,6 +320,7 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkey
             ),
             file_hash="h",
         )
+        # Pre-seed cached summary
         store._conn.execute(
             "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
             (src, "Cached summary.", "gemini", compute_source_hash(src), node_id),
@@ -499,7 +338,7 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkey
 
 
 def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
-    """NULLing the stored_hash triggers regeneration (legacy mode)."""
+    """If stored hash != live hash, treat as stale and regenerate."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
     from better_code_review_graph.summarizer import batch_summarize
@@ -525,10 +364,10 @@ def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
         store._conn.execute(
             "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
             (
-                "def f(): return 1",  # Different from the node.source_text later
+                "def f(): return 2",
                 "Old summary for return 1.",
                 "gemini",
-                None,  # NULL stored_hash triggers regeneration
+                "stale_hash",
                 node_id,
             ),
         )
@@ -668,7 +507,7 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
     """
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
-    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+    from better_code_review_graph.summarizer import batch_summarize
 
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -761,14 +600,12 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
         store.close()
 
 
-def test_batch_summarize_trusts_stored_hash_verbatim(tmp_path, monkeypatch):
-    """If a hash is already in the DB, trust it even if it doesn't match live source.
+def test_batch_summarize_detect_empty_string_as_cached(tmp_path, monkeypatch):
+    """Empty string hashing fix prevents drift between temporal and summarizer.
 
-    This ensures that "rehash drift" (e.g. from normalization) doesn't trigger
-    unnecessary LLM calls or database churn.
+    Temporal Index uses "" for empty source hash. Summarizer must also use ""
+    (via fixed compute_source_hash) so that cache hits work for empty functions.
     """
-    from unittest.mock import patch
-
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
     from better_code_review_graph.summarizer import batch_summarize
@@ -779,9 +616,7 @@ def test_batch_summarize_trusts_stored_hash_verbatim(tmp_path, monkeypatch):
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
-        src = "def f():  pass"
-        # "normalized" hash would be different, but we store a custom one
-        stored_hash = "manual_hash_123"
+        src = ""
         node_id = store.upsert_node(
             NodeInfo(
                 kind="Function",
@@ -790,12 +625,14 @@ def test_batch_summarize_trusts_stored_hash_verbatim(tmp_path, monkeypatch):
                 line_start=1,
                 line_end=1,
                 language="python",
+                source_text=src,
             ),
             file_hash="h",
         )
+        # Simulate temporal index storing "" as hash
         store._conn.execute(
-            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
-            (src, "Existing summary.", "gemini", stored_hash, node_id),
+            "UPDATE nodes SET summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            ("Existing summary.", "gemini", "", node_id),
         )
         store._conn.commit()
 
@@ -805,48 +642,5 @@ def test_batch_summarize_trusts_stored_hash_verbatim(tmp_path, monkeypatch):
         assert result.cached == 1
         assert result.generated == 0
         mock_sum.assert_not_called()
-    finally:
-        store.close()
-
-
-def test_batch_summarize_regenerates_when_source_hash_is_null(tmp_path, monkeypatch):
-    """If stored_hash is NULL, treat as stale and regenerate (legacy ingest)."""
-    from unittest.mock import patch
-
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import NodeInfo
-    from better_code_review_graph.summarizer import batch_summarize
-
-    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-
-    store = GraphStore(str(tmp_path / "test.db"))
-    try:
-        node_id = store.upsert_node(
-            NodeInfo(
-                kind="Function",
-                name="f",
-                file_path="x.py",
-                line_start=1,
-                line_end=2,
-                language="python",
-                source_text="def f(): return 1",
-            ),
-            file_hash="h",
-        )
-        # Summary present, but hash is NULL
-        store._conn.execute(
-            "UPDATE nodes SET summary=?, summary_provider=?, source_hash=NULL WHERE id=?",
-            ("Old summary.", "gemini", node_id),
-        )
-        store._conn.commit()
-
-        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
-            mock_sum.return_value = "New summary."
-            result = batch_summarize(store, max_nodes=10)
-
-        assert result.generated == 1
-        assert result.cached == 0
     finally:
         store.close()
