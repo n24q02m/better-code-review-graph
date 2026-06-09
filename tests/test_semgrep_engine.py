@@ -419,3 +419,24 @@ def test_scan_path_uses_double_dash_separator(tmp_path):
 def test_init_raises_on_config_starting_with_hyphen():
     with pytest.raises(ValueError, match="Semgrep config cannot start with a hyphen"):
         SemgrepScanner(config="--some-flag", executable="/fake/semgrep")
+
+
+def test_scan_path_with_registry_config(tmp_path):
+    target = tmp_path / "src.py"
+    target.write_text("print(1)")
+    # Using a registry-like config string
+    scanner = SemgrepScanner(config="p/python", executable="/fake/semgrep")
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        return_value=_mock_completed(0, stdout='{"results": []}'),
+    ) as run_mock:
+        scanner.scan_path(target)
+
+    cmd = run_mock.call_args[0][0]
+    # Verify --config <config> is still correct
+    assert "--config" in cmd
+    idx = cmd.index("--config")
+    assert cmd[idx + 1] == "p/python"
+    # Verify -- is still before target
+    assert "--" in cmd
+    assert cmd.index("--") == cmd.index(str(target)) - 1
