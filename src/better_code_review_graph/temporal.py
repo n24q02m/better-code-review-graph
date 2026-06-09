@@ -419,3 +419,52 @@ class TemporalIndex:
         )
         self._store._conn.commit()
         return TemporalUpsertResult(action="unchanged", closed_out_count=0)
+
+    # ------------------------------------------------------------------
+    # File-scoped sweeps
+    # ------------------------------------------------------------------
+
+    def close_missing_nodes(
+        self,
+        file_path: str,
+        observed_qualified: set[str],
+    ) -> int:
+        """Close out currently-valid nodes for ``file_path`` not in ``observed_qualified``.
+
+        Used when re-parsing a file: any node previously visible in the
+        file but not produced by the new parse is treated as deleted —
+        close it out with ``valid_to_sha = current_sha``. The row is
+        not deleted from the table; historical queries can still find
+        it via ``WHERE valid_to_sha IS NOT NULL``.
+
+        Args:
+            file_path: The file being re-scanned.
+            observed_qualified: Qualified names produced by the current
+                parse of ``file_path``. Anything currently-valid in
+                ``file_path`` and NOT in this set is closed out.
+
+        Returns:
+            Number of nodes whose ``valid_to_sha`` was set in this call.
+        """
+        # NOTE: We use .fetchall() to pull the IDs into memory first. This
+        # avoids keeping a read cursor open on the nodes table while we
+        # perform UPDATEs in the loop below, preventing potential SQLite
+        # lock contention (Database is locked).
+        rows = self._store._conn.execute(
+            "SELECT id, qualified_name FROM nodes "
+            "WHERE file_path = ? AND valid_to_sha IS NULL",
+            (file_path,),
+        ).fetchall()
+        closed = 0
+        for row in rows:
+            row_id = row[0]
+            qualified = row[1]
+            if qualified not in observed_qualified:
+                self._store._conn.execute(
+                    "UPDATE nodes SET valid_to_sha = ? WHERE id = ?",
+                    (self._current_sha, row_id),
+                )
+                closed += 1
+        if closed:
+            self._store._conn.commit()
+        return closed

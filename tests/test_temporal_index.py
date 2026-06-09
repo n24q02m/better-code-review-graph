@@ -16,7 +16,7 @@ history), :class:`TemporalIndex.upsert_node` instead:
   text diverges. The old row remains queryable as historical state.
 
 These tests pin those three branches plus the supporting machinery
-(``upsert_edge`` analogue,
+(``upsert_edge`` analogue, ``close_missing_nodes`` for file-scoped sweeping,
 repo_id propagation, and post-supersede history queries).
 """
 
@@ -363,3 +363,58 @@ def test_temporal_index_can_query_history_after_supersede(store: GraphStore) -> 
     assert historical[1]["source_text"] == "v2"
     assert historical[1]["valid_from_sha"] == _SHA_B
     assert historical[1]["valid_to_sha"] == _SHA_C
+
+
+# ---------------------------------------------------------------------------
+# (12) close_missing_nodes — closes nodes not seen in observed set
+# ---------------------------------------------------------------------------
+
+
+def test_close_missing_nodes_closes_unobserved(store: GraphStore) -> None:
+    """File scan misses a previously-known node → that node is closed out."""
+    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a.upsert_node(_make_function_node(name="alpha", source_text="def alpha(): ..."))
+    idx_a.upsert_node(_make_function_node(name="beta", source_text="def beta(): ..."))
+    idx_a.upsert_node(_make_function_node(name="gamma", source_text="def gamma(): ..."))
+
+    # Re-scan at sha_b: only alpha + beta survive (gamma was deleted from the file).
+    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    closed = idx_b.close_missing_nodes(
+        file_path="src/m.py",
+        observed_qualified={"src/m.py::alpha", "src/m.py::beta"},
+    )
+    assert closed == 1
+
+    rows = store._conn.execute(
+        "SELECT qualified_name, valid_to_sha FROM nodes "
+        "WHERE file_path = 'src/m.py' ORDER BY qualified_name"
+    ).fetchall()
+    qn_to_valid_to = {r["qualified_name"]: r["valid_to_sha"] for r in rows}
+    assert qn_to_valid_to["src/m.py::alpha"] is None
+    assert qn_to_valid_to["src/m.py::beta"] is None
+    assert qn_to_valid_to["src/m.py::gamma"] == _SHA_B
+
+
+# ---------------------------------------------------------------------------
+# (13) close_missing_nodes — full coverage means zero closed
+# ---------------------------------------------------------------------------
+
+
+def test_close_missing_nodes_returns_zero_when_all_observed(store: GraphStore) -> None:
+    """All nodes still present in the file → zero closed."""
+    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a.upsert_node(_make_function_node(name="alpha"))
+    idx_a.upsert_node(_make_function_node(name="beta"))
+
+    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    closed = idx_b.close_missing_nodes(
+        file_path="src/m.py",
+        observed_qualified={"src/m.py::alpha", "src/m.py::beta"},
+    )
+    assert closed == 0
+
+    rows = store._conn.execute(
+        "SELECT valid_to_sha FROM nodes WHERE file_path = 'src/m.py'"
+    ).fetchall()
+    for row in rows:
+        assert row["valid_to_sha"] is None
