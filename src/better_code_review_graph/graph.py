@@ -11,7 +11,7 @@ import shutil
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -194,8 +194,8 @@ class GraphNode:
     return_type: str | None
     is_test: bool
     file_hash: str | None
-    repo_id: str
-    extra: dict
+    repo_id: str = ""
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -206,7 +206,7 @@ class GraphEdge:
     target_qualified: str
     file_path: str
     line: int
-    extra: dict
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
