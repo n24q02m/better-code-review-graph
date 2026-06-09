@@ -151,6 +151,7 @@ class TestLiveMCP:
                     "config",
                     "help",
                     "config__open_relay",
+                    "security",
                 }
                 assert expected == names, f"Expected {expected}, got {names}"
 
