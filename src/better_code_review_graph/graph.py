@@ -1044,10 +1044,11 @@ class GraphStore:
 
         unique_names = list(set(names))
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
             "SELECT * FROM edges WHERE target_qualified IN "
-            "(SELECT value FROM json_each(?)) AND kind = ?" + frag,
-            (json.dumps(unique_names), kind, *frag_params),
+            "(SELECT value FROM json_each(?))" + kind_frag + frag,
+            (json.dumps(unique_names), *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
 
