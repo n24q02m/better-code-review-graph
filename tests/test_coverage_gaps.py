@@ -17,7 +17,6 @@ import pytest
 from better_code_review_graph.embeddings import (
     CloudEmbeddingBackend,
     EmbeddingStore,
-    Qwen3EmbedBackend,
     _is_retryable,
 )
 from better_code_review_graph.graph import GraphNode, GraphStore
@@ -234,9 +233,7 @@ class TestSearchFallbackToEmbedSingle:
         """Cover line 636: fallback to embed_single when embed_single_query missing."""
         db = tmp_path / "graph.db"
         # Create a mock backend WITHOUT embed_single_query
-        mock_backend = MagicMock(
-            spec=["embed_texts", "embed_single", "check_available"]
-        )
+        mock_backend = MagicMock(spec=["embed_texts", "embed_single"])
         mock_backend.embed_texts.return_value = [[0.5] * 768]
         mock_backend.embed_single.return_value = [0.5] * 768
 
@@ -287,22 +284,6 @@ class TestProviderColumnMigration:
         columns = [row[1] for row in cursor.fetchall()]
         assert "provider" in columns
         store.close()
-
-
-# ---------------------------------------------------------------------------
-# embeddings.py: Qwen3 check_available failure (lines 216-217)
-# ---------------------------------------------------------------------------
-
-
-class TestQwen3CheckAvailableFailure:
-    def test_check_available_returns_zero_on_exception(self):
-        """Cover lines 216-217: check_available returns 0 on error."""
-        backend = Qwen3EmbedBackend(model_name="nonexistent/model")
-        with patch.object(
-            backend, "_get_model", side_effect=RuntimeError("model not found")
-        ):
-            dims = backend.check_available()
-            assert dims == 0
 
 
 # ---------------------------------------------------------------------------

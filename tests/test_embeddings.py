@@ -238,11 +238,6 @@ class TestQwen3EmbedBackend:
         vectors = backend.embed_texts([])
         assert vectors == []
 
-    def test_check_available(self):
-        backend = Qwen3EmbedBackend()
-        dims = backend.check_available()
-        assert dims > 0
-
     def test_embed_single(self):
         backend = Qwen3EmbedBackend()
         vector = backend.embed_single("hello world", dimensions=768)
@@ -423,24 +418,6 @@ class TestCloudEmbeddingBackend:
             mock_client.embed.return_value = self._mock_cohere_response(["test"])
             vector = backend.embed_single("test", dimensions=768)
             assert len(vector) == 768
-
-    def test_check_available_success(self):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.return_value = self._mock_cohere_response(["test"])
-            dims = backend.check_available()
-            assert dims == 768
-
-    def test_check_available_failure(self):
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = Exception("connection error")
-            dims = backend.check_available()
-            assert dims == 0
 
     def test_retry_on_transient_error(self):
         backend = CloudEmbeddingBackend(api_key="test-key")
