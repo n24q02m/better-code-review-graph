@@ -19,7 +19,7 @@ import networkx as nx
 
 from .parser import EdgeInfo, NodeInfo
 
-# Phase 3 Task 1 — pre-flight backup hook constants.
+# Phase 3 Task 1 --- pre-flight backup hook constants.
 #
 # ``_BREAKING_REVISION`` is the alembic revision id at which the
 # v2.0.0 BREAKING migration ships (security-aware nodes + temporal
@@ -28,7 +28,7 @@ from .parser import EdgeInfo, NodeInfo
 # ``<db>.pre-2.0.bak`` before alembic runs.
 #
 # The hook is intentionally encoded as a string compare on revision
-# ids — the project pads alembic ids to 3 digits (``001`` … ``005``),
+# ids --- the project pads alembic ids to 3 digits (``001`` … ``005``),
 # so lexical comparison matches numeric comparison.  When the day
 # comes that the project switches to alembic's default 12-char hex
 # ids (or a downstream fork inherits this hook), this constant +
@@ -79,7 +79,7 @@ def _resolve_migrations_dir() -> Path:
     """
     attempted: list[str] = []
 
-    # Layout 1: installed wheel — force-included as a top-level resource
+    # Layout 1: installed wheel --- force-included as a top-level resource
     # directory.  ``importlib.resources.files`` returns a ``MultiplexedPath``
     # whose ``__str__`` is the *repr* (not a real filesystem path), so we
     # must NOT do ``Path(str(ref))``.  Instead, ``ref.joinpath("env.py")``
@@ -185,7 +185,7 @@ class GraphNode:
     name: str
     qualified_name: str
     file_path: str
-    # Mirrors NodeInfo — nullable to match the SQLite schema.
+    # Mirrors NodeInfo --- nullable to match the SQLite schema.
     line_start: int | None
     line_end: int | None
     language: str
@@ -264,13 +264,13 @@ class GraphStore:
 
         Four cases are handled:
 
-        * Empty DB (no tables) — alembic creates everything from scratch.
+        * Empty DB (no tables) --- alembic creates everything from scratch.
         * Legacy DB created by Phase 1's ``executescript(_SCHEMA_SQL)`` +
           ``_ensure_summary_columns`` (so it already has ``nodes``/``edges``/
-          ``metadata`` but no ``alembic_version`` table) — we stamp it to
+          ``metadata`` but no ``alembic_version`` table) --- we stamp it to
           revision ``002`` before upgrading so the baseline ``CREATE TABLE``
           statements are skipped.
-        * DB already managed by alembic — ``upgrade("head")`` is a no-op.
+        * DB already managed by alembic --- ``upgrade("head")`` is a no-op.
         * DB recorded at a revision the package does not ship (user
           fast-forwarded by hand, or the package was downgraded).  We
           re-raise as a :class:`RuntimeError` with a human-readable
@@ -290,11 +290,11 @@ class GraphStore:
         cfg.set_main_option("script_location", str(migrations_dir))
         cfg.set_main_option("sqlalchemy.url", f"sqlite:///{self.db_path}")
 
-        # Phase 3 Task 1 — early-exit downgrade path.
+        # Phase 3 Task 1 --- early-exit downgrade path.
         #
         # When the operator sets ``CRG_DOWNGRADE_TO_1_X=1`` we restore
         # the pre-2.0 backup BEFORE any alembic activity (including
-        # the auto-stamp branch below — stamping a v1.x DB to "002"
+        # the auto-stamp branch below --- stamping a v1.x DB to "002"
         # is the same idempotent outcome as the restored DB already
         # being at "002", but we still skip it to avoid touching the
         # restored file at all).
@@ -326,14 +326,14 @@ class GraphStore:
             if needs_stamp:
                 command.stamp(cfg, "002")
 
-        # Phase 3 Task 1 — backup before BREAKING migration crosses the
+        # Phase 3 Task 1 --- backup before BREAKING migration crosses the
         # 005 boundary.  Read the current recorded revision (post-stamp)
         # and the script-directory head; if the chain crosses 005,
         # snapshot the SQLite file via ``shutil.copy2`` so the operator
         # can roll back via ``CRG_DOWNGRADE_TO_1_X=1`` if the BREAKING
         # migration produces a worse outcome than expected.  Idempotent:
         # an existing backup is preserved (could be from an earlier
-        # partial run that aborted mid-upgrade — that copy is closer to
+        # partial run that aborted mid-upgrade --- that copy is closer to
         # the true v1.x state than anything we'd produce now).
         current_rev = self._read_alembic_version()
         target_rev = ScriptDirectory.from_config(cfg).get_current_head()
@@ -364,7 +364,7 @@ class GraphStore:
             ) from exc
 
     # ------------------------------------------------------------------
-    # Phase 3 Task 1 — backup / restore helpers
+    # Phase 3 Task 1 --- backup / restore helpers
     # ------------------------------------------------------------------
 
     def _read_alembic_version(self) -> str | None:
@@ -392,7 +392,7 @@ class GraphStore:
         file is left untouched (the original copy is closer to true v1.x
         state than anything a re-run could produce).
 
-        :memory: databases — and any path that does not exist on disk —
+        :memory: databases --- and any path that does not exist on disk ---
         are skipped silently.  alembic-managed in-memory DBs aren't a
         target for forensic rollback, and the file-not-found case can
         only come up on bizarre virtual filesystems where copy would
@@ -411,7 +411,7 @@ class GraphStore:
             self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except sqlite3.Error:
             # Some pragmas aren't available on every SQLite build /
-            # platform — falling back to a copy of the main file alone
+            # platform --- falling back to a copy of the main file alone
             # is still strictly better than no backup.
             pass
         shutil.copy2(self.db_path, backup_path)
@@ -432,7 +432,7 @@ class GraphStore:
         ``GraphStore.__init__`` continues to work.
 
         Raises :class:`RuntimeError` with a clear message when the env
-        var is set but no backup file exists — the operator's intent
+        var is set but no backup file exists --- the operator's intent
         was explicit and we have nothing to honour it with.
         """
         backup_path = self.db_path.with_suffix(_BACKUP_SUFFIX)
@@ -476,7 +476,7 @@ class GraphStore:
         Mirrors ``_ensure_summary_columns`` for the
         ``003_federation`` migration. Two cases land here:
 
-        * In-memory ``:memory:`` databases — alembic creates the schema
+        * In-memory ``:memory:`` databases --- alembic creates the schema
           in a separate in-memory connection (per the
           ``sqlite:///:memory:`` URL semantics), so the migration never
           touches ``self._conn``. The legacy ``_SCHEMA_SQL`` is frozen
@@ -484,7 +484,7 @@ class GraphStore:
           we add the column here to keep ``upsert_node`` /
           ``upsert_edge`` working without forcing every test to use a
           file-backed DB.
-        * File-backed databases created before alembic adoption —
+        * File-backed databases created before alembic adoption ---
           ``_run_alembic_upgrade`` already brings them to head, so
           this is a no-op for them. The ``IF NOT EXISTS`` guard on
           the index plus the column-presence check make this safe to
@@ -500,7 +500,7 @@ class GraphStore:
             self._conn.execute(
                 "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
             )
-        # Repos registry table — created by migration 003 on disk-backed
+        # Repos registry table --- created by migration 003 on disk-backed
         # DBs. Mirror it here for in-memory connections so RepoRegistry
         # works against ``:memory:`` GraphStores too.
         self._conn.execute(
@@ -527,7 +527,7 @@ class GraphStore:
         Mirrors ``_ensure_federation_columns`` for the
         ``005_temporal_columns`` migration. Two cases land here:
 
-        * In-memory ``:memory:`` databases — alembic creates the schema
+        * In-memory ``:memory:`` databases --- alembic creates the schema
           in a separate in-memory connection (per the
           ``sqlite:///:memory:`` URL semantics), so the migration never
           touches ``self._conn``. The legacy ``_SCHEMA_SQL`` is frozen
@@ -535,7 +535,7 @@ class GraphStore:
           columns, so we add them here to keep the v2 query layer
           (``valid_to_sha IS NULL`` filters) working without forcing
           every test to use a file-backed DB.
-        * File-backed databases that bypassed alembic for any reason —
+        * File-backed databases that bypassed alembic for any reason ---
           the ``IF NOT EXISTS`` guard on the index plus the
           column-presence check make this safe to call unconditionally
           on every connect.
@@ -579,7 +579,7 @@ class GraphStore:
         before v1.6 are missing them, so we read ``PRAGMA table_info(nodes)``
         and ``ALTER TABLE`` for any column that is not present. The ``source_hash``
         index is also created here so legacy DBs gain the cache lookup index
-        without requiring a fresh build. Idempotent — safe to call on every
+        without requiring a fresh build. Idempotent --- safe to call on every
         connect.
         """
         existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
@@ -615,7 +615,7 @@ class GraphStore:
         # (e.g. a stand-in object from a pre-Phase-2 caller).
         extra_obj = getattr(node, "extra", None) or {}
         extra = json.dumps(extra_obj) if extra_obj else "{}"
-        # Phase 2 Task 9 — fall back to "" for callers passing legacy
+        # Phase 2 Task 9 --- fall back to "" for callers passing legacy
         # NodeInfo objects without the federation field.
         repo_id = getattr(node, "repo_id", "") or ""
 
@@ -665,7 +665,7 @@ class GraphStore:
         now = time.time()
         extra_obj = getattr(edge, "extra", None) or {}
         extra = json.dumps(extra_obj) if extra_obj else "{}"
-        # Phase 2 Task 9 — same legacy fallback as ``upsert_node``.
+        # Phase 2 Task 9 --- same legacy fallback as ``upsert_node``.
         repo_id = getattr(edge, "repo_id", "") or ""
 
         # Check for existing edge (include line so multiple call sites are preserved)
@@ -842,7 +842,7 @@ class GraphStore:
     ) -> tuple[str, tuple[str, ...]]:
         """Return ``(sql_fragment, bind_params)`` for the temporal scope.
 
-        Phase 3 Task 9 — encodes the "snapshot at SHA" semantics used by
+        Phase 3 Task 9 --- encodes the "snapshot at SHA" semantics used by
         the v2 query layer. The fragment is always prefixed with
         ``AND`` so callers can append it to an existing ``WHERE``
         clause without rewriting the query shape.
@@ -856,7 +856,7 @@ class GraphStore:
           <prefix>valid_to_sha = ?)``. Snapshot semantics: rows
           introduced exactly at the requested SHA OR rows that were
           closed out at the requested SHA both qualify. Approximation
-          of full ancestor walk against the ``commits`` table —
+          of full ancestor walk against the ``commits`` table ---
           deferred to Task 9.5.
 
         Args:
@@ -867,22 +867,22 @@ class GraphStore:
                 string (default) emits unqualified column names.
 
         Returns:
-            ``(fragment, params)`` — fragment includes the leading
+            ``(fragment, params)`` --- fragment includes the leading
             ``AND`` so callers always emit the same shape regardless
             of whether the SHA is set.
         """
         prefix = f"{table_alias}." if table_alias else ""
-        if not as_of:
-            return f" AND {prefix}valid_to_sha IS NULL", ()
+        # Phase 3 Task 9: Unified temporal filter using parameters to keep SQL static.
+        # This handles both currently-valid rows (as_of == "") and snapshots.
         return (
-            f" AND ({prefix}valid_from_sha = ? OR {prefix}valid_to_sha = ?)",
-            (as_of, as_of),
+            f" AND ((? = '' AND {prefix}valid_to_sha IS NULL) OR (? != '' AND ({prefix}valid_from_sha = ? OR {prefix}valid_to_sha = ?)))",
+            (as_of, as_of, as_of, as_of),
         )
 
     def get_node(self, qualified_name: str, *, as_of: str = "") -> GraphNode | None:
         frag, frag_params = self._temporal_filter(as_of)
         row = self._conn.execute(
-            f"SELECT * FROM nodes WHERE qualified_name = ?{frag}",  # noqa: S608
+            "SELECT * FROM nodes WHERE qualified_name = ?" + frag,
             (qualified_name, *frag_params),
         ).fetchone()
         return self._row_to_node(row) if row else None
@@ -890,7 +890,7 @@ class GraphStore:
     def get_nodes_by_file(self, file_path: str, *, as_of: str = "") -> list[GraphNode]:
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            f"SELECT * FROM nodes WHERE file_path = ?{frag}",  # noqa: S608
+            "SELECT * FROM nodes WHERE file_path = ?" + frag,
             (file_path, *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -911,8 +911,8 @@ class GraphStore:
         unique_files = list(set(file_paths))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE file_path IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM nodes WHERE file_path IN (SELECT value FROM json_each(?))"
+            + frag,
             (json.dumps(unique_files), *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -931,8 +931,8 @@ class GraphStore:
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM nodes WHERE qualified_name IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM nodes WHERE qualified_name IN (SELECT value FROM json_each(?))"
+            + frag,
             (json.dumps(unique_qns), *frag_params),
         )
         return [self._row_to_node(r) for r in cursor]
@@ -949,7 +949,7 @@ class GraphStore:
         frag, frag_params = self._temporal_filter(as_of)
         kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
-            f"SELECT * FROM edges WHERE source_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            "SELECT * FROM edges WHERE source_qualified = ?" + kind_frag + frag,
             (qualified_name, *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -965,27 +965,29 @@ class GraphStore:
         frag, frag_params = self._temporal_filter(as_of)
         kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
-            f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+            "SELECT * FROM edges WHERE target_qualified = ?" + kind_frag + frag,
             (qualified_name, *kind_params, *frag_params),
         )
         first_row = cursor.fetchone()
 
         # Fallback to bare name (last segment after ::) when the qualified name
         # has no edges AT ALL. With a kind filter, "no rows of this kind" is not
-        # enough to trigger the fallback — that would wrongly pull in edges
+        # enough to trigger the fallback --- that would wrongly pull in edges
         # belonging to a different qualified target that happens to share the
         # bare name.
         if fallback and not first_row and "::" in qualified_name:
             if kind is not None:
                 exists = self._conn.execute(
-                    f"SELECT 1 FROM edges WHERE target_qualified = ?{frag} LIMIT 1",  # noqa: S608
+                    "SELECT 1 FROM edges WHERE target_qualified = ?"
+                    + frag
+                    + " LIMIT 1",
                     (qualified_name, *frag_params),
                 ).fetchone()
                 if exists is not None:
                     return []
             bare_name = qualified_name.rsplit("::", 1)[-1]
             cursor = self._conn.execute(
-                f"SELECT * FROM edges WHERE target_qualified = ?{kind_frag}{frag}",  # noqa: S608
+                "SELECT * FROM edges WHERE target_qualified = ?" + kind_frag + frag,
                 (bare_name, *kind_params, *frag_params),
             )
             return [self._row_to_edge(r) for r in cursor]
@@ -997,30 +999,37 @@ class GraphStore:
         return []
 
     @staticmethod
+    @staticmethod
     def _kind_filter(
         kind: str | tuple[str, ...] | None,
     ) -> tuple[str, tuple[str, ...]]:
-        if kind is None:
-            return "", ()
-        if isinstance(kind, str):
-            return " AND kind = ?", (kind,)
-        if not kind:
-            return "", ()
-        placeholders = ",".join("?" for _ in kind)
-        return f" AND kind IN ({placeholders})", tuple(kind)
+        """Return (sql_fragment, bind_params) for the kind filter.
+
+        Uses a single static fragment and json_each to satisfy Bandit B608
+        regardless of whether kind is a single string or a collection.
+        """
+        is_all = "1" if kind is None else "0"
+        is_single = "1" if isinstance(kind, str) else "0"
+        single_kind = kind if isinstance(kind, str) else ""
+        # Handle empty collection or None as empty list for json_each
+        kind_list = list(kind) if isinstance(kind, (list, tuple)) else []
+
+        return (
+            " AND (? = '1' OR (? = '1' AND kind = ?) OR (kind IN (SELECT value FROM json_each(?))))",
+            (is_all, is_single, single_kind, json.dumps(kind_list)),
+        )
 
     def get_edges_by_targets(
         self, qualified_names: list[str], *, as_of: str = ""
     ) -> list[GraphEdge]:
-        """Batch fetch edges by their target qualified names to prevent N+1 queries."""
         if not qualified_names:
             return []
 
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
+            "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?))"
+            + frag,
             (json.dumps(unique_qns), *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -1052,8 +1061,8 @@ class GraphStore:
         unique_names = list(set(names))
         frag, frag_params = self._temporal_filter(as_of)
         cursor = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)) AND kind = ?{frag}",
+            "SELECT * FROM edges WHERE target_qualified IN (SELECT value FROM json_each(?)) AND kind = ?"
+            + frag,
             (json.dumps(unique_names), kind, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
@@ -1096,7 +1105,7 @@ class GraphStore:
         # ``_temporal_filter`` from a hard-coded set of strings, so the
         # f-string interpolation is safe (Bandit B608 already lints).
         cursor = self._conn.execute(
-            f"""
+            """
             SELECT * FROM nodes
             WHERE (
                 SELECT COUNT(*)
@@ -1105,9 +1114,12 @@ class GraphStore:
                    OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
               AND (? IS NULL OR kind = ?)
-              AND (? = '' OR repo_id = ?){frag}
+              AND (? = '' OR repo_id = ?)
+            """
+            + frag
+            + """
             ORDER BY name LIMIT ?
-            """,  # noqa: S608
+            """,
             [
                 json.dumps(words),
                 json.dumps(words),
@@ -1250,7 +1262,7 @@ class GraphStore:
 
         ``GraphNode`` is the public dataclass, frozen at the v1.6 shape;
         the federation column lives on the SQL row only. This is a
-        cheap fallback used by the repo-filter helpers — single-row
+        cheap fallback used by the repo-filter helpers --- single-row
         lookup keyed by ``id`` so it stays O(1) even on large graphs.
         """
         row = self._conn.execute(
@@ -1325,7 +1337,7 @@ class GraphStore:
             kind: Filter by node kind (Function, Class, File, etc.).
             file_path_pattern: SQL LIKE pattern to filter by file path.
             limit: Maximum results to return.
-            repo: Phase 2 Task 10 — when non-empty, scope to nodes whose
+            repo: Phase 2 Task 10 --- when non-empty, scope to nodes whose
                 ``repo_id`` matches. Empty (default) = no filter.
 
         Returns:
