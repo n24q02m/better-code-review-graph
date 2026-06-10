@@ -566,21 +566,24 @@ async def config(
 
             from . import credential_state as _cs
 
-            # Derive providers_configured from live PerPluginStore load + env
-            # so status is accurate even if module-level _state is stale.
+            # Refresh module-level state from live PerPluginStore load + env
+            # to ensure setup_status is always accurate.
+            _cs.resolve_credential_state()
+
             _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
             _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
             _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
             _providers = list(dict.fromkeys(_env_keys + _store_keys))
-            if _providers:
-                _derived_state = "configured"
-            elif _cs.get_state() == _cs.CredentialState.LOCAL:
-                _derived_state = "local"
-            else:
-                _derived_state = "awaiting_setup"
+
+            # Logic for deriving state when resolve_credential_state() is limited
+            # (e.g. in stdio mode where it ignores PerPluginStore).
+            _state = _cs.get_state().value
+            if _providers and _state != "configured":
+                _state = "configured"
+
             return _json(
                 {
-                    "state": _derived_state,
+                    "state": _state,
                     "setup_url": _cs.get_setup_url(),
                     "cloud_keys_in_env": _env_keys,
                     "providers_configured": _providers,
