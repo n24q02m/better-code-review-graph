@@ -219,6 +219,7 @@ class TestInitBackend:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.timeout(300)
 class TestQwen3EmbedBackend:
     def test_embed_produces_768_dim(self):
         backend = Qwen3EmbedBackend()
