@@ -47,6 +47,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 - [Status](#status)
 - [Documentation](#documentation)
 - [Tools](#tools)
+- [Comparison](#comparison)
 - [Security](#security)
 - [Build from Source](#build-from-source)
 - [Trust Model](#trust-model)
@@ -226,6 +227,23 @@ Returns complete documentation for each tool. Use when the compressed descriptio
 ### `config__open_relay` -- Re-trigger the relay setup form
 
 Registered automatically from `mcp-core`. In HTTP mode it returns `<PUBLIC_URL>/authorize` so the agent can re-open the browser setup form (e.g. after credential expiry); in stdio mode it returns `status: 'stdio_unsupported'`.
+
+## Comparison
+
+How better-code-review-graph stacks up against direct competitors in each pillar:
+
+| Capability | better-code-review-graph | Greptile | Sourcegraph (Cody / MCP) | CodeGraph (colbymchenry) |
+|---|---|---|---|---|
+| Codebase knowledge graph | Yes (Tree-sitter, 14 langs, SQLite) | Yes (functions/classes/deps) | Yes (precise code indexing) | Yes (Tree-sitter, 20+ langs, SQLite) |
+| Persistent incremental updates | Yes (git-diff + file-hash re-parse) | ? | Yes (continuous indexing) | Yes (OS file-watcher debounced) |
+| Qualified call resolution (callers/callees) | Yes (same-file bare-call resolution + fallback) | ? | Yes (go-to-def / find-references) | Yes (callers / callees / impact) |
+| Semantic search / embeddings | Yes (qwen3 ONNX local + cloud Jina/Gemini/OpenAI/Cohere) | ? | Yes (semantic + keyword + regex) | No (FTS5 full-text only) |
+| Token-optimized review context | Yes (`review` tool, git-diff scoped) | Yes (PR review comments) | No (code-context assistant) | No (context layer, not review) |
+| Security scanning | Yes (Semgrep `p/auto` + 3-rule overlay, SARIF) | ? | ? | No |
+| Self-hostable | Yes (stdio default, machine-bound) | Yes (Docker / K8s / air-gapped) | Yes (self-hosted instance) | Yes (100% local, no API keys) |
+| Free / open source | Yes (MIT) | No (proprietary SaaS; free OSS tier) | No (Enterprise license, source private) | Yes (MIT) |
+
+Sources: [Greptile](https://www.greptile.com/docs/introduction) · [Greptile pricing](https://www.greptile.com/pricing) · [Sourcegraph MCP](https://sourcegraph.com/mcp) · [CodeGraph](https://github.com/colbymchenry/codegraph). Cells marked `?` are capabilities the competitor does not publicly document, not confirmed absences.
 
 ## Security
 
