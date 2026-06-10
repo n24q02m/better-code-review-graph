@@ -128,8 +128,9 @@ SARIF for CI ingest:
 {"tool": "security", "action": "report", "format": "sarif"}
 ```
 
-Tier 1 (heuristic, default) needs no extra deps. Tier 2 (Semgrep,
-~120 rules) is opt-in via `uv add 'better-code-review-graph[security]'`
+Tier 1 (heuristic, default) needs no extra deps. Tier 2 (Semgrep's
+`p/auto` registry pack + a 3-rule curated overlay) is opt-in via
+`uv add 'better-code-review-graph[security]'`
 and `engine="semgrep"`. Suppress noisy rules persistently with
 `security(action="suppress", rule_id=...)`. See `security.md` for the
 bundled ruleset, SARIF envelope shape, and the Semgrep install recipe.
