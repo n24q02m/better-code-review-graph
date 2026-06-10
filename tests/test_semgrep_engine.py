@@ -439,9 +439,13 @@ def test_scan_path_with_registry_config(tmp_path):
     assert "--" in cmd
     assert cmd.index("--") == cmd.index(str(target)) - 1
 
+
 def test_init_raises_on_executable_starting_with_hyphen():
-    with pytest.raises(ValueError, match="Semgrep executable path cannot start with a hyphen"):
+    with pytest.raises(
+        ValueError, match="Semgrep executable path cannot start with a hyphen"
+    ):
         SemgrepScanner(executable="--bad-executable")
+
 
 def test_scan_path_uses_config_equals_format(tmp_path):
     target = tmp_path / "src.py"
