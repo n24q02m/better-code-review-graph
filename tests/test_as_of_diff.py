@@ -219,9 +219,12 @@ def test_diff_graph_returns_removed_nodes(workspace: Path, store: GraphStore) ->
     idx_a = TemporalIndex(store, current_sha=_SHA_A)
     idx_a.upsert_node(_make_function_node(name="vanishing"))
 
-    # Sweep the file at sha_b with no observation -> closes out vanishing.
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
-    idx_b.close_missing_nodes(file_path="src/m.py", observed_qualified=set())
+    # Manually close out the node at sha_b (simulating file re-scan deletion).
+    store._conn.execute(
+        "UPDATE nodes SET valid_to_sha = ? WHERE qualified_name = ? AND valid_to_sha IS NULL",
+        (_SHA_B, "src/m.py::vanishing"),
+    )
+    store._conn.commit()
     store.close()
 
     result = diff_graph(repo_root=str(workspace), from_sha=_SHA_A, to_sha=_SHA_B)
