@@ -22,7 +22,8 @@ sweeping, repo_id propagation, and post-supersede history queries).
 
 from __future__ import annotations
 
-from pathlib import Path
+import hashlib
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -49,16 +50,16 @@ def _make_function_node(
 ) -> NodeInfo:
     """Build a Function NodeInfo with the fields TemporalIndex consumes."""
     return NodeInfo(
-        kind="Function",
+        kind="FUNCTION",
         name=name,
         file_path=file_path,
-        line_start=1,
-        line_end=2,
+        line_start=10,
+        line_end=15,
         language="python",
-        parent_name=None,
-        params="()",
+        parent_name="",
+        params=None,
         return_type=None,
-        modifiers=None,
+        modifiers="[]",  # TemporalIndex expects string for SQLite storage
         is_test=False,
         extra={},
         source_text=source_text,
@@ -67,48 +68,38 @@ def _make_function_node(
 
 
 def _make_edge(
-    *,
     source: str = "src/m.py::foo",
     target: str = "src/m.py::bar",
-    kind: str = "CALLS",
-    file_path: str = "src/m.py",
-    line: int = 5,
+    *,
+    line: int = 12,
     repo_id: str = "",
 ) -> EdgeInfo:
+    """Build an EdgeInfo with the fields TemporalIndex consumes."""
     return EdgeInfo(
-        kind=kind,
         source=source,
         target=target,
-        file_path=file_path,
+        kind="CALLS",
+        file_path="src/m.py",
         line=line,
         extra={},
         repo_id=repo_id,
     )
 
 
-@pytest.fixture
-def store(tmp_path: Path):
-    """File-backed :class:`GraphStore` so the alembic migration runs end-to-end."""
-    db_path = tmp_path / "graph.db"
-    s = GraphStore(str(db_path))
-    yield s
-    s.close()
-
-
 # ---------------------------------------------------------------------------
-# (1) Fresh insert — no prior currently-valid row
+# (1) Fresh INSERT path
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_node_inserts_when_no_prior_row(store: GraphStore) -> None:
-    """First observation of a node → INSERT with valid_from_sha=current, valid_to_sha=NULL."""
-    idx = TemporalIndex(store, current_sha=_SHA_A)
+def test_upsert_node_inserts_when_no_prior_row(tmp_graph_store: GraphStore) -> None:
+    """No currently-valid row → INSERT with valid_from_sha=current, valid_to_sha=NULL."""
+    idx = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     node = _make_function_node()
     result = idx.upsert_node(node)
 
     assert result == TemporalUpsertResult(action="inserted", closed_out_count=0)
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT qualified_name, valid_from_sha, valid_to_sha, source_text "
         "FROM nodes WHERE qualified_name = 'src/m.py::foo'"
     ).fetchall()
@@ -120,63 +111,63 @@ def test_upsert_node_inserts_when_no_prior_row(store: GraphStore) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (2) Source unchanged — re-upsert leaves the row alone
+# (2) Unchanged path (metadata refresh)
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_node_unchanged_when_source_identical(store: GraphStore) -> None:
-    """Second upsert with same source text → no new row, valid_from_sha unchanged."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
-    node = _make_function_node()
-    idx_a.upsert_node(node)
+def test_upsert_node_unchanged_when_source_matches(tmp_graph_store: GraphStore) -> None:
+    """Currently-valid row exists, source identical → UPDATE metadata, keep valid_from."""
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
+    idx_a.upsert_node(_make_function_node(source_text="v1"))
 
-    # Re-observe the same node at a later commit.
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
+    # Different line numbers — that's metadata, not divergence.
+    node = _make_function_node(source_text="v1")
+    node.line_start = 99
     result = idx_b.upsert_node(node)
 
-    assert result.action == "unchanged"
-    assert result.closed_out_count == 0
+    assert result == TemporalUpsertResult(action="unchanged", closed_out_count=0)
 
-    rows = store._conn.execute(
-        "SELECT valid_from_sha, valid_to_sha FROM nodes "
-        "WHERE qualified_name = 'src/m.py::foo' ORDER BY id"
+    rows = tmp_graph_store._conn.execute(
+        "SELECT line_start, valid_from_sha, valid_to_sha FROM nodes "
+        "WHERE qualified_name = 'src/m.py::foo'"
     ).fetchall()
-    # Single row only — no supersede.
     assert len(rows) == 1
-    # valid_from_sha pinned to the FIRST observation; we did NOT rotate it.
+    # valid_from_sha pinned to first observation (sha_a).
     assert rows[0]["valid_from_sha"] == _SHA_A
     assert rows[0]["valid_to_sha"] is None
+    # Metadata refreshed.
+    assert rows[0]["line_start"] == 99
 
 
 # ---------------------------------------------------------------------------
-# (3) Source diverged — close-out + insert
+# (3) Divergence path (supersede)
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_node_supersedes_when_source_diverges(store: GraphStore) -> None:
-    """Source text changed → prior row closed out, new row inserted."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+def test_upsert_node_supersedes_when_source_diverges(
+    tmp_graph_store: GraphStore,
+) -> None:
+    """Currently-valid row exists, source diverged → close out prior + INSERT new."""
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_node(_make_function_node(source_text="def foo():\n    return 1\n"))
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
-    result = idx_b.upsert_node(
-        _make_function_node(source_text="def foo():\n    return 2\n")
-    )
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
+    node = _make_function_node(source_text="def foo():\n    return 2\n")
+    result = idx_b.upsert_node(node)
 
-    assert result.action == "superseded"
-    assert result.closed_out_count == 1
+    assert result == TemporalUpsertResult(action="superseded", closed_out_count=1)
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT valid_from_sha, valid_to_sha, source_text FROM nodes "
         "WHERE qualified_name = 'src/m.py::foo' ORDER BY id"
     ).fetchall()
     assert len(rows) == 2
-
-    # Old row: closed out at sha_b.
+    # Row 1: closed out with sha_b.
     assert rows[0]["valid_from_sha"] == _SHA_A
     assert rows[0]["valid_to_sha"] == _SHA_B
     assert rows[0]["source_text"] == "def foo():\n    return 1\n"
-    # New row: valid_from_sha = current_sha, valid_to_sha = NULL.
+    # Row 2: new version valid from sha_b, valid_to_sha = NULL.
     assert rows[1]["valid_from_sha"] == _SHA_B
     assert rows[1]["valid_to_sha"] is None
     assert rows[1]["source_text"] == "def foo():\n    return 2\n"
@@ -187,17 +178,17 @@ def test_upsert_node_supersedes_when_source_diverges(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_node_returns_correct_action_string(store: GraphStore) -> None:
+def test_upsert_node_returns_correct_action_string(tmp_graph_store: GraphStore) -> None:
     """Action strings are exactly the documented set."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     r1 = idx_a.upsert_node(_make_function_node(source_text="v1"))
     assert r1.action == "inserted"
 
-    idx_a2 = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a2 = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     r2 = idx_a2.upsert_node(_make_function_node(source_text="v1"))
     assert r2.action == "unchanged"
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     r3 = idx_b.upsert_node(_make_function_node(source_text="v2"))
     assert r3.action == "superseded"
 
@@ -207,17 +198,17 @@ def test_upsert_node_returns_correct_action_string(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_node_closed_out_count(store: GraphStore) -> None:
+def test_upsert_node_closed_out_count(tmp_graph_store: GraphStore) -> None:
     """``closed_out_count`` is 1 on supersede, 0 otherwise."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     r1 = idx_a.upsert_node(_make_function_node(source_text="v1"))
     assert r1.closed_out_count == 0
 
-    idx_a2 = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a2 = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     r2 = idx_a2.upsert_node(_make_function_node(source_text="v1"))
     assert r2.closed_out_count == 0
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     r3 = idx_b.upsert_node(_make_function_node(source_text="v2"))
     assert r3.closed_out_count == 1
 
@@ -227,15 +218,15 @@ def test_upsert_node_closed_out_count(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_edge_inserts_when_no_prior_row(store: GraphStore) -> None:
+def test_upsert_edge_inserts_when_no_prior_row(tmp_graph_store: GraphStore) -> None:
     """First edge observation → INSERT with valid_from_sha=current, valid_to_sha=NULL."""
-    idx = TemporalIndex(store, current_sha=_SHA_A)
+    idx = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     edge = _make_edge()
     result = idx.upsert_edge(edge)
 
     assert result == TemporalUpsertResult(action="inserted", closed_out_count=0)
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT source_qualified, target_qualified, kind, valid_from_sha, valid_to_sha "
         "FROM edges WHERE source_qualified = 'src/m.py::foo' "
         "AND target_qualified = 'src/m.py::bar' AND kind = 'CALLS'"
@@ -251,19 +242,21 @@ def test_upsert_edge_inserts_when_no_prior_row(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_upsert_edge_unchanged_when_already_present(store: GraphStore) -> None:
+def test_upsert_edge_unchanged_when_already_present(
+    tmp_graph_store: GraphStore,
+) -> None:
     """Edges identity by (src, dst, kind); second upsert always reports unchanged."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_edge(_make_edge(line=5))
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     # Different line — that's metadata, not identity. Expected: unchanged + UPDATE.
     result = idx_b.upsert_edge(_make_edge(line=42))
 
     assert result.action == "unchanged"
     assert result.closed_out_count == 0
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT id, line, valid_from_sha, valid_to_sha FROM edges "
         "WHERE source_qualified = 'src/m.py::foo' "
         "AND target_qualified = 'src/m.py::bar' AND kind = 'CALLS' "
@@ -282,22 +275,22 @@ def test_upsert_edge_unchanged_when_already_present(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_close_missing_nodes_closes_unobserved(store: GraphStore) -> None:
+def test_close_missing_nodes_closes_unobserved(tmp_graph_store: GraphStore) -> None:
     """File scan misses a previously-known node → that node is closed out."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_node(_make_function_node(name="alpha", source_text="def alpha(): ..."))
     idx_a.upsert_node(_make_function_node(name="beta", source_text="def beta(): ..."))
     idx_a.upsert_node(_make_function_node(name="gamma", source_text="def gamma(): ..."))
 
     # Re-scan at sha_b: only alpha + beta survive (gamma was deleted from the file).
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     closed = idx_b.close_missing_nodes(
         file_path="src/m.py",
         observed_qualified={"src/m.py::alpha", "src/m.py::beta"},
     )
     assert closed == 1
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT qualified_name, valid_to_sha FROM nodes "
         "WHERE file_path = 'src/m.py' ORDER BY qualified_name"
     ).fetchall()
@@ -312,20 +305,22 @@ def test_close_missing_nodes_closes_unobserved(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_close_missing_nodes_returns_zero_when_all_observed(store: GraphStore) -> None:
+def test_close_missing_nodes_returns_zero_when_all_observed(
+    tmp_graph_store: GraphStore,
+) -> None:
     """All nodes still present in the file → zero closed."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_node(_make_function_node(name="alpha"))
     idx_a.upsert_node(_make_function_node(name="beta"))
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     closed = idx_b.close_missing_nodes(
         file_path="src/m.py",
         observed_qualified={"src/m.py::alpha", "src/m.py::beta"},
     )
     assert closed == 0
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT valid_to_sha FROM nodes WHERE file_path = 'src/m.py'"
     ).fetchall()
     for row in rows:
@@ -337,19 +332,19 @@ def test_close_missing_nodes_returns_zero_when_all_observed(store: GraphStore) -
 # ---------------------------------------------------------------------------
 
 
-def test_temporal_index_preserves_repo_id_field(store: GraphStore) -> None:
+def test_temporal_index_preserves_repo_id_field(tmp_graph_store: GraphStore) -> None:
     """Federated build: repo_id flows through the insert and supersede branches."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_node(
         _make_function_node(source_text="v1", repo_id="my-repo"),
     )
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     idx_b.upsert_node(
         _make_function_node(source_text="v2", repo_id="my-repo"),
     )
 
-    rows = store._conn.execute(
+    rows = tmp_graph_store._conn.execute(
         "SELECT repo_id, valid_from_sha FROM nodes "
         "WHERE qualified_name = 'src/m.py::foo' ORDER BY id"
     ).fetchall()
@@ -358,9 +353,9 @@ def test_temporal_index_preserves_repo_id_field(store: GraphStore) -> None:
     assert rows[1]["repo_id"] == "my-repo"
 
     # Edge insert path also propagates repo_id.
-    edge_idx = TemporalIndex(store, current_sha=_SHA_A)
+    edge_idx = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     edge_idx.upsert_edge(_make_edge(repo_id="my-repo"))
-    edge_rows = store._conn.execute(
+    edge_rows = tmp_graph_store._conn.execute(
         "SELECT repo_id FROM edges WHERE source_qualified = 'src/m.py::foo' "
         "AND target_qualified = 'src/m.py::bar' AND kind = 'CALLS'"
     ).fetchall()
@@ -368,9 +363,9 @@ def test_temporal_index_preserves_repo_id_field(store: GraphStore) -> None:
     assert edge_rows[0]["repo_id"] == "my-repo"
 
     # Edge update path also propagates repo_id.
-    edge_idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    edge_idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     edge_idx_b.upsert_edge(_make_edge(repo_id="my-repo", line=99))
-    edge_rows = store._conn.execute(
+    edge_rows = tmp_graph_store._conn.execute(
         "SELECT repo_id, line FROM edges WHERE source_qualified = 'src/m.py::foo' "
         "AND target_qualified = 'src/m.py::bar' AND kind = 'CALLS'"
     ).fetchall()
@@ -383,19 +378,21 @@ def test_temporal_index_preserves_repo_id_field(store: GraphStore) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_temporal_index_can_query_history_after_supersede(store: GraphStore) -> None:
+def test_temporal_index_can_query_history_after_supersede(
+    tmp_graph_store: GraphStore,
+) -> None:
     """Both rows queryable post-supersede: latest via valid_to_sha IS NULL."""
-    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    idx_a = TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
     idx_a.upsert_node(_make_function_node(source_text="v1"))
 
-    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    idx_b = TemporalIndex(tmp_graph_store, current_sha=_SHA_B)
     idx_b.upsert_node(_make_function_node(source_text="v2"))
 
-    idx_c = TemporalIndex(store, current_sha=_SHA_C)
+    idx_c = TemporalIndex(tmp_graph_store, current_sha=_SHA_C)
     idx_c.upsert_node(_make_function_node(source_text="v3"))
 
     # Currently-valid row.
-    current = store._conn.execute(
+    current = tmp_graph_store._conn.execute(
         "SELECT source_text, valid_from_sha FROM nodes "
         "WHERE qualified_name = 'src/m.py::foo' AND valid_to_sha IS NULL"
     ).fetchall()
@@ -404,7 +401,7 @@ def test_temporal_index_can_query_history_after_supersede(store: GraphStore) -> 
     assert current[0]["valid_from_sha"] == _SHA_C
 
     # Historical rows (closed out).
-    historical = store._conn.execute(
+    historical = tmp_graph_store._conn.execute(
         "SELECT source_text, valid_from_sha, valid_to_sha FROM nodes "
         "WHERE qualified_name = 'src/m.py::foo' AND valid_to_sha IS NOT NULL "
         "ORDER BY valid_from_sha"
@@ -418,3 +415,95 @@ def test_temporal_index_can_query_history_after_supersede(store: GraphStore) -> 
     assert historical[1]["source_text"] == "v2"
     assert historical[1]["valid_from_sha"] == _SHA_B
     assert historical[1]["valid_to_sha"] == _SHA_C
+
+
+# ---------------------------------------------------------------------------
+# (12) Internal utility functions: _hash_source and _quote_identifier
+# ---------------------------------------------------------------------------
+
+
+def test_hash_source_basics() -> None:
+    """_hash_source handles empty/None and produces stable hex for text."""
+    from better_code_review_graph.temporal import _hash_source
+
+    assert _hash_source(None) == ""
+    assert _hash_source("") == ""
+    # Stable SHA-256 for "abc"
+    expected = hashlib.sha256(b"abc").hexdigest()
+    assert _hash_source("abc") == expected
+
+
+def test_quote_identifier_basics() -> None:
+    """_quote_identifier wraps in double quotes and escapes existing quotes."""
+    from better_code_review_graph.temporal import _quote_identifier
+
+    assert _quote_identifier("foo") == '"foo"'
+    assert _quote_identifier('f"o"o') == '"f""o""o"'
+
+
+# ---------------------------------------------------------------------------
+# (13) Schema safety check
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_temporal_friendly_schema_raises_on_unsafe_column(
+    tmp_graph_store: GraphStore,
+) -> None:
+    """Detection of unsafe column names (non-alphanumeric) triggers RuntimeError."""
+    # Mock the cursor to return an "unsafe" column name in the PRAGMA table_info result.
+    # col_info: (cid, name, typ, notnull, dflt, pk)
+    unsafe_col = (0, "unsafe column!", "TEXT", 0, None, 0)
+
+    mock_conn = MagicMock()
+    # Mock return values for execute() calls.
+    # We need enough returns to cover the DROP, CREATE, and other setup calls.
+    mock_conn.execute.side_effect = [
+        MagicMock(fetchone=lambda: ("sqlite_autoindex_nodes_1",)),  # legacy check
+        MagicMock(fetchall=lambda: [unsafe_col]),  # PRAGMA table_info
+    ]
+
+    with patch.object(tmp_graph_store, "_conn", mock_conn):
+        with pytest.raises(RuntimeError, match="Unsafe column name detected"):
+            TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
+
+
+# ---------------------------------------------------------------------------
+# (14) Coverage for column-presence index logic
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_temporal_friendly_schema_handles_missing_columns_gracefully(
+    tmp_graph_store: GraphStore,
+) -> None:
+    """Detection of repo_id and valid_from_sha for indexing is safe if they are missing."""
+    # Mock schema WITHOUT repo_id and WITHOUT valid_from_sha.
+    # col_info: (cid, name, typ, notnull, dflt, pk)
+    cols = [
+        (0, "id", "INTEGER", 1, None, 1),
+        (1, "qualified_name", "TEXT", 1, None, 0),
+    ]
+
+    mock_conn = MagicMock()
+    # We need to mock several calls in the rebuild path.
+    mock_conn.execute.side_effect = [
+        MagicMock(fetchone=lambda: ("sqlite_autoindex_nodes_1",)),  # legacy check
+        MagicMock(fetchall=lambda: cols),  # PRAGMA table_info
+        MagicMock(),  # DROP TABLE IF EXISTS nodes_temporal_new
+        MagicMock(),  # CREATE TABLE nodes_temporal_new
+        MagicMock(),  # INSERT INTO nodes_temporal_new
+        MagicMock(),  # DROP TABLE nodes
+        MagicMock(),  # ALTER TABLE nodes_temporal_new RENAME TO nodes
+        MagicMock(),  # CREATE INDEX idx_nodes_file
+        MagicMock(),  # CREATE INDEX idx_nodes_kind
+        MagicMock(),  # CREATE INDEX idx_nodes_qualified
+        MagicMock(),  # CREATE INDEX idx_nodes_source_hash
+        MagicMock(),  # CREATE UNIQUE INDEX idx_nodes_qualified_active
+    ]
+
+    with patch.object(tmp_graph_store, "_conn", mock_conn):
+        TemporalIndex(tmp_graph_store, current_sha=_SHA_A)
+        # Verify that we did NOT attempt to create the repo or temporal indexes.
+        for call in mock_conn.execute.call_args_list:
+            sql = call[0][0]
+            assert "idx_nodes_repo_kind" not in sql
+            assert "idx_nodes_temporal" not in sql
