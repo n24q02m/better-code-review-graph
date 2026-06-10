@@ -1008,7 +1008,9 @@ class GraphStore:
         Uses a single static fragment and json_each to satisfy Bandit B608
         regardless of whether kind is a single string or a collection.
         """
-        is_all = "1" if kind is None else "0"
+        is_all = (
+            "1" if (kind is None or (not isinstance(kind, str) and not kind)) else "0"
+        )
         is_single = "1" if isinstance(kind, str) else "0"
         single_kind = kind if isinstance(kind, str) else ""
         # Handle empty collection or None as empty list for json_each
