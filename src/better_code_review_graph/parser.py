@@ -203,19 +203,6 @@ _TEST_PATTERNS = [
     re.compile(r"_spec$"),
 ]
 
-_TEST_FILE_PATTERNS = [
-    re.compile(r"test_.*\.py$"),
-    re.compile(r".*_test\.py$"),
-    re.compile(r".*\.test\.[jt]sx?$"),
-    re.compile(r".*\.spec\.[jt]sx?$"),
-    re.compile(r".*_test\.go$"),
-    re.compile(r"tests?/"),
-]
-
-
-def _is_test_file(path: str) -> bool:
-    return any(p.search(path) for p in _TEST_FILE_PATTERNS)
-
 
 def _is_test_function(name: str, file_path: str) -> bool:
     """A function is a test only if its name matches test patterns.
