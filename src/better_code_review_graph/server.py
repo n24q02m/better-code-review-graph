@@ -387,6 +387,50 @@ def query(
 # ---------------------------------------------------------------------------
 
 
+def _handle_review_context(
+    changed_files: list[str] | None,
+    max_depth: int,
+    include_source: bool,
+    max_lines_per_file: int,
+    repo_root: str | None,
+    base: str,
+    languages: list[str] | None,
+    repo: str,
+) -> str:
+    """Handle review.context action."""
+    return _json(
+        get_review_context(
+            changed_files=changed_files,
+            max_depth=max_depth,
+            include_source=include_source,
+            max_lines_per_file=max_lines_per_file,
+            repo_root=repo_root,
+            base=base,
+            languages=languages,
+            repo=repo,
+        )
+    )
+
+
+def _handle_review_delta(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    show_line_shifts: bool,
+    repo: str,
+) -> str:
+    """Handle review.delta action."""
+    return _json(
+        review_delta(
+            repo_root=repo_root,
+            from_sha=from_sha,
+            to_sha=to_sha,
+            show_line_shifts=show_line_shifts,
+            repo=repo,
+        )
+    )
+
+
 @mcp.tool(
     description=(
         "Generate token-efficient review context for code changes. "
@@ -465,27 +509,23 @@ def review(
     """
     match action:
         case "context":
-            return _json(
-                get_review_context(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    include_source=include_source,
-                    max_lines_per_file=max_lines_per_file,
-                    repo_root=repo_root,
-                    base=base,
-                    languages=languages,
-                    repo=repo,
-                )
+            return _handle_review_context(
+                changed_files=changed_files,
+                max_depth=max_depth,
+                include_source=include_source,
+                max_lines_per_file=max_lines_per_file,
+                repo_root=repo_root,
+                base=base,
+                languages=languages,
+                repo=repo,
             )
         case "delta":
-            return _json(
-                review_delta(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    show_line_shifts=show_line_shifts,
-                    repo=repo,
-                )
+            return _handle_review_delta(
+                repo_root=repo_root,
+                from_sha=from_sha,
+                to_sha=to_sha,
+                show_line_shifts=show_line_shifts,
+                repo=repo,
             )
         case _:
             import difflib
