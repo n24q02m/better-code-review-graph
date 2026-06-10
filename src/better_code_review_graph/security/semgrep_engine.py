@@ -126,6 +126,10 @@ class SemgrepScanner:
                 "semgrep CLI not found on PATH. Install with: "
                 "uv add 'better-code-review-graph[security]'"
             )
+        if resolved.startswith("-"):
+            raise ValueError(
+                f"Semgrep executable cannot start with a hyphen: {resolved}"
+            )
         self._executable: str = resolved
         if require_python_module and not _semgrep_python_module_available():
             raise SemgrepNotAvailable(
@@ -160,8 +164,7 @@ class SemgrepScanner:
 
         cmd = [
             self._executable,
-            "--config",
-            self._config,
+            f"--config={self._config}",
             "--json",
             "--quiet",
             "--",
