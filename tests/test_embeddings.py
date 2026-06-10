@@ -262,7 +262,9 @@ class TestCloudEmbeddingBackend:
 
     def test_cohere_v2_integration(self):
         """Test Cohere V2 SDK integration."""
-        backend = CloudEmbeddingBackend(model="embed-english-v3.0", api_key="test-key")
+        backend = CloudEmbeddingBackend(
+            model="cohere/embed-english-v3.0", api_key="test-key"
+        )
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
@@ -277,7 +279,9 @@ class TestCloudEmbeddingBackend:
 
     def test_retry_on_transient_error(self):
         """Backend should retry on 429/5xx errors."""
-        backend = CloudEmbeddingBackend(api_key="test-key")
+        backend = CloudEmbeddingBackend(
+            model="cohere/embed-english-v3.0", api_key="test-key"
+        )
         call_count = 0
 
         def side_effect(*args, **kwargs):
@@ -299,7 +303,9 @@ class TestCloudEmbeddingBackend:
 
     def test_dimensions_truncation(self):
         """Test that dimensions parameter truncates embeddings."""
-        backend = CloudEmbeddingBackend(api_key="test-key")
+        backend = CloudEmbeddingBackend(
+            model="cohere/embed-english-v3.0", api_key="test-key"
+        )
         with patch("cohere.ClientV2") as mock_cls:
             mock_client = MagicMock()
             mock_cls.return_value = mock_client
@@ -313,19 +319,19 @@ class TestCloudEmbeddingBackend:
     def test_api_key_resolution_from_env(self):
         """Test that API key is resolved per provider from env."""
         with patch.dict(os.environ, {"JINA_AI_API_KEY": "jina-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="jina-embeddings-v3")
+            backend = CloudEmbeddingBackend(model="jina/v3")
             assert backend._resolve_api_key() == "jina-key"
 
         with patch.dict(os.environ, {"GEMINI_API_KEY": "gem-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="gemini-embedding-2")
+            backend = CloudEmbeddingBackend(model="gemini/embedding-v1")
             assert backend._resolve_api_key() == "gem-key"
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "oai-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="text-embedding-3-large")
+            backend = CloudEmbeddingBackend(model="openai/text-embedding-3-large")
             assert backend._resolve_api_key() == "oai-key"
 
         with patch.dict(os.environ, {"COHERE_API_KEY": "co-key"}, clear=True):
-            backend = CloudEmbeddingBackend(model="embed-multilingual-v3.0")
+            backend = CloudEmbeddingBackend(model="cohere/embed-multilingual-v3.0")
             assert backend._resolve_api_key() == "co-key"
 
     def test_explicit_api_key_overrides_env(self):
