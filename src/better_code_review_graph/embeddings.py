@@ -123,14 +123,6 @@ class EmbeddingBackend(Protocol):  # pragma: no cover
         """Embed a single text. Returns embedding vector."""
         ...
 
-    def check_available(self) -> int:
-        """Check if backend is available.
-
-        Returns:
-            Embedding dimensions if available, 0 if not.
-        """
-        ...
-
 
 # ---------------------------------------------------------------------------
 # Qwen3EmbedBackend (local ONNX)
@@ -204,17 +196,6 @@ class Qwen3EmbedBackend:
             kwargs["dim"] = dimensions
         result = list(model.query_embed(text, **kwargs))
         return result[0].tolist()
-
-    def check_available(self) -> int:
-        """Check if qwen3-embed is available."""
-        try:
-            model = self._get_model()
-            result = list(model.embed(["test"]))
-            if result:
-                return len(result[0])
-            return 0  # pragma: no cover
-        except Exception:
-            return 0
 
 
 # ---------------------------------------------------------------------------
@@ -443,16 +424,6 @@ class CloudEmbeddingBackend:
         """Embed a single text."""
         results = self.embed_texts([text], dimensions)
         return results[0]
-
-    def check_available(self) -> int:
-        """Check if the cloud model is available via test request."""
-        try:
-            embeddings = self._call_provider(["test"])
-            if embeddings:
-                return len(embeddings[0])
-            return 0  # pragma: no cover
-        except Exception:
-            return 0
 
 
 # ---------------------------------------------------------------------------

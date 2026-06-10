@@ -224,11 +224,6 @@ class TestQwen3EmbedBackend:
         vectors = backend.embed_texts([])
         assert vectors == []
 
-    def test_check_available(self):
-        backend = Qwen3EmbedBackend()
-        dims = backend.check_available()
-        assert dims > 0
-
     def test_embed_single(self):
         backend = Qwen3EmbedBackend()
         vector = backend.embed_single("hello world", dimensions=768)
