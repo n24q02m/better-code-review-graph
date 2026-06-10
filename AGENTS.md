@@ -57,21 +57,33 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud multi-provider (Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud via litellm passthrough (`mcp_core.llm`; Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions), review, config, security, help, config__open_relay (mcp-core relay helper). Returns JSON strings.
 
 ## Embedding backends
 
+Embedding (cloud backend) + the LLM summarizer both dispatch through
+`mcp_core.llm` (litellm passthrough, `n24q02m-mcp-core[llm]`). No native
+provider SDKs are imported directly.
+
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- **Cloud (multi-provider)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere
-  - `JINA_AI_API_KEY` -- Jina AI (httpx REST)
-  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (google-genai SDK)
-  - `OPENAI_API_KEY` -- OpenAI (openai SDK)
-  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (cohere ClientV2)
-- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection
-- `EMBEDDING_MODEL` -- override model name (provider auto-detected from model prefix)
+- **Cloud (litellm passthrough)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere. Any litellm `provider/model` works via passthrough.
+  - `JINA_AI_API_KEY` -- Jina AI (mapped to `jina_ai/`)
+  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (mapped to `gemini/`)
+  - `OPENAI_API_KEY` -- OpenAI (bare model names pass through)
+  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (mapped to `cohere/`, `input_type=search_document`)
+- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection (`litellm` accepted as an alias for `cloud`)
+- `EMBEDDING_MODEL` -- override embedding model name (provider auto-detected from model prefix)
+- `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
 - Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
+
+## LLM summarizer (graph `summarize` action)
+
+- Provider auto-detected from env: `GEMINI_API_KEY` > `GOOGLE_API_KEY` > `OPENAI_API_KEY` (Jina/Cohere excluded — no chat-completion API). No-op when no provider configured.
+- Dispatches through `mcp_core.llm.completion`. Default model per provider: gemini -> `gemini/gemini-2.5-flash`, openai -> `gpt-4o-mini`.
+- `SUMMARY_MODEL` -- override the summarizer model as a litellm `provider/model` string (used verbatim). The summary cache tag is derived from the model prefix when overridden.
+- `LLM_API_BASE` -- custom OpenAI-compatible base URL for the summarizer (optional)
 
 ## Pytest
 

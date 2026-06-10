@@ -22,28 +22,28 @@
       },
       "environmentVariables": [
         {
-          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'litellm' (cloud). Auto-detected if omitted.",
+          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'cloud' ('litellm' is an accepted alias). Auto-detected from provider API keys if omitted.",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_BACKEND"
         },
         {
-          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key). Enables LiteLLM backend.",
-          "isRequired": false,
-          "isSecret": true,
-          "name": "API_KEYS"
-        },
-        {
-          "description": "LiteLLM Proxy URL for self-hosted gateway. Enables LiteLLM backend via proxy.",
+          "description": "Custom OpenAI-compatible base URL for cloud embedding (litellm passthrough). Optional.",
           "isRequired": false,
           "isSecret": false,
-          "name": "LITELLM_PROXY_URL"
+          "name": "EMBEDDING_API_BASE"
         },
         {
-          "description": "LiteLLM Proxy virtual key.",
+          "description": "Custom OpenAI-compatible base URL for the LLM summarizer (litellm passthrough). Optional.",
           "isRequired": false,
-          "isSecret": true,
-          "name": "LITELLM_PROXY_KEY"
+          "isSecret": false,
+          "name": "LLM_API_BASE"
+        },
+        {
+          "description": "Override the summarizer model as a litellm 'provider/model' string (e.g. 'gemini/gemini-2.5-flash'). Defaults per detected provider when omitted.",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "SUMMARY_MODEL"
         }
       ]
     },
@@ -56,10 +56,10 @@
       },
       "environmentVariables": [
         {
-          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key)",
+          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'cloud' ('litellm' is an accepted alias). Auto-detected from provider API keys if omitted.",
           "isRequired": false,
-          "isSecret": true,
-          "name": "API_KEYS"
+          "isSecret": false,
+          "name": "EMBEDDING_BACKEND"
         }
       ]
     }

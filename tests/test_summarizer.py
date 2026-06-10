@@ -182,45 +182,80 @@ def test_resolve_provider_all_empty_returns_none(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_summarize_node_gemini_returns_text():
+def _completion_resp(content):
+    """Build a fake mcp_core.llm.completion response (OpenAI-shaped)."""
+    fake_choice = MagicMock()
+    fake_choice.message.content = content
+    fake_response = MagicMock()
+    fake_response.choices = [fake_choice]
+    return fake_response
+
+
+def test_summarize_node_gemini_returns_text(monkeypatch):
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     node = NodeNeedingSummary(
         node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
     )
-    fake_response = MagicMock()
-    fake_response.text = (
-        "  Returns nothing — placeholder function.  "  # whitespace must be stripped
-    )
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
+    # Whitespace must be stripped.
+    fake_response = _completion_resp("  Returns nothing — placeholder function.  ")
+    with patch(
+        "mcp_core.llm.completion", return_value=fake_response
+    ) as mock_completion:
         result = summarize_node(node, provider="gemini", api_key="g-key")
     assert result == "Returns nothing — placeholder function."
-    mock_get.assert_called_once_with("g-key")
-    mock_client.models.generate_content.assert_called_once()
-    call_kwargs = mock_client.models.generate_content.call_args.kwargs
-    assert call_kwargs["model"] == "gemini-2.5-flash"
-    assert "def foo(): pass" in call_kwargs["contents"]
+    mock_completion.assert_called_once()
+    call_kwargs = mock_completion.call_args.kwargs
+    # Default gemini model used when SUMMARY_MODEL unset.
+    assert call_kwargs["model"] == "gemini/gemini-2.5-flash"
+    assert call_kwargs["messages"][0]["role"] == "user"
+    assert "def foo(): pass" in call_kwargs["messages"][0]["content"]
+    assert call_kwargs["api_key"] == "g-key"
+    # No LLM_API_BASE set -> normalised to None.
+    assert call_kwargs["api_base"] is None
 
 
-def test_summarize_node_openai_returns_text():
+def test_summarize_node_openai_returns_text(monkeypatch):
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     node = NodeNeedingSummary(
         node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
     )
-    fake_choice = MagicMock()
-    fake_choice.message.content = "\nEmpty stub function.\n"
-    fake_response = MagicMock()
-    fake_response.choices = [fake_choice]
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
+    fake_response = _completion_resp("\nEmpty stub function.\n")
+    with patch(
+        "mcp_core.llm.completion", return_value=fake_response
+    ) as mock_completion:
         result = summarize_node(node, provider="openai", api_key="o-key")
     assert result == "Empty stub function."
-    mock_client.chat.completions.create.assert_called_once()
-    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    call_kwargs = mock_completion.call_args.kwargs
     assert call_kwargs["model"] == "gpt-4o-mini"
     assert call_kwargs["messages"][0]["role"] == "user"
+
+
+def test_summarize_node_uses_summary_model_override(monkeypatch):
+    """SUMMARY_MODEL env, when set, is used verbatim regardless of provider."""
+    monkeypatch.setenv("SUMMARY_MODEL", "openai/gpt-5-mini")
+    node = NodeNeedingSummary(
+        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
+    )
+    fake_response = _completion_resp("A summary.")
+    with patch(
+        "mcp_core.llm.completion", return_value=fake_response
+    ) as mock_completion:
+        # provider is "gemini" but override forces the openai model.
+        result = summarize_node(node, provider="gemini", api_key="key")
+    assert result == "A summary."
+    assert mock_completion.call_args.kwargs["model"] == "openai/gpt-5-mini"
+
+
+def test_summarize_node_forwards_llm_api_base(monkeypatch):
+    """LLM_API_BASE env is forwarded as api_base."""
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
+    monkeypatch.setenv("LLM_API_BASE", "https://proxy.example/v1")
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with patch(
+        "mcp_core.llm.completion", return_value=_completion_resp("ok")
+    ) as mock_completion:
+        summarize_node(node, provider="openai", api_key="o-key")
+    assert mock_completion.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
 
 def test_summarize_node_unknown_provider_raises():
@@ -229,69 +264,40 @@ def test_summarize_node_unknown_provider_raises():
         summarize_node(node, provider="anthropic", api_key="k")
 
 
-def test_summarize_node_wraps_sdk_errors():
+def test_summarize_node_wraps_llm_errors(monkeypatch):
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("API timeout")
-        mock_get.return_value = mock_client
+    with patch("mcp_core.llm.completion", side_effect=Exception("API timeout")):
         with pytest.raises(RuntimeError, match="summarize_node failed via gemini"):
             summarize_node(node, provider="gemini", api_key="g-key")
 
 
-def test_summarize_node_gemini_empty_text_raises():
-    """Gemini ``response.text=None`` (safety filter) must raise RuntimeError directly,
-    NOT wrapped as 'summarize_node failed via gemini: ...'.
-    """
-    node = NodeNeedingSummary(
-        node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
-    )
-    fake_response = MagicMock()
-    fake_response.text = None
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
-        with pytest.raises(RuntimeError, match="empty/None text") as exc_info:
-            summarize_node(node, provider="gemini", api_key="g-key")
-    # Must be the explicit guard, not the SDK-wrapping path.
-    assert "summarize_node failed via gemini" not in str(exc_info.value)
-    assert "x.py::foo" in str(exc_info.value)
-
-
-def test_summarize_node_openai_no_choices_raises():
-    """OpenAI ``response.choices=[]`` must raise RuntimeError 'no choices' directly."""
+def test_summarize_node_no_choices_raises(monkeypatch):
+    """litellm ``response.choices=[]`` must raise RuntimeError 'no choices' directly."""
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     node = NodeNeedingSummary(
         node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
     )
     fake_response = MagicMock()
     fake_response.choices = []
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
+    with patch("mcp_core.llm.completion", return_value=fake_response):
         with pytest.raises(RuntimeError, match="no choices") as exc_info:
             summarize_node(node, provider="openai", api_key="o-key")
     assert "summarize_node failed via openai" not in str(exc_info.value)
     assert "x.py::bar" in str(exc_info.value)
 
 
-def test_summarize_node_openai_none_content_raises():
-    """OpenAI ``message.content=None`` (safety filter) must raise RuntimeError 'empty/None content'."""
+def test_summarize_node_none_content_raises(monkeypatch):
+    """litellm ``message.content=None`` (safety filter) must raise 'empty/None content'."""
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     node = NodeNeedingSummary(
         node_id="x.py::baz", source_text="def baz(): pass", source_hash=None
     )
-    fake_choice = MagicMock()
-    fake_choice.message.content = None
-    fake_response = MagicMock()
-    fake_response.choices = [fake_choice]
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = fake_response
-        mock_get.return_value = mock_client
+    fake_response = _completion_resp(None)
+    with patch("mcp_core.llm.completion", return_value=fake_response):
         with pytest.raises(RuntimeError, match="empty/None content") as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
-    assert "summarize_node failed via openai" not in str(exc_info.value)
+            summarize_node(node, provider="gemini", api_key="g-key")
+    assert "summarize_node failed via gemini" not in str(exc_info.value)
     assert "x.py::baz" in str(exc_info.value)
 
 
@@ -302,61 +308,37 @@ def test_summarize_node_provider_is_case_sensitive():
         summarize_node(node, provider="Gemini", api_key="k")
 
 
-def test_summarize_node_handles_braces_in_source():
+def test_summarize_node_handles_braces_in_source(monkeypatch):
     """Function source containing { } (dict literals, f-strings) must not break prompt construction."""
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     src = 'def make_d(): return {"a": f"{x}"}'  # dict literal + f-string
     node = NodeNeedingSummary(node_id="x", source_text=src, source_hash=None)
-    fake_response = MagicMock()
-    fake_response.text = "Returns a dict."
-    with patch("better_code_review_graph.summarizer._get_gemini_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.models.generate_content.return_value = fake_response
-        mock_get.return_value = mock_client
+    fake_response = _completion_resp("Returns a dict.")
+    with patch(
+        "mcp_core.llm.completion", return_value=fake_response
+    ) as mock_completion:
         result = summarize_node(node, provider="gemini", api_key="k")
     assert result == "Returns a dict."
     # Verify the source went verbatim into the prompt
-    assert src in mock_client.models.generate_content.call_args.kwargs["contents"]
+    assert src in mock_completion.call_args.kwargs["messages"][0]["content"]
 
 
-def test_get_gemini_client_constructs_with_api_key():
-    """Lazy-import path in _get_gemini_client must call genai.Client(api_key=...)."""
-    from better_code_review_graph.summarizer import _get_gemini_client
-
-    fake_client = MagicMock()
-    with patch("google.genai.Client", return_value=fake_client) as mock_ctor:
-        result = _get_gemini_client("g-key")
-    assert result is fake_client
-    mock_ctor.assert_called_once_with(api_key="g-key")
+# ---------------------------------------------------------------------------
+# _provider_from_model (cache-key provider derivation)
+# ---------------------------------------------------------------------------
 
 
-def test_get_openai_client_constructs_with_api_key():
-    """Lazy-import path in _get_openai_client must call openai.OpenAI(api_key=...)."""
-    from better_code_review_graph.summarizer import _get_openai_client
+def test_provider_from_model_derives_prefix():
+    from better_code_review_graph.summarizer import _provider_from_model
 
-    fake_client = MagicMock()
-    with patch("openai.OpenAI", return_value=fake_client) as mock_ctor:
-        result = _get_openai_client("o-key")
-    assert result is fake_client
-    mock_ctor.assert_called_once_with(api_key="o-key")
-
-
-def test_summarize_node_openai_create_failure_wraps_runtimeerror():
-    """OpenAI client.chat.completions.create() raising must be wrapped in RuntimeError (lines 203-204)."""
-    node = NodeNeedingSummary(
-        node_id="x.py::boom", source_text="def boom(): pass", source_hash=None
-    )
-    with patch("better_code_review_graph.summarizer._get_openai_client") as mock_get:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = RuntimeError(
-            "openai upstream 503"
-        )
-        mock_get.return_value = mock_client
-        with pytest.raises(
-            RuntimeError, match="summarize_node failed via openai"
-        ) as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
-    # Original cause chained via "from exc"
-    assert "openai upstream 503" in str(exc_info.value)
+    assert _provider_from_model("gemini/gemini-2.5-flash") == "gemini"
+    assert _provider_from_model("google/gemini-pro") == "gemini"
+    assert _provider_from_model("openai/gpt-4o-mini") == "openai"
+    assert _provider_from_model("gpt/gpt-4o") == "openai"
+    # Bare OpenAI-style name -> openai default.
+    assert _provider_from_model("gpt-4o-mini") == "openai"
+    # Unknown prefix is passed through verbatim.
+    assert _provider_from_model("cohere/command-r") == "cohere"
 
 
 # ---------------------------------------------------------------------------
@@ -714,6 +696,62 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
             (node_id,),
         ).fetchone()
         assert row[0] == "Returns 1."
+    finally:
+        store.close()
+
+
+def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch):
+    """With SUMMARY_MODEL set, the cache tag is derived from the model prefix.
+
+    Env-resolved provider is 'gemini' (GEMINI_API_KEY) but SUMMARY_MODEL points
+    at an OpenAI model, so the persisted ``summary_provider`` + result.provider
+    must be 'openai' (derived from the prefix), invalidating any gemini-tagged
+    cache entry.
+    """
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize, compute_source_hash
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODEL", "openai/gpt-4o-mini")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        src = "def f(): return 1"
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        # Pre-existing gemini-tagged summary: must NOT be a cache hit under the
+        # openai-derived tag, so it regenerates.
+        store._conn.execute(
+            "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
+            (src, "Old gemini summary.", "gemini", compute_source_hash(src), node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "New summary."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.cached == 0
+        assert result.provider == "openai"
+        row = store._conn.execute(
+            "SELECT summary, summary_provider FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "New summary."
+        assert row[1] == "openai"
     finally:
         store.close()
 
