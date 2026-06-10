@@ -219,6 +219,28 @@ class TestInitBackend:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def mock_qwen3_embed():
+    """Mock the local ONNX embedding backend to prevent downloads during tests."""
+    with patch("qwen3_embed.TextEmbedding") as mock_cls:
+        mock_model = MagicMock()
+        mock_cls.return_value = mock_model
+
+        import numpy as np
+
+        # Mock model.embed to return vectors of dimension 768
+        def embed_side_effect(texts, **kwargs):
+            return [np.array([0.1] * 768) for _ in texts]
+
+        # Mock model.query_embed to return one vector of dimension 768
+        def query_embed_side_effect(text, **kwargs):
+            return [np.array([0.1] * 768)]
+
+        mock_model.embed.side_effect = embed_side_effect
+        mock_model.query_embed.side_effect = query_embed_side_effect
+        yield mock_model
+
+
 class TestQwen3EmbedBackend:
     def test_embed_produces_768_dim(self):
         backend = Qwen3EmbedBackend()
