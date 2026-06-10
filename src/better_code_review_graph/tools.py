@@ -1160,6 +1160,157 @@ def _validate_languages(languages: list[str] | None) -> dict[str, Any] | None:
     return None
 
 
+def _add_query_response_decorations(
+    store: "GraphStore",
+    root: Path,
+    response: dict[str, Any],
+    pattern: str,
+    target: str,
+    node: Any,
+    results: list[dict],
+    edges_out: list[dict],
+) -> None:
+    """Add promotion hints, dynamic dispatch hints, and cache results."""
+    # D15: surface bare-name -> qualified-name promotion (issue #339).
+    promoted = getattr(store, "_d15_promoted_indexed_under", None)
+    if promoted:
+        response["resolved_from_unqualified"] = True
+        response["indexed_under"] = list(promoted)
+        response["hint"] = (
+            f"Bare name '{target}' was auto-resolved to "
+            f"{promoted[0]}. Pass the qualified form to disambiguate."
+        )
+
+    # #331: dynamic-dispatch blind-spot warning for callers_of /
+    # callees_of. Surfaces same-file references via patterns
+    # (asyncio.to_thread, functools.partial, decorator, etc.) that
+    # the AST CALLS edge does not capture.
+    if pattern in ("callers_of", "callees_of") and node is not None:
+        hits = _scan_dynamic_dispatch_hints(store, node, node.name)
+        if hits:
+            response["dynamic_dispatch_hints"] = {
+                "target_file": node.file_path,
+                "same_file_references": hits[:50],
+                "note": (
+                    "These are likely additional callers the AST "
+                    "edge does not link. Grep before concluding the "
+                    "caller list is complete."
+                ),
+            }
+
+    # #318: cache callsite-shaped results so `spot_check` can pull a
+    # random sample of N source snippets without re-running the query.
+    if pattern in (
+        "callers_of",
+        "callees_of",
+        "inheritors_of",
+        "importers_of",
+    ):
+        _LAST_CALLERS_RESULT[str(root.resolve())] = {
+            "pattern": pattern,
+            "target": target,
+            "edges": list(edges_out),
+            "results": list(results),
+        }
+
+
+def _filter_results_by_repo(
+    store: "GraphStore",
+    repo: str,
+    results: list[dict],
+    edges_out: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Narrow results and edges to the requested repo_id (Phase 2 Task 10)."""
+    if not repo:
+        return results, edges_out
+
+    qns_to_check: list[str] = []
+    for r in results:
+        qn = r.get("qualified_name")
+        if qn is None:
+            # importers_of / imports_of dicts use importer /
+            # import_target keys instead of qualified_name.
+            # Fall back to the most likely qualified field.
+            qn = r.get("importer") or r.get("import_target")
+        if qn is not None:
+            qns_to_check.append(qn)
+
+    repo_map: dict[str, str] = {}
+    if qns_to_check:
+        cursor = store._conn.execute(
+            "SELECT n.qualified_name, n.repo_id FROM nodes n "
+            "JOIN json_each(?) j ON n.qualified_name = j.value",
+            (json.dumps(qns_to_check),),
+        )
+        repo_map = {row["qualified_name"]: row["repo_id"] for row in cursor}
+
+    kept_qns: set[str] = set()
+    filtered_results = []
+    for r in results:
+        qn = r.get("qualified_name")
+        if qn is None:
+            qn = r.get("importer") or r.get("import_target")
+        if qn is None:
+            filtered_results.append(r)
+            continue
+        r_repo = repo_map.get(qn)
+        if r_repo is not None and (r_repo or "") == repo:
+            kept_qns.add(qn)
+            filtered_results.append(r)
+
+    results = filtered_results
+    edges_out = [
+        e
+        for e in edges_out
+        if e.get("source") in kept_qns or e.get("target") in kept_qns
+    ]
+    return results, edges_out
+
+
+def _dispatch_query_pattern(
+    store: "GraphStore",
+    pattern: str,
+    target: str,
+    node: Any,
+    resolved_qn_or_path: str,
+    results: list[dict],
+    edges_out: list[dict],
+    languages: list[str] | None = None,
+    as_of: str = "",
+) -> list[dict]:
+    """Execute the core logic for the requested query pattern."""
+    if pattern == "callers_of":
+        _handle_callers_of(
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
+    elif pattern == "callees_of":
+        _handle_callees_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
+    elif pattern == "imports_of":
+        _handle_imports_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
+    elif pattern == "importers_of":
+        _handle_importers_of(
+            store, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
+    elif pattern == "children_of":
+        _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
+    elif pattern == "tests_for":
+        _handle_tests_for(
+            store, node, target, resolved_qn_or_path, results, as_of=as_of
+        )
+    elif pattern == "inheritors_of":
+        _handle_inheritors_of(
+            store, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
+    elif pattern == "file_summary":
+        _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
+
+    # D16: filter tests_for results by language if requested.
+    if pattern == "tests_for" and languages is not None:
+        results = [r for r in results if r.get("language") in languages]
+
+    return results
+
+
 def query_graph(
     pattern: str,
     target: str,
@@ -1237,84 +1388,19 @@ def query_graph(
         if error_resp:
             return error_resp
 
-        if pattern == "callers_of":
-            _handle_callers_of(
-                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
-            )
-        elif pattern == "callees_of":
-            _handle_callees_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
-            )
-        elif pattern == "imports_of":
-            _handle_imports_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
-            )
-        elif pattern == "importers_of":
-            _handle_importers_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
-            )
-        elif pattern == "children_of":
-            _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
-        elif pattern == "tests_for":
-            _handle_tests_for(
-                store, node, target, resolved_qn_or_path, results, as_of=as_of
-            )
-        elif pattern == "inheritors_of":
-            _handle_inheritors_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
-            )
-        elif pattern == "file_summary":
-            _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
+        results = _dispatch_query_pattern(
+            store,
+            pattern,
+            target,
+            node,
+            resolved_qn_or_path,
+            results,
+            edges_out,
+            languages=languages,
+            as_of=as_of,
+        )
 
-        # D16: filter tests_for results by language if requested.
-        if pattern == "tests_for" and languages is not None:
-            results = [r for r in results if r.get("language") in languages]
-
-        # Phase 2 Task 10: post-filter results + edges to the requested
-        # repo. The handlers (callers_of/callees_of/etc.) ride on
-        # qualified-name lookups that don't carry repo_id, so the
-        # narrowing happens here against the ``repo_id`` column on the
-        # nodes table. Edges are scoped indirectly: only edges whose
-        # source AND target survive the node filter remain.
-        if repo:
-            qns_to_check: list[str] = []
-            for r in results:
-                qn = r.get("qualified_name")
-                if qn is None:
-                    # importers_of / imports_of dicts use ``importer`` /
-                    # ``import_target`` keys instead of ``qualified_name``.
-                    # Fall back to the most likely qualified field.
-                    qn = r.get("importer") or r.get("import_target")
-                if qn is not None:
-                    qns_to_check.append(qn)
-            repo_map: dict[str, str] = {}
-            if qns_to_check:
-                cursor = store._conn.execute(
-                    "SELECT n.qualified_name, n.repo_id FROM nodes n "
-                    "JOIN json_each(?) j ON n.qualified_name = j.value",
-                    (json.dumps(qns_to_check),),
-                )
-                repo_map = {row["qualified_name"]: row["repo_id"] for row in cursor}
-
-            kept_qns: set[str] = set()
-            filtered_results = []
-            for r in results:
-                qn = r.get("qualified_name")
-                if qn is None:
-                    qn = r.get("importer") or r.get("import_target")
-                if qn is None:
-                    filtered_results.append(r)
-                    continue
-                r_repo = repo_map.get(qn)
-                if r_repo is not None and (r_repo or "") == repo:
-                    kept_qns.add(qn)
-                    filtered_results.append(r)
-            results = filtered_results
-            edges_out = [
-                e
-                for e in edges_out
-                if e.get("source") in kept_qns or e.get("target") in kept_qns
-            ]
+        results, edges_out = _filter_results_by_repo(store, repo, results, edges_out)
 
         response: dict[str, Any] = {
             "status": "ok",
@@ -1327,47 +1413,9 @@ def query_graph(
             "edges": edges_out,
         }
 
-        # D15: surface bare-name -> qualified-name promotion (issue #339).
-        promoted = getattr(store, "_d15_promoted_indexed_under", None)
-        if promoted:
-            response["resolved_from_unqualified"] = True
-            response["indexed_under"] = list(promoted)
-            response["hint"] = (
-                f"Bare name '{target}' was auto-resolved to "
-                f"{promoted[0]}. Pass the qualified form to disambiguate."
-            )
-
-        # #331: dynamic-dispatch blind-spot warning for callers_of /
-        # callees_of. Surfaces same-file references via patterns
-        # (asyncio.to_thread, functools.partial, decorator, etc.) that
-        # the AST CALLS edge does not capture.
-        if pattern in ("callers_of", "callees_of") and node is not None:
-            hits = _scan_dynamic_dispatch_hints(store, node, node.name)
-            if hits:
-                response["dynamic_dispatch_hints"] = {
-                    "target_file": node.file_path,
-                    "same_file_references": hits[:50],
-                    "note": (
-                        "These are likely additional callers the AST "
-                        "edge does not link. Grep before concluding the "
-                        "caller list is complete."
-                    ),
-                }
-
-        # #318: cache callsite-shaped results so `spot_check` can pull a
-        # random sample of N source snippets without re-running the query.
-        if pattern in (
-            "callers_of",
-            "callees_of",
-            "inheritors_of",
-            "importers_of",
-        ):
-            _LAST_CALLERS_RESULT[str(root.resolve())] = {
-                "pattern": pattern,
-                "target": target,
-                "edges": list(edges_out),
-                "results": list(results),
-            }
+        _add_query_response_decorations(
+            store, root, response, pattern, target, node, results, edges_out
+        )
 
         return response
     finally:
