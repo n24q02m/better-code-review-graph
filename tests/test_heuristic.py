@@ -377,3 +377,61 @@ def test_scan_nodes_falls_back_to_name_when_no_qualified(tmp_path):
     node.name = "barfn"
     result = scanner.scan_nodes([node])
     assert "barfn" in result.tags_by_node
+
+
+# ---------------------------------------------------------------------------
+# Coverage gaps
+# ---------------------------------------------------------------------------
+
+
+def test_parse_simple_yaml_skips_empty_key():
+    text = ": value\nvalid: key\n"
+    data = _parse_simple_yaml(text)
+    assert "valid" in data
+    assert "" not in data
+    assert len(data) == 1
+
+
+def test_load_rules_from_dir_handles_single_string_language(tmp_path):
+    f = tmp_path / "single-lang.yaml"
+    f.write_text(
+        "id: single\nseverity: low\npattern: foo\nlanguages: python\nmessage: msg\n",
+        encoding="utf-8",
+    )
+    rules = _load_rules_from_dir(tmp_path)
+    assert len(rules) == 1
+    assert rules[0].languages == frozenset({"python"})
+
+
+def test_default_rules_dir_fallback(monkeypatch, tmp_path):
+    import better_code_review_graph.security.heuristic as heuristic
+
+    def fake_files(pkg):
+        raise ModuleNotFoundError("simulated")
+
+    monkeypatch.setattr(heuristic, "files", fake_files)
+    path = heuristic._default_rules_dir()
+    # Should fallback to repository layout
+    assert path.name == "heuristic"
+    assert path.parent.name == "rules"
+
+
+def test_default_rules_dir_success(monkeypatch, tmp_path):
+    import better_code_review_graph.security.heuristic as heuristic
+
+    rules_dir = tmp_path / "heuristic"
+    rules_dir.mkdir()
+
+    class FakeRef:
+        def __truediv__(self, other):
+            return self
+
+        def __str__(self):
+            return str(rules_dir)
+
+    def fake_files(pkg):
+        return FakeRef()
+
+    monkeypatch.setattr(heuristic, "files", fake_files)
+    path = heuristic._default_rules_dir()
+    assert path.resolve() == rules_dir.resolve()
