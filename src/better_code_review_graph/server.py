@@ -565,19 +565,35 @@ async def config(
             from mcp_core.storage.per_plugin_store import PerPluginStore
 
             from . import credential_state as _cs
+            from .credential_state import resolve_credential_state
+
+            # Refresh module-level state so status is accurate and not stale.
+            resolve_credential_state()
 
             # Derive providers_configured from live PerPluginStore load + env
-            # so status is accurate even if module-level _state is stale.
+            # so status is accurate even if module-level _state was stale.
             _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
             _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
             _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
             _providers = list(dict.fromkeys(_env_keys + _store_keys))
             if _providers:
                 _derived_state = "configured"
+                # Ensure module state matches derived state
+                if _cs.get_state() != _cs.CredentialState.CONFIGURED:
+                    _cs.set_state(_cs.CredentialState.CONFIGURED)
+                    # Load found keys into environment so they are actually usable
+                    for k in _cs.CLOUD_KEYS:
+                        _v = _saved.get(k)
+                        if _v and not os.environ.get(k):
+                            os.environ[k] = _v
             elif _cs.get_state() == _cs.CredentialState.LOCAL:
                 _derived_state = "local"
             else:
                 _derived_state = "awaiting_setup"
+                # Ensure module state matches derived state
+                if _cs.get_state() != _cs.CredentialState.AWAITING_SETUP:
+                    _cs.set_state(_cs.CredentialState.AWAITING_SETUP)
+
             return _json(
                 {
                     "state": _derived_state,
