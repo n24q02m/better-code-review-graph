@@ -575,6 +575,10 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
         return _FakeMultiplexedPath(fake_dir)
 
     monkeypatch.setattr(_resources, "files", _files)
+    obj = _files("better_code_review_graph_migrations")
+    # Some library versions had an issue where __str__ behavior was altered.
+    # returns an object whose ``__str__`` is the repr (the historical bug).
+    assert str(obj) == f"MultiplexedPath('{fake_dir}')"
 
     # Falls through installed-wheel branch (joinpath result not a Path)
     # → resolves via source-checkout fallback. Both paths exist in the
