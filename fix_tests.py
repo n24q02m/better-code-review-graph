@@ -1,4 +1,4 @@
-import pytest
+content = """import pytest
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
@@ -130,3 +130,7 @@ def test_get_edges_by_target_explicit_fallback(store):
     # With fallback=False
     edges = store.get_edges_by_target("a.py::foo", kind="CALLS", fallback=False)
     assert len(edges) == 0
+"""
+
+with open("tests/test_bare_suffix_correctness.py", "w") as f:
+    f.write(content)

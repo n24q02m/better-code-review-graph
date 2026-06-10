@@ -1038,15 +1038,21 @@ def _handle_imports_of(
 
 def _handle_importers_of(
     store: Any,
+    node: Any,
     abs_target: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
-    ):
+    search_targets = [abs_target]
+    if node and node.name and node.name != abs_target:
+        search_targets.append(node.name)
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="IMPORTS_FROM", as_of=as_of
+    )
+    for e in edges:
         results.append({"importer": e.source_qualified, "file": e.file_path})
         edges_out.append(edge_to_dict(e))
 
@@ -1074,11 +1080,16 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
-    qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
-        qns.append(e.source_qualified)
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+    elif target and target != qn:
+        search_targets.append(target)
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="TESTED_BY", as_of=as_of
+    )
+    qns = [e.source_qualified for e in edges]
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1097,16 +1108,22 @@ def _handle_tests_for(
 
 def _handle_inheritors_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    )
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1251,7 +1268,7 @@ def query_graph(
             )
         elif pattern == "importers_of":
             _handle_importers_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
             )
         elif pattern == "children_of":
             _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
@@ -1261,7 +1278,7 @@ def query_graph(
             )
         elif pattern == "inheritors_of":
             _handle_inheritors_of(
-                store, resolved_qn_or_path, results, edges_out, as_of=as_of
+                store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
             )
         elif pattern == "file_summary":
             _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)

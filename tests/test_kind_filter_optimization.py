@@ -135,7 +135,7 @@ def test_get_edges_by_target_fallback_only_when_truly_no_edges(store):
     """The bare-name fallback must NOT fire when the qualified name has
     edges of a different kind. Otherwise filtering by kind would silently
     swap in edges that target a *different* node that happens to share the
-    bare suffix — a correctness bug for ``inheritors_of`` / ``tests_for``.
+    bare suffix — previously a correctness bug for ``inheritors_of`` / ``tests_for``.
     """
     _seed(store)
     # Add a CONTAINS edge whose target is just ``Base`` (no qualifier).

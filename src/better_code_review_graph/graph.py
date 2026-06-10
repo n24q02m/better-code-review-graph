@@ -1026,7 +1026,11 @@ class GraphStore:
         return [self._row_to_edge(r) for r in cursor]
 
     def search_edges_by_target_name(
-        self, name: str, kind: str = "CALLS", *, as_of: str = ""
+        self,
+        name: str,
+        kind: str | tuple[str, ...] | None = "CALLS",
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         """Search for edges where target_qualified matches an unqualified name.
 
@@ -1039,7 +1043,11 @@ class GraphStore:
         return self.search_edges_by_target_names([name], kind=kind, as_of=as_of)
 
     def search_edges_by_target_names(
-        self, names: list[str], kind: str = "CALLS", *, as_of: str = ""
+        self,
+        names: list[str],
+        kind: str | tuple[str, ...] | None = "CALLS",
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         """Batch search for edges where target_qualified matches any of the given names.
 
@@ -1051,10 +1059,11 @@ class GraphStore:
 
         unique_names = list(set(names))
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
-            "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)) AND kind = ?{frag}",
-            (json.dumps(unique_names), kind, *frag_params),
+            "SELECT * FROM edges WHERE target_qualified IN "
+            f"(SELECT value FROM json_each(?)){kind_frag}{frag}",  # noqa: S608
+            (json.dumps(unique_names), *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
 
