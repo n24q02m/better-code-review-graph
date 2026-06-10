@@ -110,7 +110,7 @@ def test_importers_of_no_bare_fallback(store):
 
     results = []
     edges_out = []
-    _handle_importers_of(store, "app/a.py", results, edges_out)
+    _handle_importers_of(store, None, "app/a.py", results, edges_out)
 
     assert len(results) == 0
 
