@@ -377,6 +377,21 @@ class TestQueryGraph:
         )
         assert result["status"] == "ok"
 
+    def test_imports_of_returns_full_nodes(self, repo_with_graph):
+        abs_main = str(repo_with_graph / "main.py")
+        result = query_graph(
+            pattern="imports_of", target=abs_main, repo_root=str(repo_with_graph)
+        )
+        assert result["status"] == "ok"
+        assert len(result["results"]) > 0
+        # Verify we have more than just import_target (full node info)
+        for r in result["results"]:
+            assert "import_target" in r
+            # Should have standard node fields
+            assert "kind" in r
+            assert "qualified_name" in r
+            assert "file_path" in r
+
     def test_importers_of(self, repo_with_graph):
         abs_auth = str(repo_with_graph / "auth.py")
         result = query_graph(

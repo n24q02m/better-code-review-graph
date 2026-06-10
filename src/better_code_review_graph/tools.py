@@ -1031,9 +1031,23 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
-        results.append({"import_target": e.target_qualified})
+    # Bolt: Use batched query to avoid N+1 queries when resolving import targets.
+    qns = []
+    for e in store.get_edges_by_sources([qn], kind="IMPORTS_FROM", as_of=as_of):
+        qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                d = node_to_dict(node_map[qn_tgt])
+                # Backwards compatibility: ensure "import_target" key is present.
+                d["import_target"] = qn_tgt
+                results.append(d)
+            else:
+                results.append({"import_target": qn_tgt})
 
 
 def _handle_importers_of(
@@ -1044,11 +1058,27 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched query to avoid N+1 queries when resolving importers.
+    qns = []
     for e in store.get_edges_by_target(
         abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
     ):
-        results.append({"importer": e.source_qualified, "file": e.file_path})
+        qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                d = node_to_dict(node_map[qn_src])
+                # Backwards compatibility: ensure "importer" and "file" keys are present.
+                d["importer"] = qn_src
+                d["file"] = node_map[qn_src].file_path
+                results.append(d)
+            else:
+                # Fallback for nodes that might not be in the database yet
+                results.append({"importer": qn_src})
 
 
 def _handle_children_of(
