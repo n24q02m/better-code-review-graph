@@ -56,23 +56,20 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Types
 
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks
-- `ci`: CI/CD changes
+Only two commit types are accepted; the `commit-msg` hook
+(`scripts/enforce-commit.sh`) rejects anything else:
+
+- `feat`: New feature (or any user-facing change)
+- `fix`: Bug fix (or any other non-feature change)
+
+Do not use a `!` breaking-change marker. Communicate breaking changes
+in the PR description and commit body instead.
 
 ### Examples
 
 ```text
 feat: add Ruby language support
 fix: resolve multi-word search AND logic edge case
-docs: update embedding configuration guide
-feat!: refactor tools to 3-tier architecture
 ```
 
 ## Release Process

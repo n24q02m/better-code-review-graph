@@ -1,6 +1,7 @@
 """MCP server entry point for Better Code Review Graph.
 
-5-tool architecture: graph + query + review (3 main) + config + help.
+7-tool architecture: graph + query + review (3 main) + config + security
++ help + config__open_relay (mcp-core relay helper).
 Run as: better-code-review-graph serve
 """
 
@@ -81,9 +82,10 @@ mcp = FastMCP(
     version=_pkg_version,
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
-        "context-aware code reviews. 5 tools: graph (build/embed/stats), "
+        "context-aware code reviews. 7 tools: graph (build/embed/stats), "
         "query (search/impact/patterns), review (code review context), "
-        "config (status/set/setup_*), help (full docs)."
+        "config (status/set/setup_*), security (scan/report/rule_list), "
+        "help (full docs), config__open_relay (re-trigger relay form)."
     ),
 )
 
@@ -793,7 +795,7 @@ def _config_cache_clear(repo_root: str | None) -> str:
 @mcp.tool(
     description=(
         "Get full documentation for any tool. "
-        "Topics: graph | query | review | config. "
+        "Topics: graph | query | review | config | security | recipes. "
         "Use when compressed descriptions are insufficient."
     ),
     annotations=ToolAnnotations(
@@ -812,8 +814,9 @@ def help(topic: str = "graph") -> str:
     - query: Query operations (query, search, impact, large_functions)
     - review: Code review context generation
     - config: Server configuration (status, set, cache_clear)
+    - security: Security scanning (scan, report, suppress, rule_list)
     - recipes: Common operational recipes (#319) -- workflow patterns
-      that combine the 5 tools (freshness check, blast radius, scope
+      that combine the core tools (freshness check, blast radius, scope
       completeness, pre-merge review, etc.)
     """
     valid_topics = {
@@ -821,6 +824,7 @@ def help(topic: str = "graph") -> str:
         "query": "query.md",
         "review": "review.md",
         "config": "config.md",
+        "security": "security.md",
         "recipes": "recipes.md",
     }
     filename = valid_topics.get(topic)

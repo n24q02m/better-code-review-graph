@@ -9,8 +9,9 @@ The `security` tool surfaces vulnerability findings on `Function` /
   dependencies; bundled rule files live under
   `better_code_review_graph_security_rules/heuristic/*.yaml`.
 - **Tier 2 (semgrep)** -- opt-in via the `[security]` extra; wraps
-  the [Semgrep](https://semgrep.dev/) CLI for ~120 curated rules
-  drawn from the project's overlay set.
+  the [Semgrep](https://semgrep.dev/) CLI. By default the scanner runs
+  Semgrep's `p/auto` registry pack (auto-selected community rules) plus
+  the bundled 3-rule curated overlay (`rules/semgrep/curated.yaml`).
 
 Findings are persisted to `nodes.security_tags` as a JSON array of
 `<rule_id>:<severity>` strings so subsequent queries (or the

@@ -98,7 +98,8 @@ What you get on v2.0+:
 - **Security scanning** -- `security(action="scan", ...)` runs a
   regex-based Tier-1 scanner (5 rules) by default; pass
   `engine="semgrep"` (after `uv add 'better-code-review-graph[security]'`)
-  for the ~120-rule Tier-2 overlay. Findings persist on
+  for the Tier-2 engine, which runs Semgrep's `p/auto` registry pack
+  plus a 3-rule curated overlay. Findings persist on
   `nodes.security_tags`; `report` re-emits the cache as JSON or
   SARIF v2.1.0. See `help(topic="security")`.
 
@@ -125,7 +126,7 @@ graph(action="embed")
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
 | Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
-| Tool design | 9 individual tools | 6 tools: graph + query + review + config + security + help |
+| Tool design | 9 individual tools | 7 tools: graph + query + review + config + security + help + config__open_relay |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 ## Status
@@ -149,7 +150,7 @@ graph(action="embed")
 
 ## Documentation
 
-Full docs at **[mcp.n24q02m.com/servers/better-code-review-graph/](https://mcp.n24q02m.com/servers/better-code-review-graph/)**:
+Full docs at **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**:
 
 - [Setup](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
 - [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
@@ -218,9 +219,13 @@ Actions: `scan` | `report` | `suppress` | `rule_list`
 
 ### `help` -- Full documentation
 
-Topics: `graph` | `query` | `review` | `config` | `recipes`
+Topics: `graph` | `query` | `review` | `config` | `security` | `recipes`
 
 Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
+
+### `config__open_relay` -- Re-trigger the relay setup form
+
+Registered automatically from `mcp-core`. In HTTP mode it returns `<PUBLIC_URL>/authorize` so the agent can re-open the browser setup form (e.g. after credential expiry); in stdio mode it returns `status: 'stdio_unsupported'`.
 
 ## Security
 
@@ -242,7 +247,7 @@ uv run better-code-review-graph
 
 ## Trust Model
 
-This plugin implements **TC-Local** (machine-bound, single trust principal). See [mcp-core/docs/TRUST-MODEL.md](https://github.com/n24q02m/mcp-core/blob/main/docs/TRUST-MODEL.md) for full classification.
+This plugin implements **TC-Local** (machine-bound, single trust principal). See the [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
 
 | Mode | Storage | Encryption | Who can read your data? |
 |---|---|---|---|
