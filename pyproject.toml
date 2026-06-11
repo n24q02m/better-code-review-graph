@@ -25,12 +25,18 @@ dependencies = [
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
     "qwen3-embed>=1.10.0",
-    "cohere>=7.0.0",
-    "google-genai>=2.6.0",
-    "openai>=2.38.0",
     "httpx",
     "pydantic-settings",
-    "n24q02m-mcp-core>=1.17.2,<2",
+    "n24q02m-mcp-core[llm]>=1.18.0b1,<2",
+    # litellm security floor (transitive via mcp-core[llm]). 1.83.x-1.87.x carry 4
+    # advisories in litellm's PROXY server: GHSA-r75f-5x8p-qvmc (SQLi in proxy key
+    # verify), GHSA-xqmj-j6mv-4862 (SSTI /prompts/test), GHSA-v4p8-mg3p-g94g (cmd-exec
+    # proxy MCP endpoints), GHSA-wxxx-gvqv-xp7p (sandbox escape custom-code guardrail).
+    # We use litellm LIBRARY mode only (no proxy) so none are in our attack surface,
+    # but Dependency Review flags the package version. 1.88.0+ clears all four.
+    # crg's optional semgrep extra otherwise pins the resolver to litellm 1.83.0; this
+    # floor lifts it (semgrep resolves to 1.79.x, fine for a dev-only SAST tool).
+    "litellm>=1.88.0",
     "Pygments>=2.20.0",
     "alembic>=1.18.4,<2",
     "defusedxml>=0.7.1",

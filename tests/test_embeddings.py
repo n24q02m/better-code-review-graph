@@ -235,31 +235,123 @@ class TestQwen3EmbedBackend:
 # ---------------------------------------------------------------------------
 
 
-class TestCloudEmbeddingBackend:
-    def _mock_cohere_response(self, texts, dim=1024):
-        mock_resp = MagicMock()
-        mock_resp.embeddings.float_ = [
-            np.random.rand(dim).tolist() for _ in range(len(texts))
-        ]
-        return mock_resp
+def _embedding_response(texts, dim=1024, as_dict=False):
+    """Build a fake ``mcp_core.llm.embedding`` response.
 
-    def test_cohere_v2_integration(self):
-        """Test Cohere V2 SDK integration."""
+    ``resp.data`` items are either pydantic-like objects (``.index`` /
+    ``.embedding``) or plain dicts depending on ``as_dict``.
+    """
+    resp = MagicMock()
+    items = []
+    for i in range(len(texts)):
+        vec = np.random.rand(dim).tolist()
+        if as_dict:
+            items.append({"index": i, "embedding": vec})
+        else:
+            item = MagicMock()
+            item.index = i
+            item.embedding = vec
+            items.append(item)
+    resp.data = items
+    return resp
+
+
+class TestCloudEmbeddingBackend:
+    def test_litellm_passthrough_integration(self):
+        """Cloud backend dispatches through mcp_core.llm.embedding."""
         with patch.dict(os.environ, {}, clear=True):
             backend = CloudEmbeddingBackend(
                 model="cohere/embed-english-v3.0", api_key="test-key"
             )
-            with patch("cohere.ClientV2") as mock_cls:
-                mock_client = MagicMock()
-                mock_cls.return_value = mock_client
-                mock_client.embed.return_value = self._mock_cohere_response(
-                    ["hello"], dim=768
-                )
-
+            with patch("mcp_core.llm.embedding") as mock_embed:
+                mock_embed.return_value = _embedding_response(["hello"], dim=768)
                 vectors = backend.embed_texts(["hello"], dimensions=768)
                 assert len(vectors) == 1
                 assert len(vectors[0]) == 768
-                mock_client.embed.assert_called_once()
+                mock_embed.assert_called_once()
+                call_kwargs = mock_embed.call_args.kwargs
+                assert call_kwargs["model"] == "cohere/embed-english-v3.0"
+                assert call_kwargs["input"] == ["hello"]
+                assert call_kwargs["dimensions"] == 768
+                # Cohere passes input_type through kwargs.
+                assert call_kwargs["input_type"] == "search_document"
+                # Explicit api_key forwarded; empty api_base normalised to None.
+                assert call_kwargs["api_key"] == "test-key"
+                assert call_kwargs["api_base"] is None
+
+    def test_embedding_parse_dict_shape(self):
+        """resp.data items as plain dicts are parsed + sorted by index."""
+        with patch.dict(os.environ, {}, clear=True):
+            backend = CloudEmbeddingBackend(
+                model="openai/text-embedding-3-large", api_key="k"
+            )
+            resp = MagicMock()
+            # Out-of-order indices to prove sorting.
+            resp.data = [
+                {"index": 1, "embedding": [0.2, 0.2]},
+                {"index": 0, "embedding": [0.1, 0.1]},
+            ]
+            with patch("mcp_core.llm.embedding", return_value=resp):
+                vectors = backend.embed_texts(["a", "b"])
+            assert vectors == [[0.1, 0.1], [0.2, 0.2]]
+
+    def test_embedding_parse_pydantic_shape(self):
+        """resp.data items as pydantic-like objects are parsed + sorted."""
+        with patch.dict(os.environ, {}, clear=True):
+            backend = CloudEmbeddingBackend(
+                model="openai/text-embedding-3-large", api_key="k"
+            )
+            item0 = MagicMock()
+            item0.index = 0
+            item0.embedding = [0.1, 0.1]
+            item1 = MagicMock()
+            item1.index = 1
+            item1.embedding = [0.2, 0.2]
+            resp = MagicMock()
+            resp.data = [item1, item0]  # out of order
+            with patch("mcp_core.llm.embedding", return_value=resp):
+                vectors = backend.embed_texts(["a", "b"])
+            assert vectors == [[0.1, 0.1], [0.2, 0.2]]
+
+    def test_embedding_none_data_guard(self):
+        """resp.data=None must not crash -- returns empty list."""
+        with patch.dict(os.environ, {}, clear=True):
+            backend = CloudEmbeddingBackend(model="openai/text-embedding-3-large")
+            resp = MagicMock()
+            resp.data = None
+            with patch("mcp_core.llm.embedding", return_value=resp):
+                vectors = backend.embed_texts(["a"])
+            assert vectors == []
+
+    def test_litellm_model_mapping(self):
+        """_litellm_model maps bare names to provider/model strings."""
+        with patch.dict(os.environ, {}, clear=True):
+            # Jina bare -> jina_ai/ prefix
+            b = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="k")
+            assert b._litellm_model() == "jina_ai/jina-embeddings-v3"
+            # Gemini bare -> gemini/ prefix
+            b = CloudEmbeddingBackend(model="gemini-embedding-001", api_key="k")
+            assert b._litellm_model() == "gemini/gemini-embedding-001"
+            # Cohere bare -> cohere/ prefix
+            b = CloudEmbeddingBackend(model="embed-multilingual-v3.0", api_key="k")
+            assert b._litellm_model() == "cohere/embed-multilingual-v3.0"
+            # OpenAI bare -> passthrough unchanged
+            b = CloudEmbeddingBackend(model="text-embedding-3-large", api_key="k")
+            assert b._litellm_model() == "text-embedding-3-large"
+            # Already-prefixed -> unchanged
+            b = CloudEmbeddingBackend(model="gemini/gemini-embedding-001", api_key="k")
+            assert b._litellm_model() == "gemini/gemini-embedding-001"
+
+    def test_embedding_api_base_from_env(self):
+        """EMBEDDING_API_BASE env is forwarded as api_base."""
+        with patch.dict(
+            os.environ, {"EMBEDDING_API_BASE": "https://proxy.example/v1"}, clear=True
+        ):
+            backend = CloudEmbeddingBackend(model="text-embedding-3-large", api_key="k")
+            with patch("mcp_core.llm.embedding") as mock_embed:
+                mock_embed.return_value = _embedding_response(["x"], dim=4)
+                backend.embed_texts(["x"])
+            assert mock_embed.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
     def test_retry_on_transient_error(self):
         """Backend should retry on 429/5xx errors."""
@@ -274,30 +366,23 @@ class TestCloudEmbeddingBackend:
                 call_count += 1
                 if call_count == 1:
                     raise Exception("Rate limit exceeded (429)")
-                return self._mock_cohere_response(["test"], dim=768)
+                return _embedding_response(["test"], dim=768)
 
-            with patch("cohere.ClientV2") as mock_cls:
-                mock_client = MagicMock()
-                mock_cls.return_value = mock_client
-                mock_client.embed.side_effect = side_effect
-
+            with patch("mcp_core.llm.embedding", side_effect=side_effect):
                 with patch("time.sleep"):  # Skip actual delay
                     vectors = backend.embed_texts(["test"], dimensions=768)
                     assert len(vectors) == 1
                     assert call_count == 2
 
     def test_dimensions_truncation(self):
-        """Test that dimensions parameter truncates embeddings."""
+        """Test that dimensions parameter truncates embeddings locally."""
         with patch.dict(os.environ, {}, clear=True):
             backend = CloudEmbeddingBackend(
                 model="cohere/embed-english-v3.0", api_key="test-key"
             )
-            with patch("cohere.ClientV2") as mock_cls:
-                mock_client = MagicMock()
-                mock_cls.return_value = mock_client
-                mock_client.embed.return_value = self._mock_cohere_response(
-                    ["test"], dim=1024
-                )
+            with patch("mcp_core.llm.embedding") as mock_embed:
+                # Provider returns 1024 dims; backend truncates to 768.
+                mock_embed.return_value = _embedding_response(["test"], dim=1024)
                 vectors = backend.embed_texts(["test"], dimensions=768)
                 assert len(vectors) == 1
                 assert len(vectors[0]) == 768

@@ -12,7 +12,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
-  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud (Jina/Gemini/OpenAI/Cohere)
+  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud via litellm passthrough (`mcp_core.llm`; Jina/Gemini/OpenAI/Cohere)
   - `relay_setup.py` -- Zero-config relay: create session, poll for config
   - `relay_schema.py` -- Relay form schema (embedding provider fields)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md, recipes.md, security.md)
@@ -59,21 +59,28 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud multi-provider (Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud via litellm passthrough (`mcp_core.llm`; Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions), review, config (status/set/cache_clear + setup_status/setup_start/setup_skip/setup_reset/setup_complete), security (scan/report/suppress/rule_list), help, config__open_relay (mcp-core relay helper). Returns JSON strings.
 
-## Embedding backends
+## Embedding + LLM backends
+
+Embedding (cloud backend) + the LLM summarizer dispatch through `mcp_core.llm`
+(litellm passthrough, `n24q02m-mcp-core[llm]`). No native provider SDKs are
+imported directly.
 
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- **Cloud (multi-provider)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere
-  - `JINA_AI_API_KEY` -- Jina AI (httpx REST)
-  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (google-genai SDK)
-  - `OPENAI_API_KEY` -- OpenAI (openai SDK)
-  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (cohere ClientV2)
-- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection
-- `EMBEDDING_MODEL` -- override model name (provider auto-detected from model prefix)
+- **Cloud (litellm passthrough)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere. Any litellm `provider/model` works via passthrough.
+  - `JINA_AI_API_KEY` -- Jina AI (mapped to `jina_ai/`)
+  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (mapped to `gemini/`)
+  - `OPENAI_API_KEY` -- OpenAI (bare model names pass through)
+  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (mapped to `cohere/`)
+- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection (`litellm` accepted as alias for `cloud`)
+- `EMBEDDING_MODEL` -- override embedding model name (provider auto-detected from model prefix)
+- `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
 - Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
+
+**LLM summarizer** (graph `summarize` action): provider auto-detected `GEMINI_API_KEY` > `GOOGLE_API_KEY` > `OPENAI_API_KEY` (Jina/Cohere have no chat API). Default model gemini -> `gemini/gemini-2.5-flash`, openai -> `gpt-4o-mini`. `SUMMARY_MODEL` overrides as a litellm `provider/model` (cache tag derived from prefix). `LLM_API_BASE` -- custom base URL (optional).
 
 ## Pytest
 
@@ -103,7 +110,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 
 ## Luu y quan trong
 
-- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, cohere) -- tranh startup cost
+- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, litellm via `mcp_core.llm`) -- tranh startup cost
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
