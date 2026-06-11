@@ -68,7 +68,7 @@
       },
       "environmentVariables": [
         {
-          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'cloud' ('litellm' is an accepted alias). Auto-detected from provider API keys if omitted.",
+          "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_BACKEND"
