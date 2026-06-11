@@ -1,7 +1,7 @@
 # better-code-review-graph
 
 Fork of code-review-graph with fixed multi-word search, qualified call resolution,
-dual-mode embedding (ONNX local + cloud multi-provider), and output pagination.
+dual-mode embedding (ONNX local + cloud chain via `EMBEDDING_MODELS`), and output pagination.
 See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 ## Cau truc
@@ -12,7 +12,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
-  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud (Jina/Gemini/OpenAI/Cohere)
+  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
   - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
@@ -57,7 +57,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud via litellm passthrough (`mcp_core.llm`; Jina > Gemini > OpenAI > Cohere, auto-detected from env vars). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud via the `EMBEDDING_MODELS` chain (litellm passthrough, `mcp_core.llm`; order = fallback, empty = local). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions), review, config, security, help, config__open_relay (mcp-core relay helper). Returns JSON strings.
 
@@ -67,23 +67,50 @@ Embedding (cloud backend) + the LLM summarizer both dispatch through
 `mcp_core.llm` (litellm passthrough, `n24q02m-mcp-core[llm]`). No native
 provider SDKs are imported directly.
 
+Per-task model chains, CSV `provider/model,provider/model`, order = litellm fallback. Provider is inferred from the model prefix.
+
+- `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX (qwen3-embed).
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- **Cloud (litellm passthrough)**: Auto-detected from env vars, priority: Jina > Gemini > OpenAI > Cohere. Any litellm `provider/model` works via passthrough.
-  - `JINA_AI_API_KEY` -- Jina AI (mapped to `jina_ai/`)
-  - `GEMINI_API_KEY` / `GOOGLE_API_KEY` -- Google Gemini (mapped to `gemini/`)
-  - `OPENAI_API_KEY` -- OpenAI (bare model names pass through)
-  - `COHERE_API_KEY` / `CO_API_KEY` -- Cohere (mapped to `cohere/`, `input_type=search_document`)
-- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override auto-detection (`litellm` accepted as an alias for `cloud`)
-- `EMBEDDING_MODEL` -- override embedding model name (provider auto-detected from model prefix)
-- `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
+- API key follows the litellm convention `<PROVIDER>_API_KEY`. The 6 providers the server suggests:
+
+  | model prefix | key env var | get it at |
+  |---|---|---|
+  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
+  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
+  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
+  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
+  | `xai/` | `XAI_API_KEY` | console.x.ai |
+  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
+
+  For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
+- Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
 - Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
+- Deprecated (honored one release with a warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend is now inferred from whether the chain is empty). The old "Jina > Gemini > OpenAI > Cohere" auto-detect router is gone.
+
+### Manual config example
+
+```json
+{
+  "mcpServers": {
+    "crg": {
+      "command": "uvx", "args": ["better-code-review-graph"],
+      "env": {
+        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+        "SUMMARY_MODELS": "gemini/gemini-3-flash-preview",
+        "JINA_AI_API_KEY": "jina_xxx",
+        "GEMINI_API_KEY": "AIza_xxx"
+      }
+    }
+  }
+}
+```
 
 ## LLM summarizer (graph `summarize` action)
 
-- Provider auto-detected from env: `GEMINI_API_KEY` > `GOOGLE_API_KEY` > `OPENAI_API_KEY` (Jina/Cohere excluded — no chat-completion API). No-op when no provider configured.
-- Dispatches through `mcp_core.llm.completion`. Default model per provider: gemini -> `gemini/gemini-2.5-flash`, openai -> `gpt-4o-mini`.
-- `SUMMARY_MODEL` -- override the summarizer model as a litellm `provider/model` string (used verbatim). The summary cache tag is derived from the model prefix when overridden.
-- `LLM_API_BASE` -- custom OpenAI-compatible base URL for the summarizer (optional)
+- `SUMMARY_MODELS` -- ordered summarizer model chain (CSV `provider/model,...`, order = litellm fallback). Empty = summaries disabled. Provider is inferred from the model prefix and must expose a chat-completion API (Jina/Cohere do not).
+- Dispatches through `mcp_core.llm.completion`.
+- `LLM_API_BASE` -- custom OpenAI-compatible base URL for the summarizer (SSRF-guarded, optional)
+- Deprecated (honored one release with a warning): singular `SUMMARY_MODEL` -- folded into `SUMMARY_MODELS`.
 
 ## Pytest
 
