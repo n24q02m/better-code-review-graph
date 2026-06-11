@@ -22,7 +22,7 @@ from better_code_review_graph.summarizer import (
     NodeNeedingSummary,
     compute_source_hash,
     compute_summary_cache_key,
-    resolve_summary_provider,
+    resolve_summary_chain,
     summarize_node,
 )
 
@@ -115,66 +115,65 @@ def test_cache_key_uses_precomputed_hash_when_provided():
 
 
 # ---------------------------------------------------------------------------
-# Provider resolution
+# Summary model chain (per-task model-chain redesign)
 # ---------------------------------------------------------------------------
 
 
 def _clear_provider_env(monkeypatch):
-    for key in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
+    for key in (
+        "SUMMARY_MODELS",
+        "SUMMARY_MODEL",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+    ):
         monkeypatch.delenv(key, raising=False)
 
 
-def test_resolve_provider_prefers_gemini(monkeypatch):
+def test_summary_chain_from_env(monkeypatch):
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash,openai/gpt-4o-mini")
+    chain = resolve_summary_chain()
+    assert chain == ["gemini/gemini-2.5-flash", "openai/gpt-4o-mini"]
+
+
+def test_summary_chain_strips_and_skips_empties(monkeypatch):
+    monkeypatch.setenv("SUMMARY_MODELS", " openai/gpt-4o-mini , , ")
+    assert resolve_summary_chain() == ["openai/gpt-4o-mini"]
+
+
+def test_summary_chain_legacy_model_honored(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("SUMMARY_MODEL", "openai/gpt-4o-mini")
+    assert resolve_summary_chain() == ["openai/gpt-4o-mini"]
+
+
+def test_summary_chain_explicit_wins_over_legacy(monkeypatch):
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
+    monkeypatch.setenv("SUMMARY_MODEL", "openai/gpt-4o-mini")
+    assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
+
+
+def test_summary_chain_default_key_gated_gemini(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-
-    result = resolve_summary_provider()
-
-    assert result == ("gemini", "g-key")
+    assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
 
 
-def test_resolve_provider_falls_back_to_openai(monkeypatch):
+def test_summary_chain_default_key_gated_google_alias(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
+    assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
+
+
+def test_summary_chain_default_key_gated_openai_only(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-
-    result = resolve_summary_provider()
-
-    assert result == ("openai", "o-key")
+    assert resolve_summary_chain() == ["openai/gpt-4o-mini"]
 
 
-def test_resolve_provider_handles_google_api_key_alias(monkeypatch):
+def test_summary_chain_default_empty_when_no_keys(monkeypatch):
     _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
-
-    result = resolve_summary_provider()
-
-    assert result == ("gemini", "google-key")
-
-
-def test_resolve_provider_returns_none_when_no_key(monkeypatch):
-    _clear_provider_env(monkeypatch)
-
-    result = resolve_summary_provider()
-
-    assert result is None
-
-
-def test_resolve_provider_empty_gemini_falls_through_to_google(monkeypatch):
-    """Empty GEMINI_API_KEY should fall through to GOOGLE_API_KEY (per docstring contract)."""
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-    monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
-    assert resolve_summary_provider() == ("gemini", "google-key")
-
-
-def test_resolve_provider_all_empty_returns_none(monkeypatch):
-    """All env vars set to empty strings should be treated as unset."""
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GEMINI_API_KEY", "")
-    monkeypatch.setenv("GOOGLE_API_KEY", "")
-    monkeypatch.setenv("OPENAI_API_KEY", "")
-    assert resolve_summary_provider() is None
+    assert resolve_summary_chain() == []
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +308,7 @@ def test_summarize_node_none_content_raises(monkeypatch):
 
 
 def test_summarize_node_provider_is_case_sensitive():
-    """provider arg must match the lowercase canonical form returned by resolve_summary_provider."""
+    """provider arg must match the lowercase canonical provider form (default-model path)."""
     node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
     with pytest.raises(ValueError, match="Unsupported provider: 'Gemini'"):
         summarize_node(node, provider="Gemini", api_key="k")
@@ -328,24 +327,6 @@ def test_summarize_node_handles_braces_in_source(monkeypatch):
     assert result == "Returns a dict."
     # Verify the source went verbatim into the prompt
     assert src in mock_completion.call_args.kwargs["messages"][0]["content"]
-
-
-# ---------------------------------------------------------------------------
-# _provider_from_model (cache-key provider derivation)
-# ---------------------------------------------------------------------------
-
-
-def test_provider_from_model_derives_prefix():
-    from better_code_review_graph.summarizer import _provider_from_model
-
-    assert _provider_from_model("gemini/gemini-2.5-flash") == "gemini"
-    assert _provider_from_model("google/gemini-pro") == "gemini"
-    assert _provider_from_model("openai/gpt-4o-mini") == "openai"
-    # Bare OpenAI-style name (no provider prefix) -> openai default.
-    assert _provider_from_model("gpt-4o-mini") == "openai"
-    # Unknown / non-canonical prefixes are passed through verbatim.
-    assert _provider_from_model("cohere/command-r") == "cohere"
-    assert _provider_from_model("anthropic/claude-haiku") == "anthropic"
 
 
 # ---------------------------------------------------------------------------
@@ -770,16 +751,17 @@ def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch
         store.close()
 
 
-def test_batch_summarize_no_override_forwards_env_key(monkeypatch, tmp_path):
-    """Without SUMMARY_MODEL, the env-resolved api_key + provider are forwarded.
+def test_batch_summarize_default_chain_passes_prefixed_model(monkeypatch, tmp_path):
+    """Default chain (key-gated) passes chain[0] as an explicit prefixed model.
 
-    Locks the non-override branch: api_key is the env key (not None) and no
-    explicit model override is passed (summarize_node picks the default).
+    api_key is always None (litellm resolves the provider's env key from the
+    model prefix) and the cache provider is derived from the model prefix.
     """
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
     from better_code_review_graph.summarizer import batch_summarize
 
+    monkeypatch.delenv("SUMMARY_MODELS", raising=False)
     monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -811,9 +793,9 @@ def test_batch_summarize_no_override_forwards_env_key(monkeypatch, tmp_path):
         assert result.generated == 1
         assert result.provider == "gemini"
         call_kwargs = mock_sum.call_args.kwargs
-        assert call_kwargs["api_key"] == "g-key"
+        assert call_kwargs["api_key"] is None
         assert call_kwargs["provider"] == "gemini"
-        assert call_kwargs["model"] is None
+        assert call_kwargs["model"] == "gemini/gemini-2.5-flash"
     finally:
         store.close()
 

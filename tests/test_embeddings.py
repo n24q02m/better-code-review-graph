@@ -20,6 +20,7 @@ from better_code_review_graph.embeddings import (
     embed_all_nodes,
     init_backend,
     resolve_backend,
+    resolve_embedding_chain,
     semantic_search,
 )
 from better_code_review_graph.graph import GraphNode, GraphStore
@@ -177,6 +178,145 @@ class TestResolveBackend:
     def test_default_local(self):
         with patch.dict(os.environ, {}, clear=True):
             assert resolve_backend() == "local"
+
+
+# ---------------------------------------------------------------------------
+# Embedding model chain (per-task model-chain redesign)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveEmbeddingChain:
+    def test_explicit_models_from_env(self, monkeypatch):
+        monkeypatch.delenv("EMBEDDING_BACKEND", raising=False)
+        monkeypatch.setenv(
+            "EMBEDDING_MODELS",
+            "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+        )
+        chain = resolve_embedding_chain()
+        assert chain == [
+            "jina_ai/jina-embeddings-v5-text-small",
+            "gemini/gemini-embedding-001",
+        ]
+        assert resolve_backend() == "cloud"
+
+    def test_explicit_models_strip_and_skip_empties(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_MODELS", " openai/text-embedding-3-large , , ")
+        assert resolve_embedding_chain() == ["openai/text-embedding-3-large"]
+
+    def test_empty_no_keys_is_local(self, monkeypatch):
+        for k in (
+            "EMBEDDING_MODELS",
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        assert resolve_embedding_chain() == []
+        assert resolve_backend() == "local"
+
+    def test_default_chain_key_gated(self, monkeypatch):
+        """Default keeps only models whose provider key is configured."""
+        for k in (
+            "EMBEDDING_BACKEND",
+            "EMBEDDING_MODELS",
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        # Only the openai model survives key-gating.
+        assert resolve_embedding_chain() == ["openai/text-embedding-3-large"]
+        assert resolve_backend() == "cloud"
+
+    def test_default_chain_gemini_alias(self, monkeypatch):
+        """GOOGLE_API_KEY satisfies the gemini model's key requirement."""
+        for k in (
+            "EMBEDDING_MODELS",
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("GOOGLE_API_KEY", "g-test")
+        assert resolve_embedding_chain() == ["gemini/gemini-embedding-001"]
+
+    def test_default_chain_cohere_alias(self, monkeypatch):
+        """CO_API_KEY satisfies the cohere model's key requirement."""
+        for k in (
+            "EMBEDDING_MODELS",
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("CO_API_KEY", "co-test")
+        assert resolve_embedding_chain() == ["cohere/embed-multilingual-v3.0"]
+
+    def test_legacy_embedding_model_honored(self, monkeypatch):
+        for k in (
+            "EMBEDDING_BACKEND",
+            "EMBEDDING_MODELS",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
+        assert resolve_embedding_chain() == ["gemini/gemini-embedding-001"]
+        assert resolve_backend() == "cloud"
+
+    def test_explicit_models_wins_over_legacy(self, monkeypatch):
+        monkeypatch.setenv("EMBEDDING_MODELS", "openai/text-embedding-3-large")
+        monkeypatch.setenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
+        assert resolve_embedding_chain() == ["openai/text-embedding-3-large"]
+
+    def test_legacy_backend_env_honored(self, monkeypatch):
+        for k in (
+            "EMBEDDING_MODELS",
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("EMBEDDING_BACKEND", "cloud")
+        assert resolve_backend() == "cloud"
+        monkeypatch.setenv("EMBEDDING_BACKEND", "litellm")
+        assert resolve_backend() == "cloud"
+        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+        assert resolve_backend() == "local"
+
+    def test_cloud_backend_uses_first_chain_model(self, monkeypatch):
+        for k in (
+            "EMBEDDING_MODEL",
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+            "CO_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("EMBEDDING_MODELS", "gemini/gemini-embedding-001")
+        backend = CloudEmbeddingBackend()
+        assert backend.model == "gemini/gemini-embedding-001"
 
 
 class TestInitBackend:
