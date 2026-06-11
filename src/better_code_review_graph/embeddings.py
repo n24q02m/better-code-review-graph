@@ -1,16 +1,19 @@
-"""Dual-mode embedding: local ONNX (default) + cloud (multi-provider).
+"""Dual-mode embedding: local ONNX (default) + cloud (litellm passthrough).
 
 Supports two backends:
 - **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
   download on first use. Default backend.
-- **cloud**: Cloud embedding via native SDKs. Supports Jina, Gemini, OpenAI,
-  and Cohere. Auto-detected from API key env vars with priority:
-  jina > gemini > openai > cohere.
+- **cloud**: Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
+  Supports Jina, Gemini, OpenAI, Cohere, or any litellm ``provider/model``.
+  Models come from the ``EMBEDDING_MODELS`` chain (ordered ``provider/model``
+  list, first entry is the active model).
 
-Backend selection (always returns a valid backend):
-1. Explicit EMBEDDING_BACKEND env var
-2. 'cloud' if any provider API key is set
-3. 'local' (default, always available)
+Backend selection:
+- ``EMBEDDING_MODELS`` non-empty -> 'cloud' (first entry is the model).
+- Empty -> 'local' (default ONNX, always available).
+- Default chain keeps only models whose provider key is configured.
+- Legacy ``EMBEDDING_BACKEND`` / ``EMBEDDING_MODEL`` honored one release
+  (with a deprecation warning).
 
 All embeddings are stored at fixed 768 dimensions (MRL truncation).
 Switching backend does NOT invalidate existing vectors.
@@ -20,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -29,6 +33,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -203,39 +209,51 @@ class Qwen3EmbedBackend:
 # ---------------------------------------------------------------------------
 
 
-# Priority-ordered mapping: first provider whose key is present in env wins.
-# Mirrors wet-mcp + mnemo-mcp _EMBEDDING_PROVIDERS (MCP config parity).
-_DEFAULT_CLOUD_MODELS: tuple[tuple[str, str], ...] = (
-    ("JINA_AI_API_KEY", "jina_ai/jina-embeddings-v5-text-small"),
-    ("GEMINI_API_KEY", "gemini/gemini-embedding-001"),
-    ("GOOGLE_API_KEY", "gemini/gemini-embedding-001"),
-    ("OPENAI_API_KEY", "text-embedding-3-large"),
-    ("COHERE_API_KEY", "embed-multilingual-v3.0"),
-    ("CO_API_KEY", "embed-multilingual-v3.0"),
+# Explicit provider prefixes -> unambiguous key detection + litellm routing.
+_DEFAULT_EMBEDDING_CHAIN = (
+    "jina_ai/jina-embeddings-v5-text-small",
+    "gemini/gemini-embedding-001",
+    "openai/text-embedding-3-large",
+    "cohere/embed-multilingual-v3.0",
 )
+_KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KEY"}
 
 
-def _auto_select_cloud_model() -> str:
-    """Pick the first cloud model whose API key is available in env.
+def _key_available(env_var: str) -> bool:
+    if os.getenv(env_var):
+        return True
+    alias = _KEY_ALIASES.get(env_var)
+    return bool(alias and os.getenv(alias))
 
-    Default is ``embed-multilingual-v3.0`` (Cohere) only when no cloud key is
-    set -- that keeps behaviour stable in pure-local mode where this value is
-    never used. When cloud keys are present, we must pick a model whose
-    provider key is non-empty; otherwise the provider SDK builds an empty
-    ``Bearer`` header and fails with ``LocalProtocolError`` before the
-    request leaves the machine.
+
+def resolve_embedding_chain() -> list[str]:
+    """Ordered embedding chain from EMBEDDING_MODELS (fallback order).
+
+    Empty -> local ONNX. Legacy EMBEDDING_MODEL honored one release (warning).
+    Default keeps ONLY models whose provider key is configured; none -> empty
+    -> local. Not "any key" (that would keep keyless cloud models).
     """
-    for env_var, model in _DEFAULT_CLOUD_MODELS:
-        if os.getenv(env_var):
-            return model
-    return "embed-multilingual-v3.0"
+    from mcp_core.llm.providers import key_env_for_model
+
+    explicit = os.getenv("EMBEDDING_MODELS", "").strip()
+    if explicit:
+        return [m.strip() for m in explicit.split(",") if m.strip()]
+    legacy = os.getenv("EMBEDDING_MODEL", "").strip()
+    if legacy:
+        logger.warning(
+            "Deprecated EMBEDDING_MODEL honored; migrate to EMBEDDING_MODELS "
+            "(removed next release)."
+        )
+        return [legacy]
+    return [m for m in _DEFAULT_EMBEDDING_CHAIN if _key_available(key_env_for_model(m))]
 
 
 class CloudEmbeddingBackend:
-    """Cloud embedding via native SDKs (Jina, Gemini, OpenAI, Cohere).
+    """Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
 
-    Provider is auto-detected from the model name or env vars.
-    Priority: jina > gemini > openai > cohere.
+    Provider is auto-detected from the model name or env vars and mapped to
+    a litellm ``provider/model`` string. Priority: jina > gemini > openai >
+    cohere.
     """
 
     MAX_BATCH_SIZE = 96
@@ -245,10 +263,12 @@ class CloudEmbeddingBackend:
         model: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model or os.getenv("EMBEDDING_MODEL") or _auto_select_cloud_model()
+        self.model = (
+            model
+            or (resolve_embedding_chain() or ["cohere/embed-multilingual-v3.0"])[0]
+        )
         self.api_key = api_key
         self._provider = _detect_embedding_provider(self.model)
-        self._bare_model = _strip_provider(self.model)
 
     @property
     def name(self) -> str:
@@ -267,107 +287,60 @@ class CloudEmbeddingBackend:
         # cohere
         return os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
 
+    def _litellm_model(self) -> str:
+        """Map crg's model naming to a litellm ``provider/model`` string."""
+        if "/" in self.model:
+            return self.model
+        if self._provider == "jina":
+            return f"jina_ai/{self.model}"
+        if self._provider == "gemini":
+            return f"gemini/{self.model}"
+        if self._provider == "cohere":
+            return f"cohere/{self.model}"
+        # OpenAI-style bare names (text-embedding-3-*) pass through as-is.
+        return self.model
+
     def _call_provider(
         self, texts: list[str], dimensions: int | None = None
     ) -> list[list[float]]:
-        """Route to the correct provider SDK."""
-        if self._provider == "jina":
-            return self._embed_jina(texts, dimensions)
-        elif self._provider == "gemini":
-            return self._embed_gemini(texts, dimensions)
-        elif self._provider == "openai":
-            return self._embed_openai(texts, dimensions)
-        else:
-            return self._embed_cohere(texts, dimensions)
+        """Single cloud path via mcp_core.llm (litellm passthrough)."""
+        # Lazy import: litellm costs ~1-2s on first import.
+        from mcp_core.llm import embedding
 
-    def _embed_jina(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via Jina AI (httpx, REST API)."""
-        import httpx
-
-        key = self._resolve_api_key()
-        payload: dict[str, Any] = {
-            "model": self._bare_model,
-            "input": texts,
-        }
-        if dimensions:
-            payload["dimensions"] = dimensions
-
-        response = httpx.post(
-            "https://api.jina.ai/v1/embeddings",
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        data = response.json()["data"]
-        data_sorted = sorted(data, key=lambda x: x["index"])
-        return [d["embedding"] for d in data_sorted]
-
-    def _embed_gemini(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via Google Gemini (google-genai SDK)."""
-        from google import genai
-        from google.genai import types
-
-        key = self._resolve_api_key()
-        client = genai.Client(api_key=key)
-
-        config_kwargs: dict[str, Any] = {}
-        if dimensions:
-            config_kwargs["output_dimensionality"] = dimensions
-
-        result = client.models.embed_content(
-            model=self._bare_model,
-            contents=texts,
-            config=types.EmbedContentConfig(**config_kwargs) if config_kwargs else None,
-        )
-
-        embeddings = result.embeddings or []
-        return [list(e.values or []) for e in embeddings]
-
-    def _embed_openai(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via OpenAI SDK."""
-        from openai import OpenAI
-
-        key = self._resolve_api_key()
-        client = OpenAI(api_key=key)
-
-        kwargs: dict[str, Any] = {
-            "model": self._bare_model,
-            "input": texts,
-        }
+        kwargs: dict[str, Any] = {}
         if dimensions:
             kwargs["dimensions"] = dimensions
+        if self._provider == "cohere":
+            kwargs["input_type"] = "search_document"
 
-        response = client.embeddings.create(**kwargs)
-        data = sorted(response.data, key=lambda x: x.index)
-        return [d.embedding for d in data]
-
-    def _embed_cohere(
-        self, texts: list[str], dimensions: int | None = None
-    ) -> list[list[float]]:
-        """Embed via Cohere SDK (ClientV2)."""
-        import cohere
-
-        key = self._resolve_api_key()
-        client = cohere.ClientV2(api_key=key)
-
-        response = client.embed(
-            model=self._bare_model,
-            texts=texts,
-            input_type="search_document",
-            embedding_types=["float"],
-            truncate="END",
+        # Normalise empty string to None: mcp_core.llm forwards a non-None
+        # api_key to litellm, which suppresses provider env-var fallback (401).
+        resp = embedding(
+            model=self._litellm_model(),
+            input=texts,
+            api_base=os.getenv("EMBEDDING_API_BASE") or None,
+            api_key=self._resolve_api_key() or None,
+            **kwargs,
         )
-        embeddings: list[list[float]] = list(response.embeddings.float_ or [])
+
+        # litellm embedding items may be pydantic ``Embedding`` objects or
+        # plain dicts depending on provider/version -- handle both shapes,
+        # and ``resp.data`` may be None.
+        def _idx(item: Any) -> int:
+            return (
+                item.get("index", 0)
+                if isinstance(item, dict)
+                else getattr(item, "index", 0)
+            )
+
+        def _vec(item: Any) -> list[float]:
+            return item["embedding"] if isinstance(item, dict) else item.embedding
+
+        data = sorted(resp.data or [], key=_idx)
+        embeddings = [_vec(item) for item in data]
+
+        # Truncate locally if server returned more dims than requested (Cohere
+        # and other providers that ignore ``dimensions`` server-side).
         if dimensions and embeddings and len(embeddings[0]) > dimensions:
             embeddings = [e[:dimensions] for e in embeddings]
         return embeddings
@@ -432,31 +405,19 @@ class CloudEmbeddingBackend:
 
 
 def resolve_backend() -> str:
-    """Auto-detect backend from env vars.
+    """Resolve the embedding backend ('cloud' or 'local').
 
-    Priority:
-    1. Explicit EMBEDDING_BACKEND env var
-    2. 'cloud' if any provider API key is set
-    3. 'local' (default, always available)
+    Legacy ``EMBEDDING_BACKEND`` is honored one release (warning); otherwise
+    inferred from the resolved embedding chain: a non-empty chain -> 'cloud',
+    empty -> 'local'.
     """
-    explicit = os.getenv("EMBEDDING_BACKEND")
-    if explicit:
-        if explicit == "litellm":
-            return "cloud"
-        return explicit
-    if any(
-        os.getenv(k)
-        for k in (
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "OPENAI_API_KEY",
-            "COHERE_API_KEY",
-            "CO_API_KEY",
+    legacy = os.getenv("EMBEDDING_BACKEND")
+    if legacy:
+        logger.warning(
+            "Deprecated EMBEDDING_BACKEND honored; inferred from EMBEDDING_MODELS now."
         )
-    ):
-        return "cloud"
-    return "local"
+        return "cloud" if legacy in ("cloud", "litellm") else legacy
+    return "cloud" if resolve_embedding_chain() else "local"
 
 
 def init_backend(mode: str | None = None) -> EmbeddingBackend:

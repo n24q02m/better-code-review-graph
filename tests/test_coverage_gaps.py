@@ -53,144 +53,56 @@ def _make_graph_node(**kwargs) -> GraphNode:
 
 
 # ---------------------------------------------------------------------------
-# embeddings.py: Cloud provider actual implementations (lines 278-343)
+# embeddings.py: Cloud dispatch via mcp_core.llm.embedding (litellm passthrough)
 # ---------------------------------------------------------------------------
 
 
+def _embedding_resp(n, dim=768):
+    """Build a fake mcp_core.llm.embedding response with pydantic-like items."""
+    resp = MagicMock()
+    items = []
+    for i in range(n):
+        item = MagicMock()
+        item.index = i
+        item.embedding = [0.1] * dim
+        items.append(item)
+    resp.data = items
+    return resp
+
+
 class TestCloudProviderImplementations:
-    """Test actual provider method implementations with mocked SDKs."""
+    """Test the single litellm-passthrough dispatch path + per-provider kwargs."""
 
-    def test_embed_jina_actual(self):
-        """Cover _embed_jina lines 278-300 with mocked httpx."""
+    def test_dispatch_maps_jina_model(self):
+        """Bare Jina model is mapped to the jina_ai/ prefix on dispatch."""
         backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="test-key")
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"index": 0, "embedding": [0.1] * 768},
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
+        with patch("mcp_core.llm.embedding", return_value=_embedding_resp(1)) as m:
+            result = backend.embed_texts(["hello"], dimensions=768)
+        assert len(result) == 1
+        assert len(result[0]) == 768
+        assert m.call_args.kwargs["model"] == "jina_ai/jina-embeddings-v3"
+        assert m.call_args.kwargs["dimensions"] == 768
+        # Jina is not cohere -> no input_type kwarg.
+        assert "input_type" not in m.call_args.kwargs
 
-        with patch("httpx.post", return_value=mock_response) as mock_post:
-            result = backend._embed_jina(["hello"], dimensions=768)
-            assert len(result) == 1
-            assert len(result[0]) == 768
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args
-            assert call_kwargs[1]["json"]["dimensions"] == 768
-
-    def test_embed_jina_no_dimensions(self):
-        """Cover _embed_jina without dimensions param."""
-        backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="test-key")
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"index": 0, "embedding": [0.1] * 1024}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_response):
-            result = backend._embed_jina(["hello"], dimensions=None)
-            assert len(result) == 1
-
-    def test_embed_jina_multiple_texts(self):
-        """Cover Jina with multiple texts and sort by index."""
-        backend = CloudEmbeddingBackend(model="jina-embeddings-v3", api_key="test-key")
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [
-                {"index": 1, "embedding": [0.2] * 768},
-                {"index": 0, "embedding": [0.1] * 768},
-            ]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.post", return_value=mock_response):
-            result = backend._embed_jina(["a", "b"], dimensions=768)
-            assert len(result) == 2
-            # Should be sorted by index
-            assert result[0][0] == pytest.approx(0.1)
-            assert result[1][0] == pytest.approx(0.2)
-
-    def test_embed_gemini_actual(self):
-        """Cover _embed_gemini lines 306-323 with mocked google-genai."""
-        backend = CloudEmbeddingBackend(model="gemini-embedding-2", api_key="test-key")
-
-        mock_embedding = MagicMock()
-        mock_embedding.values = [0.1] * 768
-        mock_result = MagicMock()
-        mock_result.embeddings = [mock_embedding]
-
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_result
-
-        with patch("google.genai.Client", return_value=mock_client):
-            result = backend._embed_gemini(["hello"], dimensions=768)
-            assert len(result) == 1
-            assert len(result[0]) == 768
-
-    def test_embed_gemini_no_dimensions(self):
-        """Cover _embed_gemini without dimensions (no config)."""
-        backend = CloudEmbeddingBackend(model="gemini-embedding-2", api_key="test-key")
-
-        mock_embedding = MagicMock()
-        mock_embedding.values = [0.1] * 1024
-        mock_result = MagicMock()
-        mock_result.embeddings = [mock_embedding]
-
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_result
-
-        with patch("google.genai.Client", return_value=mock_client):
-            result = backend._embed_gemini(["hello"], dimensions=None)
-            assert len(result) == 1
-            # config should be None when no dimensions
-            call_kwargs = mock_client.models.embed_content.call_args[1]
-            assert call_kwargs["config"] is None
-
-    def test_embed_openai_actual(self):
-        """Cover _embed_openai lines 329-343 with mocked OpenAI SDK."""
+    def test_dispatch_no_dimensions_omits_kwarg(self):
+        """Without dimensions, the kwarg is not forwarded."""
         backend = CloudEmbeddingBackend(
             model="text-embedding-3-large", api_key="test-key"
         )
+        with patch("mcp_core.llm.embedding", return_value=_embedding_resp(1)) as m:
+            result = backend.embed_texts(["hello"], dimensions=None)
+        assert len(result) == 1
+        assert "dimensions" not in m.call_args.kwargs
 
-        mock_data_item = MagicMock()
-        mock_data_item.index = 0
-        mock_data_item.embedding = [0.1] * 768
-
-        mock_response = MagicMock()
-        mock_response.data = [mock_data_item]
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-
-        with patch("openai.OpenAI", return_value=mock_client):
-            result = backend._embed_openai(["hello"], dimensions=768)
-            assert len(result) == 1
-            assert len(result[0]) == 768
-            call_kwargs = mock_client.embeddings.create.call_args[1]
-            assert call_kwargs["dimensions"] == 768
-
-    def test_embed_openai_no_dimensions(self):
-        """Cover _embed_openai without dimensions."""
+    def test_dispatch_cohere_passes_input_type(self):
+        """Cohere provider forwards input_type='search_document' through kwargs."""
         backend = CloudEmbeddingBackend(
-            model="text-embedding-3-large", api_key="test-key"
+            model="cohere/embed-multilingual-v3.0", api_key="test-key"
         )
-
-        mock_data_item = MagicMock()
-        mock_data_item.index = 0
-        mock_data_item.embedding = [0.1] * 1536
-
-        mock_response = MagicMock()
-        mock_response.data = [mock_data_item]
-
-        mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = mock_response
-
-        with patch("openai.OpenAI", return_value=mock_client):
-            result = backend._embed_openai(["hello"], dimensions=None)
-            assert len(result) == 1
-            call_kwargs = mock_client.embeddings.create.call_args[1]
-            assert "dimensions" not in call_kwargs
+        with patch("mcp_core.llm.embedding", return_value=_embedding_resp(1)) as m:
+            backend.embed_texts(["hello"], dimensions=768)
+        assert m.call_args.kwargs["input_type"] == "search_document"
 
 
 # ---------------------------------------------------------------------------
@@ -201,26 +113,27 @@ class TestCloudProviderImplementations:
 class TestRetryExhaustion:
     def test_non_retryable_error_raises_immediately(self):
         """Non-retryable errors should raise without retry."""
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = ValueError("invalid input data")
+        backend = CloudEmbeddingBackend(model="cohere/v3", api_key="test-key")
+        with patch(
+            "mcp_core.llm.embedding", side_effect=ValueError("invalid input data")
+        ) as m:
             with pytest.raises(ValueError, match="invalid input"):
                 backend.embed_texts(["test"])
+        # Non-retryable -> called exactly once.
+        assert m.call_count == 1
 
     def test_retryable_error_exhausts_retries(self):
         """Retryable errors should exhaust retries then raise."""
-        backend = CloudEmbeddingBackend(api_key="test-key")
-        with patch("cohere.ClientV2") as mock_cls:
-            mock_client = MagicMock()
-            mock_cls.return_value = mock_client
-            mock_client.embed.side_effect = Exception("429 rate limit exceeded")
+        backend = CloudEmbeddingBackend(model="cohere/v3", api_key="test-key")
+        with patch(
+            "mcp_core.llm.embedding",
+            side_effect=Exception("429 rate limit exceeded"),
+        ) as m:
             with patch("time.sleep"):
                 with pytest.raises(Exception, match="429"):
                     backend.embed_texts(["test"])
             # Should have been called 3 times (max retries)
-            assert mock_client.embed.call_count == 3
+            assert m.call_count == 3
 
 
 # ---------------------------------------------------------------------------

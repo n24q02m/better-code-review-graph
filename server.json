@@ -6,12 +6,12 @@
     "url": "https://github.com/n24q02m/better-code-review-graph.git",
     "source": "github"
   },
-  "version": "3.17.2-beta.2",
+  "version": "3.18.0-beta.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "better-code-review-graph",
-      "version": "3.17.2-beta.2",
+      "version": "3.18.0-beta.3",
       "runtimeHint": "uvx",
       "runtimeArgs": [
         "--python",
@@ -22,28 +22,40 @@
       },
       "environmentVariables": [
         {
-          "description": "Embedding backend override: 'local' (qwen3-embed ONNX) or 'litellm' (cloud). Auto-detected if omitted.",
+          "description": "Ordered embedding model chain 'provider/model,...'; empty = local ONNX",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "EMBEDDING_MODELS"
+        },
+        {
+          "description": "Ordered summarizer model chain; empty = summaries disabled",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "SUMMARY_MODELS"
+        },
+        {
+          "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_BACKEND"
         },
         {
-          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key). Enables LiteLLM backend.",
-          "isRequired": false,
-          "isSecret": true,
-          "name": "API_KEYS"
-        },
-        {
-          "description": "LiteLLM Proxy URL for self-hosted gateway. Enables LiteLLM backend via proxy.",
+          "description": "Custom OpenAI-compatible base URL for cloud embedding (litellm passthrough). Optional.",
           "isRequired": false,
           "isSecret": false,
-          "name": "LITELLM_PROXY_URL"
+          "name": "EMBEDDING_API_BASE"
         },
         {
-          "description": "LiteLLM Proxy virtual key.",
+          "description": "Custom OpenAI-compatible base URL for the LLM summarizer (litellm passthrough). Optional.",
           "isRequired": false,
-          "isSecret": true,
-          "name": "LITELLM_PROXY_KEY"
+          "isSecret": false,
+          "name": "LLM_API_BASE"
+        },
+        {
+          "description": "DEPRECATED (honored one release): single summarizer model as a litellm 'provider/model' string. Use SUMMARY_MODELS instead.",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "SUMMARY_MODEL"
         }
       ]
     },
@@ -56,10 +68,10 @@
       },
       "environmentVariables": [
         {
-          "description": "API keys for LiteLLM cloud embedding (format: ENV_VAR:key)",
+          "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
           "isRequired": false,
-          "isSecret": true,
-          "name": "API_KEYS"
+          "isSecret": false,
+          "name": "EMBEDDING_BACKEND"
         }
       ]
     }

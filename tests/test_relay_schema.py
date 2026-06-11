@@ -1,8 +1,12 @@
-"""Tests for relay_schema module."""
+"""Tests for relay_schema module (model-chain widget)."""
 
 from __future__ import annotations
 
 from better_code_review_graph.relay_schema import RELAY_SCHEMA
+
+
+def _fields_by_key() -> dict:
+    return {f["key"]: f for f in RELAY_SCHEMA["fields"]}
 
 
 class TestRelaySchema:
@@ -12,6 +16,35 @@ class TestRelaySchema:
     def test_display_name(self):
         assert RELAY_SCHEMA["displayName"] == "Code Review Graph"
 
-    def test_has_fields(self):
-        fields = RELAY_SCHEMA["fields"]
-        assert len(fields) == 4
+    def test_model_chain_tasks_are_embedding_and_summary(self):
+        tasks = {
+            f["task"] for f in RELAY_SCHEMA["fields"] if f.get("type") == "model-chain"
+        }
+        assert tasks == {"embedding", "summary"}
+
+    def test_embedding_has_local_summary_does_not(self):
+        fields = _fields_by_key()
+        assert fields["EMBEDDING_MODELS"]["hasLocal"] is True
+        assert fields["SUMMARY_MODELS"]["hasLocal"] is False
+
+    def test_suggested_models_all_have_provider_prefix(self):
+        for f in RELAY_SCHEMA["fields"]:
+            if f.get("type") == "model-chain":
+                for model in f["suggestedModels"]:
+                    assert "/" in model, f"{model} missing provider prefix"
+
+    def test_derived_key_fields_present_and_marked(self):
+        fields = _fields_by_key()
+        for key in (
+            "JINA_AI_API_KEY",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "COHERE_API_KEY",
+        ):
+            assert key in fields
+            assert fields[key]["derived"] is True
+
+    def test_no_priority_arrows_in_capability_info(self):
+        for cap in RELAY_SCHEMA["capabilityInfo"]:
+            assert ">" not in cap["priority"], cap
+            assert cap["priority"] == "configurable"
