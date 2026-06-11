@@ -134,9 +134,10 @@ def _provider_from_model(model: str) -> str:
         prefix = model.split("/", 1)[0].lower()
         if prefix in ("gemini", "google"):
             return "gemini"
-        if prefix in ("openai", "gpt"):
+        if prefix == "openai":
             return "openai"
         return prefix
+    # Bare names with no provider prefix are OpenAI-style (e.g. gpt-4o-mini).
     return "openai"
 
 
@@ -144,28 +145,40 @@ def summarize_node(
     node: NodeNeedingSummary,
     *,
     provider: str,
-    api_key: str,
+    api_key: str | None,
+    model: str | None = None,
 ) -> str:
     """Generate a one-paragraph docstring summary for a single node.
 
     Dispatches through ``mcp_core.llm.completion`` (litellm passthrough).
-    The model is ``SUMMARY_MODEL`` when that env var is set, otherwise the
-    per-provider default in :data:`_DEFAULT_SUMMARY_MODELS`.
+
+    Model resolution:
+    - When ``model`` is passed explicitly (a litellm ``provider/model``
+      override), it is used verbatim. Routing is carried by the model
+      string, so the ``provider`` value is only a label and is *not*
+      validated against {"gemini", "openai"}.
+    - When ``model`` is ``None``, the per-provider default in
+      :data:`_DEFAULT_SUMMARY_MODELS` is used and ``provider`` MUST be one
+      of {"gemini", "openai"}.
 
     Args:
         node: NodeNeedingSummary with source_text to summarize.
-        provider: must be lowercase ("gemini" or "openai") -- matches
-            ``resolve_summary_provider()`` return tuple's first element.
-            No normalization is performed; the contract is explicit
-            lowercase. Selects the default model when ``SUMMARY_MODEL`` is
-            unset.
-        api_key: API credential for the provider.
+        provider: lowercase provider label. In the default-model path it
+            selects the model and must be "gemini" or "openai" (matches
+            ``resolve_summary_provider()``); in the explicit-``model`` path
+            it is purely a label for error messages.
+        api_key: API credential for the provider, or ``None`` to let
+            litellm resolve the provider's key from the environment.
+        model: optional explicit litellm ``provider/model`` override. When
+            set, skips the per-provider default lookup and the provider
+            allowlist guard.
 
     Returns:
         The generated summary text, stripped of leading/trailing whitespace.
 
     Raises:
-        ValueError: if provider is not one of {"gemini", "openai"}.
+        ValueError: in the default-model path only, if provider is not one
+            of {"gemini", "openai"}.
         RuntimeError: if the LLM call fails (wraps the original
             exception), or if litellm returns an empty/None response
             (e.g. safety filter / content policy block, empty ``choices``
@@ -174,12 +187,12 @@ def summarize_node(
     Cost: 1 API call per invocation. The caller is responsible for cache hit/miss
     logic (see compute_summary_cache_key in this module).
     """
-    if provider not in {"gemini", "openai"}:
-        raise ValueError(
-            f"Unsupported provider: {provider!r} (expected 'gemini' or 'openai')"
-        )
-
-    model = os.environ.get("SUMMARY_MODEL") or _DEFAULT_SUMMARY_MODELS[provider]
+    if model is None:
+        if provider not in {"gemini", "openai"}:
+            raise ValueError(
+                f"Unsupported provider: {provider!r} (expected 'gemini' or 'openai')"
+            )
+        model = _DEFAULT_SUMMARY_MODELS[provider]
 
     # Concatenate rather than .format() so source code containing literal
     # ``{`` / ``}`` (dict literals, f-strings, JSX) does not blow up
@@ -271,14 +284,20 @@ def batch_summarize(
         )
     provider, api_key = resolved
 
-    # Cache tag: when SUMMARY_MODEL overrides the per-provider default, derive
-    # the tag from the override's model prefix so switching models invalidates
-    # stale cached summaries. Without an override the env-resolved provider is
-    # the tag (e.g. "gemini"/"openai").
+    # SUMMARY_MODEL override: the model string carries litellm routing, so it
+    # may target a different provider than the env-resolved one. In that case
+    # (a) the cache tag is derived from the model prefix (so switching models
+    # invalidates stale summaries), and (b) the env-resolved api_key is dropped
+    # to None — it belongs to ``provider``, not the override's provider, and
+    # forwarding it would 401. ``api_key=None`` lets litellm resolve the
+    # correct key from the environment for the override's provider.
     override_model = os.environ.get("SUMMARY_MODEL")
-    cache_provider = (
-        _provider_from_model(override_model) if override_model else provider
-    )
+    if override_model:
+        cache_provider = _provider_from_model(override_model)
+        effective_api_key: str | None = None
+    else:
+        cache_provider = provider
+        effective_api_key = api_key
 
     rows = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
@@ -314,8 +333,9 @@ def batch_summarize(
                     source_text=src,
                     source_hash=live_hash,
                 ),
-                provider=provider,
-                api_key=api_key,
+                provider=cache_provider,
+                api_key=effective_api_key,
+                model=override_model,
             )
         except Exception as exc:
             logger.warning("summarize_node failed for id=%d: %s", row_id, exc)

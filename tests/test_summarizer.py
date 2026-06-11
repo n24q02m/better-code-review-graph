@@ -230,9 +230,14 @@ def test_summarize_node_openai_returns_text(monkeypatch):
     assert call_kwargs["messages"][0]["role"] == "user"
 
 
-def test_summarize_node_uses_summary_model_override(monkeypatch):
-    """SUMMARY_MODEL env, when set, is used verbatim regardless of provider."""
-    monkeypatch.setenv("SUMMARY_MODEL", "openai/gpt-5-mini")
+def test_summarize_node_explicit_model_used_verbatim(monkeypatch):
+    """An explicit ``model`` override is used verbatim, ignoring the provider default.
+
+    The SUMMARY_MODEL env is NOT read inside summarize_node anymore; the
+    override is plumbed via the ``model`` param by batch_summarize. Setting
+    the env here proves it has no effect on the explicit-model path.
+    """
+    monkeypatch.setenv("SUMMARY_MODEL", "ignored/by-summarize-node")
     node = NodeNeedingSummary(
         node_id="x.py::foo", source_text="def foo(): pass", source_hash=None
     )
@@ -240,8 +245,10 @@ def test_summarize_node_uses_summary_model_override(monkeypatch):
     with patch(
         "mcp_core.llm.completion", return_value=fake_response
     ) as mock_completion:
-        # provider is "gemini" but override forces the openai model.
-        result = summarize_node(node, provider="gemini", api_key="key")
+        # provider label is "gemini" but the explicit model wins.
+        result = summarize_node(
+            node, provider="gemini", api_key="key", model="openai/gpt-5-mini"
+        )
     assert result == "A summary."
     assert mock_completion.call_args.kwargs["model"] == "openai/gpt-5-mini"
 
@@ -334,11 +341,11 @@ def test_provider_from_model_derives_prefix():
     assert _provider_from_model("gemini/gemini-2.5-flash") == "gemini"
     assert _provider_from_model("google/gemini-pro") == "gemini"
     assert _provider_from_model("openai/gpt-4o-mini") == "openai"
-    assert _provider_from_model("gpt/gpt-4o") == "openai"
-    # Bare OpenAI-style name -> openai default.
+    # Bare OpenAI-style name (no provider prefix) -> openai default.
     assert _provider_from_model("gpt-4o-mini") == "openai"
-    # Unknown prefix is passed through verbatim.
+    # Unknown / non-canonical prefixes are passed through verbatim.
     assert _provider_from_model("cohere/command-r") == "cohere"
+    assert _provider_from_model("anthropic/claude-haiku") == "anthropic"
 
 
 # ---------------------------------------------------------------------------
@@ -752,6 +759,149 @@ def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch
         ).fetchone()
         assert row[0] == "New summary."
         assert row[1] == "openai"
+        # C1: env api_key (gemini) must NOT be forwarded to the openai model.
+        # api_key=None lets litellm resolve the correct env key; provider label +
+        # explicit model override are passed through.
+        call_kwargs = mock_sum.call_args.kwargs
+        assert call_kwargs["api_key"] is None
+        assert call_kwargs["model"] == "openai/gpt-4o-mini"
+        assert call_kwargs["provider"] == "openai"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_no_override_forwards_env_key(monkeypatch, tmp_path):
+    """Without SUMMARY_MODEL, the env-resolved api_key + provider are forwarded.
+
+    Locks the non-override branch: api_key is the env key (not None) and no
+    explicit model override is passed (summarize_node picks the default).
+    """
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store._conn.execute(
+            "UPDATE nodes SET source_text=? WHERE id=?",
+            ("def f(): return 1", node_id),
+        )
+        store._conn.commit()
+
+        with patch("better_code_review_graph.summarizer.summarize_node") as mock_sum:
+            mock_sum.return_value = "Returns 1."
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.provider == "gemini"
+        call_kwargs = mock_sum.call_args.kwargs
+        assert call_kwargs["api_key"] == "g-key"
+        assert call_kwargs["provider"] == "gemini"
+        assert call_kwargs["model"] is None
+    finally:
+        store.close()
+
+
+def test_summarize_node_explicit_model_skips_provider_guard():
+    """I1: explicit model override skips the {gemini,openai} ValueError guard.
+
+    With SUMMARY_MODEL pointing at a provider outside the allowlist (e.g.
+    anthropic), batch_summarize passes provider='anthropic' + model=override.
+    summarize_node must NOT raise ValueError because the model string carries
+    the routing.
+    """
+    node = NodeNeedingSummary(
+        node_id="x", source_text="def f(): pass", source_hash=None
+    )
+    fake_response = _completion_resp("A summary.")
+    with patch(
+        "mcp_core.llm.completion", return_value=fake_response
+    ) as mock_completion:
+        result = summarize_node(
+            node,
+            provider="anthropic",
+            api_key=None,
+            model="anthropic/claude-haiku",
+        )
+    assert result == "A summary."
+    assert mock_completion.call_args.kwargs["model"] == "anthropic/claude-haiku"
+    # api_key=None -> normalised, litellm resolves env key.
+    assert mock_completion.call_args.kwargs["api_key"] is None
+
+
+def test_summarize_node_default_path_still_guards_provider():
+    """I1 regression: without a model override, the provider guard still fires."""
+    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
+    with pytest.raises(ValueError, match="Unsupported provider: 'anthropic'"):
+        summarize_node(node, provider="anthropic", api_key="k")
+
+
+def test_batch_summarize_anthropic_override_does_not_raise(tmp_path, monkeypatch):
+    """I2: SUMMARY_MODEL=anthropic/... must summarize without a ValueError.
+
+    Integration check that the C1+I1 fixes compose: env provider is gemini but
+    the override routes to anthropic; the batch must regenerate (no guard raise,
+    no errors) and tag the cache 'anthropic'.
+    """
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODEL", "anthropic/claude-haiku")
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        node_id = store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+        store._conn.execute(
+            "UPDATE nodes SET source_text=? WHERE id=?",
+            ("def f(): return 1", node_id),
+        )
+        store._conn.commit()
+
+        # Patch the litellm boundary, not summarize_node, so the guard path runs.
+        with patch(
+            "mcp_core.llm.completion", return_value=_completion_resp("Returns 1.")
+        ):
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 1
+        assert result.errors == 0
+        assert result.provider == "anthropic"
+        row = store._conn.execute(
+            "SELECT summary, summary_provider FROM nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        assert row[0] == "Returns 1."
+        assert row[1] == "anthropic"
     finally:
         store.close()
 
