@@ -314,7 +314,7 @@ def test_scan_path_returns_tags_on_findings(tmp_path):
     assert json.loads(result.raw_output) == payload
     cmd = run_mock.call_args[0][0]
     assert cmd[0] == "/fake/semgrep"
-    assert "--config" in cmd and "p/auto" in cmd
+    assert "--config=p/auto" in cmd
     assert "--json" in cmd
     assert str(target) in cmd
 
@@ -434,9 +434,7 @@ def test_scan_path_with_registry_config(tmp_path):
 
     cmd = run_mock.call_args[0][0]
     # Verify --config <config> is still correct
-    assert "--config" in cmd
-    idx = cmd.index("--config")
-    assert cmd[idx + 1] == "p/python"
+    assert "--config=p/python" in cmd
     # Verify -- is still before target
     assert "--" in cmd
     assert cmd.index("--") == cmd.index(str(target)) - 1
