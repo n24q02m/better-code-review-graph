@@ -297,33 +297,13 @@ class TestConfigTool:
         result = json.loads(await config(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
-        assert "models" in result["valid_actions"]
+        assert "models" not in result["valid_actions"]
 
-    async def test_models_configured_only(self):
-        """models action lists configured-provider chat/embedding models."""
-        fake_models = [
-            {
-                "model": "gemini/gemini-2.5-flash",
-                "provider": "gemini",
-                "mode": "chat",
-            }
-        ]
-        with patch("mcp_core.llm.list_models", return_value=fake_models) as mock_list:
-            result = json.loads(await config(action="models"))
-        assert result["models"] == fake_models
-        assert "passthrough" in result["note"]
-        call_kwargs = mock_list.call_args.kwargs
-        # crg does embedding + summarizer-chat, NO rerank.
-        assert call_kwargs["modes"] == ("chat", "embedding")
-        assert call_kwargs["configured_only"] is True
-        assert call_kwargs["limit"] == 200
-
-    async def test_models_all(self):
-        """models action with key='all' lists the full catalog."""
-        with patch("mcp_core.llm.list_models", return_value=[]) as mock_list:
-            result = json.loads(await config(action="models", key="all"))
-        assert result["models"] == []
-        assert mock_list.call_args.kwargs["configured_only"] is False
+    async def test_models_action_removed(self):
+        """The models catalog-listing action no longer exists."""
+        result = json.loads(await config(action="models"))
+        assert "Unknown action 'models'" in result["error"]
+        assert "models" not in result["valid_actions"]
 
     async def test_set_missing_key(self):
         result = json.loads(await config(action="set"))
