@@ -297,6 +297,13 @@ class TestConfigTool:
         result = json.loads(await config(action="nonexistent"))
         assert "error" in result
         assert "valid_actions" in result
+        assert "models" not in result["valid_actions"]
+
+    async def test_models_action_removed(self):
+        """The models catalog-listing action no longer exists."""
+        result = json.loads(await config(action="models"))
+        assert "Unknown action 'models'" in result["error"]
+        assert "models" not in result["valid_actions"]
 
     async def test_set_missing_key(self):
         result = json.loads(await config(action="set"))
