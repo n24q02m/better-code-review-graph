@@ -13,12 +13,13 @@ when persisting ``nodes.source_hash`` -- recomputing here is wasteful and
 also gives subtle "rehash drift" bugs if the caller passes a normalised
 form of the source).
 
-Provider priority: Gemini wins over OpenAI when both keys are set, and
-``GOOGLE_API_KEY`` is treated as a Gemini alias. This matches the
-embedding backend's Gemini-over-OpenAI sub-ordering in
-``embeddings.py`` (full embedding order: jina > gemini > openai >
-cohere). Jina + Cohere are intentionally excluded here because they
-don't expose chat-completion APIs.
+Model selection: the ``SUMMARY_MODELS`` chain (ordered ``provider/model``
+list, fallback order) drives which model runs; the first entry is the
+active model and its provider prefix is the cache tag. The default chain
+(Gemini then OpenAI) is key-gated — a model is kept only when its provider
+key is configured, with ``GOOGLE_API_KEY`` accepted as a ``GEMINI_API_KEY``
+alias. An empty chain disables summaries. Jina + Cohere are excluded from
+the default because they don't expose chat-completion APIs.
 
 LLM dispatch goes through ``mcp_core.llm.completion`` (litellm
 passthrough). The litellm import is deferred into ``summarize_node`` so
@@ -33,6 +34,8 @@ import logging
 import os
 from dataclasses import dataclass
 from typing import Any
+
+from mcp_core.llm.providers import provider_of_model
 
 logger = logging.getLogger(__name__)
 
@@ -78,30 +81,40 @@ def compute_summary_cache_key(node: NodeNeedingSummary, provider: str) -> str:
     return f"{hash_value}:{provider}"
 
 
-def resolve_summary_provider() -> tuple[str, str] | None:
-    """Detect the active LLM summary provider from environment variables.
+# Default summary chain (fallback order). Key-gated: a model is kept only when
+# its provider key is configured. Explicit provider prefixes everywhere.
+_DEFAULT_SUMMARY_CHAIN = ("gemini/gemini-2.5-flash", "openai/gpt-4o-mini")
 
-    Returns ``(provider, api_key)`` tuple, or ``None`` if no provider key
-    is configured. Empty-string values are treated as "not set" so that
-    ``GEMINI_API_KEY=""`` does not yield a broken ``("gemini", "")``
-    tuple.
 
-    Priority:
-    1. ``GEMINI_API_KEY`` (Gemini, primary)
-    2. ``GOOGLE_API_KEY`` (Gemini, alias)
-    3. ``OPENAI_API_KEY`` (OpenAI)
+def resolve_summary_chain() -> list[str]:
+    """Ordered summary model chain from SUMMARY_MODELS (fallback order).
 
-    Mirrors the Gemini-over-OpenAI sub-ordering used by
-    ``embeddings.py``. Jina + Cohere are intentionally excluded because
-    those providers don't expose chat-completion APIs.
+    Empty -> summaries disabled. Legacy ``SUMMARY_MODEL`` honored one release
+    (warning). Default keeps ONLY models whose provider key is configured;
+    none -> empty -> disabled.
     """
-    gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if gemini_key:
-        return ("gemini", gemini_key)
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key:
-        return ("openai", openai_key)
-    return None
+    explicit = os.getenv("SUMMARY_MODELS", "").strip()
+    if explicit:
+        return [m.strip() for m in explicit.split(",") if m.strip()]
+    legacy = os.getenv("SUMMARY_MODEL", "").strip()
+    if legacy:
+        logger.warning(
+            "Deprecated SUMMARY_MODEL honored; migrate to SUMMARY_MODELS "
+            "(removed next release)."
+        )
+        return [legacy]
+    # Key-gated default: keep only models whose provider key is set
+    # (GOOGLE_API_KEY is an accepted alias for GEMINI_API_KEY).
+    from mcp_core.llm.providers import key_env_for_model
+
+    keyed = []
+    for m in _DEFAULT_SUMMARY_CHAIN:
+        env_var = key_env_for_model(m)
+        if os.getenv(env_var) or (
+            env_var == "GEMINI_API_KEY" and os.getenv("GOOGLE_API_KEY")
+        ):
+            keyed.append(m)
+    return keyed
 
 
 # ---------------------------------------------------------------------------
@@ -114,31 +127,12 @@ _PROMPT_PREFIX = (
     "Source:\n"
 )
 
-# Default litellm ``provider/model`` per summary provider. Overridable via the
-# ``SUMMARY_MODEL`` env var (used verbatim when set).
+# Default litellm ``provider/model`` per summary provider, used by the
+# ``summarize_node`` default-model path (provider label -> model).
 _DEFAULT_SUMMARY_MODELS: dict[str, str] = {
     "gemini": "gemini/gemini-2.5-flash",
     "openai": "gpt-4o-mini",
 }
-
-
-def _provider_from_model(model: str) -> str:
-    """Derive the cache-key provider tag from a litellm model string.
-
-    Used so a ``SUMMARY_MODEL`` override still produces a stable
-    ``{hash}:{provider}`` cache key. The provider prefix (text before the
-    first ``/``) is matched first; bare OpenAI-style names (e.g.
-    ``gpt-4o-mini``) default to ``openai``.
-    """
-    if "/" in model:
-        prefix = model.split("/", 1)[0].lower()
-        if prefix in ("gemini", "google"):
-            return "gemini"
-        if prefix == "openai":
-            return "openai"
-        return prefix
-    # Bare names with no provider prefix are OpenAI-style (e.g. gpt-4o-mini).
-    return "openai"
 
 
 def summarize_node(
@@ -164,9 +158,8 @@ def summarize_node(
     Args:
         node: NodeNeedingSummary with source_text to summarize.
         provider: lowercase provider label. In the default-model path it
-            selects the model and must be "gemini" or "openai" (matches
-            ``resolve_summary_provider()``); in the explicit-``model`` path
-            it is purely a label for error messages.
+            selects the model and must be "gemini" or "openai"; in the
+            explicit-``model`` path it is purely a label for error messages.
         api_key: API credential for the provider, or ``None`` to let
             litellm resolve the provider's key from the environment.
         model: optional explicit litellm ``provider/model`` override. When
@@ -273,8 +266,8 @@ def batch_summarize(
     if max_nodes < 1:
         raise ValueError(f"max_nodes must be >= 1, got {max_nodes}")
 
-    resolved = resolve_summary_provider()
-    if resolved is None:
+    chain = resolve_summary_chain()
+    if not chain:
         return BatchSummarizeResult(
             generated=0,
             cached=0,
@@ -282,22 +275,13 @@ def batch_summarize(
             provider=None,
             errors=0,
         )
-    provider, api_key = resolved
 
-    # SUMMARY_MODEL override: the model string carries litellm routing, so it
-    # may target a different provider than the env-resolved one. In that case
-    # (a) the cache tag is derived from the model prefix (so switching models
-    # invalidates stale summaries), and (b) the env-resolved api_key is dropped
-    # to None — it belongs to ``provider``, not the override's provider, and
-    # forwarding it would 401. ``api_key=None`` lets litellm resolve the
-    # correct key from the environment for the override's provider.
-    override_model = os.environ.get("SUMMARY_MODEL")
-    if override_model:
-        cache_provider = _provider_from_model(override_model)
-        effective_api_key: str | None = None
-    else:
-        cache_provider = provider
-        effective_api_key = api_key
+    # The chain carries explicit ``provider/model`` routing. Use the primary
+    # (first) model and derive the cache-key provider tag from its prefix so a
+    # model swap invalidates stale summaries. ``api_key=None`` lets litellm
+    # resolve the provider's key from the environment for the chosen model.
+    model = chain[0]
+    cache_provider = provider_of_model(model)
 
     rows = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
@@ -334,8 +318,8 @@ def batch_summarize(
                     source_hash=live_hash,
                 ),
                 provider=cache_provider,
-                api_key=effective_api_key,
-                model=override_model,
+                api_key=None,
+                model=model,
             )
         except Exception as exc:
             logger.warning("summarize_node failed for id=%d: %s", row_id, exc)

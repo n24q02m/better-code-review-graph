@@ -5,13 +5,15 @@ Supports two backends:
   download on first use. Default backend.
 - **cloud**: Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
   Supports Jina, Gemini, OpenAI, Cohere, or any litellm ``provider/model``.
-  Provider auto-detected from API key env vars with priority:
-  jina > gemini > openai > cohere.
+  Models come from the ``EMBEDDING_MODELS`` chain (ordered ``provider/model``
+  list, first entry is the active model).
 
-Backend selection (always returns a valid backend):
-1. Explicit EMBEDDING_BACKEND env var ('litellm' is an alias for 'cloud')
-2. 'cloud' if any provider API key is set
-3. 'local' (default, always available)
+Backend selection:
+- ``EMBEDDING_MODELS`` non-empty -> 'cloud' (first entry is the model).
+- Empty -> 'local' (default ONNX, always available).
+- Default chain keeps only models whose provider key is configured.
+- Legacy ``EMBEDDING_BACKEND`` / ``EMBEDDING_MODEL`` honored one release
+  (with a deprecation warning).
 
 All embeddings are stored at fixed 768 dimensions (MRL truncation).
 Switching backend does NOT invalidate existing vectors.
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -30,6 +33,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .graph import GraphNode, GraphStore, node_to_dict
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -204,32 +209,43 @@ class Qwen3EmbedBackend:
 # ---------------------------------------------------------------------------
 
 
-# Priority-ordered mapping: first provider whose key is present in env wins.
-# Mirrors wet-mcp + mnemo-mcp _EMBEDDING_PROVIDERS (MCP config parity).
-_DEFAULT_CLOUD_MODELS: tuple[tuple[str, str], ...] = (
-    ("JINA_AI_API_KEY", "jina_ai/jina-embeddings-v5-text-small"),
-    ("GEMINI_API_KEY", "gemini/gemini-embedding-001"),
-    ("GOOGLE_API_KEY", "gemini/gemini-embedding-001"),
-    ("OPENAI_API_KEY", "text-embedding-3-large"),
-    ("COHERE_API_KEY", "embed-multilingual-v3.0"),
-    ("CO_API_KEY", "embed-multilingual-v3.0"),
+# Explicit provider prefixes -> unambiguous key detection + litellm routing.
+_DEFAULT_EMBEDDING_CHAIN = (
+    "jina_ai/jina-embeddings-v5-text-small",
+    "gemini/gemini-embedding-001",
+    "openai/text-embedding-3-large",
+    "cohere/embed-multilingual-v3.0",
 )
+_KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KEY"}
 
 
-def _auto_select_cloud_model() -> str:
-    """Pick the first cloud model whose API key is available in env.
+def _key_available(env_var: str) -> bool:
+    if os.getenv(env_var):
+        return True
+    alias = _KEY_ALIASES.get(env_var)
+    return bool(alias and os.getenv(alias))
 
-    Default is ``embed-multilingual-v3.0`` (Cohere) only when no cloud key is
-    set -- that keeps behaviour stable in pure-local mode where this value is
-    never used. When cloud keys are present, we must pick a model whose
-    provider key is non-empty; otherwise the provider SDK builds an empty
-    ``Bearer`` header and fails with ``LocalProtocolError`` before the
-    request leaves the machine.
+
+def resolve_embedding_chain() -> list[str]:
+    """Ordered embedding chain from EMBEDDING_MODELS (fallback order).
+
+    Empty -> local ONNX. Legacy EMBEDDING_MODEL honored one release (warning).
+    Default keeps ONLY models whose provider key is configured; none -> empty
+    -> local. Not "any key" (that would keep keyless cloud models).
     """
-    for env_var, model in _DEFAULT_CLOUD_MODELS:
-        if os.getenv(env_var):
-            return model
-    return "embed-multilingual-v3.0"
+    from mcp_core.llm.providers import key_env_for_model
+
+    explicit = os.getenv("EMBEDDING_MODELS", "").strip()
+    if explicit:
+        return [m.strip() for m in explicit.split(",") if m.strip()]
+    legacy = os.getenv("EMBEDDING_MODEL", "").strip()
+    if legacy:
+        logger.warning(
+            "Deprecated EMBEDDING_MODEL honored; migrate to EMBEDDING_MODELS "
+            "(removed next release)."
+        )
+        return [legacy]
+    return [m for m in _DEFAULT_EMBEDDING_CHAIN if _key_available(key_env_for_model(m))]
 
 
 class CloudEmbeddingBackend:
@@ -247,7 +263,10 @@ class CloudEmbeddingBackend:
         model: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = model or os.getenv("EMBEDDING_MODEL") or _auto_select_cloud_model()
+        self.model = (
+            model
+            or (resolve_embedding_chain() or ["cohere/embed-multilingual-v3.0"])[0]
+        )
         self.api_key = api_key
         self._provider = _detect_embedding_provider(self.model)
 
@@ -386,31 +405,19 @@ class CloudEmbeddingBackend:
 
 
 def resolve_backend() -> str:
-    """Auto-detect backend from env vars.
+    """Resolve the embedding backend ('cloud' or 'local').
 
-    Priority:
-    1. Explicit EMBEDDING_BACKEND env var
-    2. 'cloud' if any provider API key is set
-    3. 'local' (default, always available)
+    Legacy ``EMBEDDING_BACKEND`` is honored one release (warning); otherwise
+    inferred from the resolved embedding chain: a non-empty chain -> 'cloud',
+    empty -> 'local'.
     """
-    explicit = os.getenv("EMBEDDING_BACKEND")
-    if explicit:
-        if explicit == "litellm":
-            return "cloud"
-        return explicit
-    if any(
-        os.getenv(k)
-        for k in (
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
-            "GOOGLE_API_KEY",
-            "OPENAI_API_KEY",
-            "COHERE_API_KEY",
-            "CO_API_KEY",
+    legacy = os.getenv("EMBEDDING_BACKEND")
+    if legacy:
+        logger.warning(
+            "Deprecated EMBEDDING_BACKEND honored; inferred from EMBEDDING_MODELS now."
         )
-    ):
-        return "cloud"
-    return "local"
+        return "cloud" if legacy in ("cloud", "litellm") else legacy
+    return "cloud" if resolve_embedding_chain() else "local"
 
 
 def init_backend(mode: str | None = None) -> EmbeddingBackend:
