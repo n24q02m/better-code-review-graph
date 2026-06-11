@@ -18,13 +18,13 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "mcp>=1.27.1,<2",
-    "fastmcp>=3.3.1,<4",
+    "mcp>=1.27.2,<2",
+    "fastmcp>=3.4.2,<4",
     "tree-sitter>=0.25.2,<1",
     "tree-sitter-language-pack>=0.13.0,<1",
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
-    "qwen3-embed>=1.10.0",
+    "qwen3-embed>=1.11.1",
     "httpx",
     "pydantic-settings",
     "n24q02m-mcp-core[llm]>=1.18.0b2,<2",
@@ -36,7 +36,7 @@ dependencies = [
     # but Dependency Review flags the package version. 1.88.0+ clears all four.
     # crg's optional semgrep extra otherwise pins the resolver to litellm 1.83.0; this
     # floor lifts it (semgrep resolves to 1.79.x, fine for a dev-only SAST tool).
-    "litellm>=1.88.0",
+    "litellm>=1.88.1",
     "Pygments>=2.20.0",
     "alembic>=1.18.4,<2",
     "defusedxml>=0.7.1",
@@ -51,7 +51,7 @@ security = [
     # conflicts with our mcp>=1.27 requirement. Renovate previously bumped to
     # 1.164.0 but that re-introduced the conflict — explicit upper cap until
     # semgrep relaxes its mcp pin (track: github.com/semgrep/semgrep upstream).
-    "semgrep>=1.0,<1.162",
+    "semgrep>=1.165.0,<1.166",
 ]
 
 [dependency-groups]
@@ -60,9 +60,9 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov",
     "pytest-timeout",
-    "ruff>=0.15.14",
+    "ruff>=0.15.16",
     "syrupy",
-    "ty>=0.0.40",
+    "ty>=0.0.48",
 ]
 
 [tool.hatch.build.targets.wheel]
