@@ -510,7 +510,6 @@ def review(
     description=(
         "Server configuration, status, and credential setup. "
         "Actions: status (show state), set (key, value -- keys: log_level), "
-        "models (list cloud chat/embedding models; key='all' for full catalog), "
         "cache_clear (wipe embeddings), "
         "setup_status (credential state), setup_start (relay browser setup), "
         "setup_skip (local mode), setup_reset (clear credentials), "
@@ -537,8 +536,6 @@ async def config(
     Config actions:
     - status: Show graph path, node/edge counts, embedding backend, last updated
     - set: Update runtime setting (key + value). Keys: log_level
-    - models: List cloud chat/embedding models for configured providers
-      (litellm passthrough); key='all' lists the full catalog
     - cache_clear: Wipe all embeddings from the graph
 
     Setup actions:
@@ -562,8 +559,6 @@ async def config(
             if value is None:
                 return _json({"error": "value is required for set action"})
             return _config_set(key, value)
-        case "models":
-            return await _config_models(key)
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
@@ -673,7 +668,6 @@ async def config(
 
             valid_actions = [
                 "cache_clear",
-                "models",
                 "set",
                 "setup_complete",
                 "setup_reset",
@@ -794,35 +788,6 @@ def _config_cache_clear(repo_root: str | None) -> str:
             store.close()
     except (RuntimeError, ValueError):
         return _json({"status": "cache cleared", "embeddings_removed": 0})
-
-
-async def _config_models(key: str | None) -> str:
-    """List cloud chat/embedding models via litellm passthrough.
-
-    crg uses litellm for embedding (cloud backend) + the summarizer chat
-    completion, so only the ``chat`` and ``embedding`` modes are listed
-    (no rerank). ``key='all'`` bypasses ``configured_only`` to show the
-    full catalog.
-    """
-    import asyncio
-
-    from mcp_core.llm import list_models
-
-    show_all = key == "all"
-    # to_thread: first list_models call imports litellm (~1-2s, blocking).
-    models = await asyncio.to_thread(
-        list_models,
-        modes=("chat", "embedding"),
-        configured_only=not show_all,
-        limit=200,
-    )
-    return _json(
-        {
-            "models": models,
-            "note": "Any litellm 'provider/model' works via passthrough, "
-            "even if not listed here.",
-        }
-    )
 
 
 # ---------------------------------------------------------------------------
