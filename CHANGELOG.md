@@ -2,6 +2,51 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.4 (2026-06-12)
+
+### Bug Fixes
+
+- Correct summarize docstring, embedding-only manifest, and 3-pillar desc
+  ([#696](https://github.com/n24q02m/better-code-review-graph/pull/696),
+  [`34845c9`](https://github.com/n24q02m/better-code-review-graph/commit/34845c9f05b658eedb6484ac116dc865676fd9b4))
+
+- Filter crg vector search by active provider to prevent cross-provider mixing
+  ([#697](https://github.com/n24q02m/better-code-review-graph/pull/697),
+  [`9d644f4`](https://github.com/n24q02m/better-code-review-graph/commit/9d644f4c2c6b073b0fc8fceaefcbb9f8ab1355d8))
+
+- Pin semgrep <1.162 in renovate to stop re-proposing the mcp-conflict bump (#684)
+  ([#693](https://github.com/n24q02m/better-code-review-graph/pull/693),
+  [`9805e57`](https://github.com/n24q02m/better-code-review-graph/commit/9805e57e5e46ce974fabebc7146c164ce931b5c9))
+
+- Prevent argument injection in Semgrep wrapper
+  ([#687](https://github.com/n24q02m/better-code-review-graph/pull/687),
+  [`85e247c`](https://github.com/n24q02m/better-code-review-graph/commit/85e247c569ca94770def1d40d95ad4cd622764e6))
+
+- Remove orphaned Qodo pr-agent config
+  ([#694](https://github.com/n24q02m/better-code-review-graph/pull/694),
+  [`5062546`](https://github.com/n24q02m/better-code-review-graph/commit/506254649fc26f3b4036127d226bb70b1b0664e9))
+
+- Remove stray plan.md artifact accidentally merged via #686
+  ([#692](https://github.com/n24q02m/better-code-review-graph/pull/692),
+  [`5cc4cbd`](https://github.com/n24q02m/better-code-review-graph/commit/5cc4cbd9b46c82ab159df014cc8abe4fd3894c82))
+
+- Restore PSR changelog generation and backfill version history
+  ([#695](https://github.com/n24q02m/better-code-review-graph/pull/695),
+  [`e83f437`](https://github.com/n24q02m/better-code-review-graph/commit/e83f437074af25593777a89be11480d9477a57f0))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#685](https://github.com/n24q02m/better-code-review-graph/pull/685),
+  [`e9326f0`](https://github.com/n24q02m/better-code-review-graph/commit/e9326f05a02064f779b20b6ee693eb7a038573c4))
+
+### Performance Improvements
+
+- Replace .fetchall() with direct cursor iteration
+  ([#686](https://github.com/n24q02m/better-code-review-graph/pull/686),
+  [`8a300fe`](https://github.com/n24q02m/better-code-review-graph/commit/8a300fe3fcd5ec2642374c9e626982db8bf3f76a))
+
+
 ## v3.18.0-beta.3 (2026-06-11)
 
 ### Bug Fixes
