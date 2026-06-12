@@ -2,7 +2,7 @@
 
 mcp-name: io.github.n24q02m/better-code-review-graph
 
-**Knowledge graph for token-efficient code reviews -- fixed search, configurable embeddings, qualified call resolution.**
+**Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.**
 
 <!-- Badge Row 1: Status -->
 [![CI](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml)
