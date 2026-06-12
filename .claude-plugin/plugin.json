@@ -3,31 +3,43 @@
   "description": "Persistent incremental knowledge graph for token-efficient code reviews",
   "version": "3.18.0-beta.3",
   "userConfig": {
+    "EMBEDDING_MODELS": {
+      "type": "string",
+      "title": "Embedding model chain (optional)",
+      "description": "CSV 'provider/model,provider/model' (order = litellm fallback); provider inferred from prefix. Empty = local ONNX (qwen3-embed). Example: jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+      "required": false
+    },
+    "SUMMARY_MODELS": {
+      "type": "string",
+      "title": "Summarizer model chain (optional)",
+      "description": "CSV 'provider/model,...' for the graph summarize action; provider inferred from prefix. Empty = summaries disabled. Chat-completion providers only (gemini/openai). Example: gemini/gemini-3-flash-preview",
+      "required": false
+    },
     "JINA_AI_API_KEY": {
       "type": "string",
       "title": "Jina AI API key (optional)",
-      "description": "Optional cloud reranker. Without it, server uses local ONNX. https://jina.ai/api-dashboard/",
+      "description": "Enables jina_ai/ embedding models referenced in EMBEDDING_MODELS. Without any cloud key the server uses local ONNX. https://jina.ai/api-dashboard/",
       "sensitive": true,
       "required": false
     },
     "GEMINI_API_KEY": {
       "type": "string",
       "title": "Gemini API key (optional)",
-      "description": "Optional cloud embedding fallback. Free tier available. https://aistudio.google.com/apikey",
+      "description": "Enables gemini/ models referenced in EMBEDDING_MODELS / SUMMARY_MODELS. Free tier available. https://aistudio.google.com/apikey",
       "sensitive": true,
       "required": false
     },
     "OPENAI_API_KEY": {
       "type": "string",
       "title": "OpenAI API key (optional)",
-      "description": "Optional cloud embedding fallback. https://platform.openai.com/api-keys",
+      "description": "Enables openai/ models referenced in EMBEDDING_MODELS / SUMMARY_MODELS. https://platform.openai.com/api-keys",
       "sensitive": true,
       "required": false
     },
     "COHERE_API_KEY": {
       "type": "string",
       "title": "Cohere API key (optional)",
-      "description": "Optional cloud embedding + reranking fallback. https://dashboard.cohere.com/api-keys",
+      "description": "Enables cohere/ embedding models referenced in EMBEDDING_MODELS. https://dashboard.cohere.com/api-keys",
       "sensitive": true,
       "required": false
     }
@@ -47,6 +59,8 @@
       ],
       "env": {
         "MCP_TRANSPORT": "stdio",
+        "EMBEDDING_MODELS": "${user_config.EMBEDDING_MODELS}",
+        "SUMMARY_MODELS": "${user_config.SUMMARY_MODELS}",
         "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
         "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",
         "OPENAI_API_KEY": "${user_config.OPENAI_API_KEY}",

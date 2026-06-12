@@ -138,8 +138,9 @@ def graph(
         in graphml | json-ld | dot | cypher format. Writes to output_path when
         provided, otherwise returns payload inline.
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
-        Function nodes. Provider auto-detected from env (GEMINI_API_KEY >
-        GOOGLE_API_KEY > OPENAI_API_KEY); no-op when no provider configured.
+        Function nodes. Models come from the SUMMARY_MODELS chain (provider
+        inferred from the model prefix); when unset a key-gated default
+        (gemini or openai) is used. No-op when no provider key is configured.
         Cost-capped via max_nodes (default 500 LLM calls per invocation).
     """
     match action:
