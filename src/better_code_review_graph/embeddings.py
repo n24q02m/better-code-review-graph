@@ -615,8 +615,16 @@ class EmbeddingStore:
         if not self.backend:
             return []
 
-        # Count embeddings first
-        count = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+        # Restrict the scan to the active provider. Vectors from different
+        # embedding models are not comparable, so mixing them in one cosine
+        # ranking silently corrupts results when the user switches providers.
+        provider_name = self._get_backend_name()
+
+        # Count embeddings for the active provider first
+        count = self._conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE provider = ?",
+            (provider_name,),
+        ).fetchone()[0]
         if count == 0:
             return []
 
@@ -630,7 +638,10 @@ class EmbeddingStore:
         # Brute-force cosine similarity scan with precalculated query norm
         scored: list[tuple[str, float]] = []
         query_norm = math.hypot(*query_vec)
-        cursor = self._conn.execute("SELECT qualified_name, vector FROM embeddings")
+        cursor = self._conn.execute(
+            "SELECT qualified_name, vector FROM embeddings WHERE provider = ?",
+            (provider_name,),
+        )
         chunk_size = 500
         while True:
             rows = cursor.fetchmany(chunk_size)

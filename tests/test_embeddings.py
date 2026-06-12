@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from better_code_review_graph.embeddings import (
+    _DEFAULT_DIMS,
     CloudEmbeddingBackend,
     EmbeddingStore,
     Qwen3EmbedBackend,
@@ -686,6 +687,45 @@ class TestEmbeddingStore:
             assert row is not None
             vec = _decode_vector(row["vector"])
             assert len(vec) == 768
+        finally:
+            store.close()
+
+    def test_search_filters_by_active_provider(self, tmp_path):
+        """search() must only score rows of the active provider.
+
+        Switching embedding providers must NOT mix vectors from different
+        models in one cosine ranking. Rows stored under a different provider
+        than the active backend must be excluded from the scan.
+        """
+        db = tmp_path / "graph.db"
+        # No embed_single_query attr -> search() uses embed_single fallback.
+        backend = MagicMock(spec=["name", "embed_single", "embed_texts"])
+        backend.name = "cloud:openai:openai/text-embedding-3-large"
+        # Deterministic query vector so cosine is well-defined.
+        backend.embed_single.return_value = [1.0] * _DEFAULT_DIMS
+
+        store = EmbeddingStore(db, backend)
+        try:
+            # Two rows under DIFFERENT providers, identical vectors.
+            vec_blob = _encode_vector([1.0] * _DEFAULT_DIMS)
+            store._conn.execute(
+                "INSERT INTO embeddings "
+                "(qualified_name, vector, text_hash, provider) "
+                "VALUES (?, ?, ?, ?)",
+                ("active.py::keep", vec_blob, "h1", backend.name),
+            )
+            store._conn.execute(
+                "INSERT INTO embeddings "
+                "(qualified_name, vector, text_hash, provider) "
+                "VALUES (?, ?, ?, ?)",
+                ("other.py::drop", vec_blob, "h2", "cloud:cohere:cohere/embed-v3"),
+            )
+            store._conn.commit()
+
+            results = store.search("anything", limit=10)
+            names = [qn for qn, _score in results]
+            assert "active.py::keep" in names
+            assert "other.py::drop" not in names
         finally:
             store.close()
 
