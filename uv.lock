@@ -199,7 +199,7 @@ requires-dist = [
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.10.0" },
+    { name = "qwen3-embed", specifier = ">=1.12.0b1" },
     { name = "semgrep", marker = "extra == 'security'", specifier = ">=1.0,<1.162" },
     { name = "tree-sitter", specifier = ">=0.25.2,<1" },
     { name = "tree-sitter-language-pack", specifier = ">=0.13.0,<1" },
@@ -1626,7 +1626,7 @@ wheels = [
 
 [[package]]
 name = "qwen3-embed"
-version = "1.11.1"
+version = "1.12.0b1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -1637,9 +1637,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/86/0d/8877e7e9c19daae9c7b97cc5d18c706df02c22d73c2d11c880a72023daad/qwen3_embed-1.11.1.tar.gz", hash = "sha256:b86adf71b3fa158dbcd51b72db624352cb9a9b410de0c2e1b6d78144d7e8f256", size = 187826, upload-time = "2026-06-09T02:53:40.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2d/80/fbbd7adf445a547fd4119e58b2c352b8c921df2028727453aba81c57bd0b/qwen3_embed-1.12.0b1.tar.gz", hash = "sha256:b3949f6df0e634eba5c343b04a120699122eb0b1e840a78e9117c1f6804d8580", size = 203461, upload-time = "2026-06-12T11:19:37.424Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/4a/c46780c74524ac20be54c1ac68383e21453c5b229ce7b4bf38ed235061bb/qwen3_embed-1.11.1-py3-none-any.whl", hash = "sha256:9a459e62aef1d948ec5344aacdb19286c418454e91b3452822a4caf9ceb73dbd", size = 60923, upload-time = "2026-06-09T02:53:39.16Z" },
+    { url = "https://files.pythonhosted.org/packages/52/b3/42c80b5789441061acb449eb743ae5762b7154e9c19f259ef851707fb231/qwen3_embed-1.12.0b1-py3-none-any.whl", hash = "sha256:c00fc1ef8070f1615e803926bbda4a3050bbfdcf9282c974b192591d554e6444", size = 64546, upload-time = "2026-06-12T11:19:36.324Z" },
 ]
 
 [[package]]

@@ -24,7 +24,7 @@ dependencies = [
     "tree-sitter-language-pack>=0.13.0,<1",
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
-    "qwen3-embed>=1.10.0",
+    "qwen3-embed>=1.12.0b1",
     "httpx",
     "pydantic-settings",
     "n24q02m-mcp-core[llm]>=1.18.0b2,<2",

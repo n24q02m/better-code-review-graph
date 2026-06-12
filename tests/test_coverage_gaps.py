@@ -146,13 +146,15 @@ class TestSearchFallbackToEmbedSingle:
         """Cover line 636: fallback to embed_single when embed_single_query missing."""
         db = tmp_path / "graph.db"
         # Create a mock backend WITHOUT embed_single_query
-        mock_backend = MagicMock(spec=["embed_texts", "embed_single"])
+        mock_backend = MagicMock(spec=["name", "embed_texts", "embed_single"])
+        mock_backend.name = "mock"
         mock_backend.embed_texts.return_value = [[0.5] * 768]
         mock_backend.embed_single.return_value = [0.5] * 768
 
         store = EmbeddingStore(db, mock_backend)
 
-        # Directly insert into DB to skip the actual embedding
+        # Directly insert into DB to skip the actual embedding. Provider must
+        # match the active backend name so the row is in-scope for search().
         import struct
 
         blob = struct.pack(f"{768}f", *([0.5] * 768))
