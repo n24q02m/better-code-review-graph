@@ -191,15 +191,15 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.4,<2" },
     { name = "defusedxml", specifier = ">=0.7.1" },
-    { name = "fastmcp", specifier = ">=3.3.1,<4" },
+    { name = "fastmcp", specifier = ">=3.4.2,<4" },
     { name = "httpx" },
-    { name = "litellm", specifier = ">=1.88.0" },
-    { name = "mcp", specifier = ">=1.27.1,<2" },
+    { name = "litellm", specifier = ">=1.88.1" },
+    { name = "mcp", specifier = ">=1.27.2,<2" },
     { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.18.0b2,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
-    { name = "qwen3-embed", specifier = ">=1.12.0b1" },
+    { name = "qwen3-embed", specifier = ">=1.12.0b2" },
     { name = "semgrep", marker = "extra == 'security'", specifier = ">=1.0,<1.162" },
     { name = "tree-sitter", specifier = ">=0.25.2,<1" },
     { name = "tree-sitter-language-pack", specifier = ">=0.13.0,<1" },
@@ -213,9 +213,9 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
-    { name = "ruff", specifier = ">=0.15.14" },
+    { name = "ruff", specifier = ">=0.15.17" },
     { name = "syrupy" },
-    { name = "ty", specifier = ">=0.0.40" },
+    { name = "ty", specifier = ">=0.0.49" },
 ]
 
 [[package]]

@@ -71,11 +71,12 @@
       "allowedVersions": ">=10.0.0"
     },
     {
-      "description": "Pin semgrep <1.162 — semgrep >=1.162 pins mcp==1.23.3, which conflicts with the project's mcp floor and makes the [security] extra unresolvable (see pyproject.toml comment). Closed PR #684.",
+      "description": "Pin semgrep <1.162 — semgrep >=1.162 pins mcp==1.23.3, which conflicts with the project's mcp floor and makes the [security] extra unresolvable (see pyproject.toml comment). Closed PRs #684, #703. rangeStrategy:in-range-only stops the global bump strategy from raising the floor to 1.161.0 (which ALSO pins mcp==1.23.3) — only lock refreshes inside the existing >=1.0,<1.162 range are allowed.",
       "matchPackageNames": [
         "semgrep"
       ],
-      "allowedVersions": "<1.162"
+      "allowedVersions": "<1.162",
+      "rangeStrategy": "in-range-only"
     },
     {
       "description": "Pin Python runtime to 3.13.x",
