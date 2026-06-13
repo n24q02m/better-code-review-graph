@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ========================
 # Stage 2: Runtime base (shared by stdio + http targets)
 # ========================
-FROM python:3.13-slim-bookworm@sha256:e4fa1f978c539608a10cdf74700ac32a3f719dfc6e8b6b6001da82deb36302a2 AS runtime
+FROM python:3.13-slim-bookworm@sha256:05b95397cac02b060ff1251afaa78087d92d7034369afbc8eb765631cada8257 AS runtime
 LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/better-code-review-graph"
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 WORKDIR /app
