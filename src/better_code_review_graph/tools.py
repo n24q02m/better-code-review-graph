@@ -507,6 +507,89 @@ def _estimate_payload_bytes(*payloads: list[dict] | dict) -> int:
     return sum(len(repr(p)) for p in payloads)
 
 
+def _resolve_impact_seeds(
+    store: "GraphStore", root: Path, changed_files: list[str]
+) -> list[str]:
+    """Convert relative changed file paths to absolute paths for graph lookup."""
+    abs_files = []
+    root_resolved = root.resolve()
+    for f in changed_files:
+        full_path_raw = root / f
+        try:
+            full_path = full_path_raw.resolve()
+        except OSError:
+            continue
+        if not full_path.is_relative_to(root_resolved):
+            continue
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            continue
+        abs_files.append(str(full_path))
+    return abs_files
+
+
+def _format_impact_summary(
+    changed_files_count: int,
+    changed_dicts_count: int,
+    impacted_dicts_count: int,
+    impacted_files_count: int,
+    max_depth: int,
+    truncated: bool,
+    max_results: int,
+    total_impacted: int,
+) -> list[str]:
+    """Build the summary parts for the impact radius response."""
+    summary_parts = [
+        f"Blast radius for {changed_files_count} changed file(s):",
+        f"  - {changed_dicts_count} nodes directly changed",
+        f"  - {impacted_dicts_count} nodes impacted (within {max_depth} hops)",
+        f"  - {impacted_files_count} additional files affected",
+    ]
+    if truncated:
+        summary_parts.append(
+            f"  - TRUNCATED: results capped at {max_results} nodes"
+            f" ({total_impacted} total impacted)"
+        )
+    return summary_parts
+
+
+def _apply_impact_payload_truncation(
+    max_payload_bytes: int,
+    changed_dicts: list[dict],
+    impacted_dicts: list[dict],
+    edge_dicts: list[dict],
+    summary_parts: list[str],
+) -> tuple[list[dict], list[dict], bool, str | None]:
+    """Iteratively trim results until the payload fits under the soft cap."""
+    results_truncated = False
+    results_truncated_reason = None
+    original_impacted_count = len(impacted_dicts)
+    original_edges_count = len(edge_dicts)
+
+    if max_payload_bytes and max_payload_bytes > 0:
+        estimated = _estimate_payload_bytes(changed_dicts, impacted_dicts, edge_dicts)
+        if estimated > max_payload_bytes:
+            results_truncated = True
+            while _estimate_payload_bytes(
+                changed_dicts, impacted_dicts, edge_dicts
+            ) > max_payload_bytes and (
+                len(impacted_dicts) > 10 or len(edge_dicts) > 10
+            ):
+                impacted_dicts = impacted_dicts[: max(10, len(impacted_dicts) // 2)]
+                edge_dicts = edge_dicts[: max(10, len(edge_dicts) // 2)]
+
+            results_truncated_reason = (
+                f"impact payload exceeded {max_payload_bytes} bytes "
+                f"(was approximately {estimated})"
+            )
+            summary_parts.append(
+                f"  - PAYLOAD TRUNCATED: kept {len(impacted_dicts)} of "
+                f"{original_impacted_count} impacted nodes / "
+                f"{len(edge_dicts)} of {original_edges_count} edges"
+            )
+
+    return impacted_dicts, edge_dicts, results_truncated, results_truncated_reason
+
+
 def get_impact_radius(
     changed_files: list[str] | None = None,
     max_depth: int = 2,
@@ -566,18 +649,7 @@ def get_impact_radius(
                 "total_impacted": 0,
             }
 
-        # Convert to absolute paths for graph lookup
-        abs_files = []
-        root_resolved = root.resolve()
-        for f in changed_files:
-            full_path_raw = root / f
-            full_path = full_path_raw.resolve()
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-            abs_files.append(str(full_path))
-
+        abs_files = _resolve_impact_seeds(store, root, changed_files)
         result = store.get_impact_radius(
             abs_files,
             max_depth=max_depth,
@@ -592,49 +664,31 @@ def get_impact_radius(
         truncated = result["truncated"]
         total_impacted = result["total_impacted"]
 
-        summary_parts = [
-            f"Blast radius for {len(changed_files)} changed file(s):",
-            f"  - {len(changed_dicts)} nodes directly changed",
-            f"  - {len(impacted_dicts)} nodes impacted (within {max_depth} hops)",
-            f"  - {len(result['impacted_files'])} additional files affected",
-        ]
-        if truncated:
-            summary_parts.append(
-                f"  - TRUNCATED: results capped at {max_results} nodes"
-                f" ({total_impacted} total impacted)"
-            )
+        summary_parts = _format_impact_summary(
+            len(changed_files),
+            len(changed_dicts),
+            len(impacted_dicts),
+            len(result["impacted_files"]),
+            max_depth,
+            truncated,
+            max_results,
+            total_impacted,
+        )
 
-        # #315: payload-size auto-truncation. Even with max_results=500 the
-        # impacted_nodes + edges arrays can blow past the conversation
-        # token budget for shared utils (observed: 7.6MB, 12MB). Trim
-        # iteratively until the rough JSON size fits under the soft cap.
-        results_truncated = False
-        results_truncated_reason: str | None = None
         original_impacted_count = len(impacted_dicts)
         original_edges_count = len(edge_dicts)
-        if max_payload_bytes and max_payload_bytes > 0:
-            estimated = _estimate_payload_bytes(
-                changed_dicts, impacted_dicts, edge_dicts
-            )
-            if estimated > max_payload_bytes:
-                results_truncated = True
-                # Halve until we fit (or down to a minimum sample of 10 each).
-                while _estimate_payload_bytes(
-                    changed_dicts, impacted_dicts, edge_dicts
-                ) > max_payload_bytes and (
-                    len(impacted_dicts) > 10 or len(edge_dicts) > 10
-                ):
-                    impacted_dicts = impacted_dicts[: max(10, len(impacted_dicts) // 2)]
-                    edge_dicts = edge_dicts[: max(10, len(edge_dicts) // 2)]
-                results_truncated_reason = (
-                    f"impact payload exceeded {max_payload_bytes} bytes "
-                    f"(was approximately {estimated})"
-                )
-                summary_parts.append(
-                    f"  - PAYLOAD TRUNCATED: kept {len(impacted_dicts)} of "
-                    f"{original_impacted_count} impacted nodes / "
-                    f"{len(edge_dicts)} of {original_edges_count} edges"
-                )
+        (
+            impacted_dicts,
+            edge_dicts,
+            results_truncated,
+            results_truncated_reason,
+        ) = _apply_impact_payload_truncation(
+            max_payload_bytes,
+            changed_dicts,
+            impacted_dicts,
+            edge_dicts,
+            summary_parts,
+        )
 
         response: dict[str, Any] = {
             "status": "ok",
@@ -1311,6 +1365,49 @@ def _dispatch_query_pattern(
     return results
 
 
+def _query_builtin_skip(pattern: str, target: str) -> dict[str, Any] | None:
+    """Skip common builtins early for callers_of queries to avoid noise."""
+    if pattern == "callers_of" and target in _BUILTIN_CALL_NAMES and "::" not in target:
+        return {
+            "status": "ok",
+            "pattern": pattern,
+            "target": target,
+            "description": _QUERY_PATTERNS[pattern],
+            "summary": f'"{target}" is a common builtin — callers_of skipped to avoid noise.',
+            "results": [],
+            "edges": [],
+        }
+    return None
+
+
+def _build_query_response_payload(
+    store: "GraphStore",
+    root: Path,
+    pattern: str,
+    target: str,
+    node: Any,
+    results: list[dict],
+    edges_out: list[dict],
+) -> dict[str, Any]:
+    """Construct and decorate the final query response."""
+    response: dict[str, Any] = {
+        "status": "ok",
+        "pattern": pattern,
+        "target": target,
+        "description": _QUERY_PATTERNS[pattern],
+        "summary": f'Found {len(results)} result(s) for {pattern}("{target}")',
+        "header": _build_response_header(store, get_db_path(root)),
+        "results": results,
+        "edges": edges_out,
+    }
+
+    _add_query_response_decorations(
+        store, root, response, pattern, target, node, results, edges_out
+    )
+
+    return response
+
+
 def query_graph(
     pattern: str,
     target: str,
@@ -1363,24 +1460,10 @@ def query_graph(
                 "error": f"Unknown pattern '{pattern}'. Available: {list(_QUERY_PATTERNS.keys())}",
             }
 
-        results: list[dict] = []
-        edges_out: list[dict] = []
-
         # For callers_of, skip common builtins early (bare names only)
-        if (
-            pattern == "callers_of"
-            and target in _BUILTIN_CALL_NAMES
-            and "::" not in target
-        ):
-            return {
-                "status": "ok",
-                "pattern": pattern,
-                "target": target,
-                "description": _QUERY_PATTERNS[pattern],
-                "summary": f"'{target}' is a common builtin — callers_of skipped to avoid noise.",
-                "results": [],
-                "edges": [],
-            }
+        skip_resp = _query_builtin_skip(pattern, target)
+        if skip_resp:
+            return skip_resp
 
         node, resolved_qn_or_path, error_resp = _resolve_query_target(
             store, root, target, pattern, repo=repo, as_of=as_of
@@ -1388,6 +1471,8 @@ def query_graph(
         if error_resp:
             return error_resp
 
+        results: list[dict] = []
+        edges_out: list[dict] = []
         results = _dispatch_query_pattern(
             store,
             pattern,
@@ -1402,22 +1487,9 @@ def query_graph(
 
         results, edges_out = _filter_results_by_repo(store, repo, results, edges_out)
 
-        response: dict[str, Any] = {
-            "status": "ok",
-            "pattern": pattern,
-            "target": target,
-            "description": _QUERY_PATTERNS[pattern],
-            "summary": f"Found {len(results)} result(s) for {pattern}('{target}')",
-            "header": _build_response_header(store, get_db_path(root)),
-            "results": results,
-            "edges": edges_out,
-        }
-
-        _add_query_response_decorations(
-            store, root, response, pattern, target, node, results, edges_out
+        return _build_query_response_payload(
+            store, root, pattern, target, node, results, edges_out
         )
-
-        return response
     finally:
         store.close()
 
@@ -1425,6 +1497,73 @@ def query_graph(
 # ---------------------------------------------------------------------------
 # Tool 3.5: diff_graph (Phase 3 Task 9)
 # ---------------------------------------------------------------------------
+
+
+def _fetch_diff_rows(
+    store: "GraphStore", to_sha: str, repo: str
+) -> tuple[list[dict], list[dict]]:
+    """Fetch nodes added or removed at the given commit SHA."""
+    if repo:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_from_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_to_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        removed_rows = list(removed_cursor)
+    else:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
+            (to_sha,),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
+            (to_sha,),
+        )
+        removed_rows = list(removed_cursor)
+    return added_rows, removed_rows
+
+
+def _compute_diff_payload(
+    from_sha: str, to_sha: str, added_rows: list[dict], removed_rows: list[dict]
+) -> dict[str, Any]:
+    """Compute added/removed/modified sets and format the response."""
+    closed_qns = {row["qualified_name"] for row in removed_rows}
+    new_qns = {row["qualified_name"] for row in added_rows}
+    modified_qns = closed_qns & new_qns
+
+    purely_added = [r for r in added_rows if r["qualified_name"] not in modified_qns]
+    purely_removed = [
+        r for r in removed_rows if r["qualified_name"] not in modified_qns
+    ]
+
+    return {
+        "from_sha": from_sha,
+        "to_sha": to_sha,
+        "added": [
+            {
+                "id": r["id"],
+                "qualified_name": r["qualified_name"],
+                "kind": r["kind"],
+            }
+            for r in purely_added
+        ],
+        "removed": [
+            {
+                "id": r["id"],
+                "qualified_name": r["qualified_name"],
+                "kind": r["kind"],
+            }
+            for r in purely_removed
+        ],
+        "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+    }
 
 
 def diff_graph(
@@ -1473,66 +1612,8 @@ def diff_graph(
 
     store, _ = _get_store(repo_root)
     try:
-        # Build the optional repo filter once. The base SQL stays
-        # static — Bandit B608 is happy because both branches expand
-        # to a fixed string literal at f-string interpolation time.
-        if repo:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_from_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_to_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            removed_rows = list(removed_cursor)
-        else:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
-                (to_sha,),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
-                (to_sha,),
-            )
-            removed_rows = list(removed_cursor)
-
-        closed_qns = {row["qualified_name"] for row in removed_rows}
-        new_qns = {row["qualified_name"] for row in added_rows}
-        modified_qns = closed_qns & new_qns
-
-        purely_added = [
-            r for r in added_rows if r["qualified_name"] not in modified_qns
-        ]
-        purely_removed = [
-            r for r in removed_rows if r["qualified_name"] not in modified_qns
-        ]
-
-        return {
-            "from_sha": from_sha,
-            "to_sha": to_sha,
-            "added": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_added
-            ],
-            "removed": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_removed
-            ],
-            "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
-        }
+        added_rows, removed_rows = _fetch_diff_rows(store, to_sha, repo)
+        return _compute_diff_payload(from_sha, to_sha, added_rows, removed_rows)
     finally:
         store.close()
 
@@ -2235,6 +2316,120 @@ def _looks_like_literal_identifier(query: str) -> bool:
     return all(ch in allowed for ch in q)
 
 
+def _perform_semantic_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    repo: str,
+    store: "GraphStore",
+    emb_store: "EmbeddingStore",
+    db_path: Path,
+) -> dict[str, Any]:
+    """Perform vector-based semantic search and filter results."""
+    raw = semantic_search(query, store, emb_store, limit=limit * 2)
+    if kind:
+        raw = [r for r in raw if r.get("kind") == kind]
+    if repo:
+        repo_qns = [
+            r.get("qualified_name") for r in raw if r.get("qualified_name") is not None
+        ]
+        repo_map: dict[str, str] = {}
+        if repo_qns:
+            cursor = store._conn.execute(
+                "SELECT n.qualified_name, n.repo_id FROM nodes n "
+                "JOIN json_each(?) j ON n.qualified_name = j.value",
+                (json.dumps(repo_qns),),
+            )
+            repo_map = {row["qualified_name"]: row["repo_id"] for row in cursor}
+        filtered = []
+        for r in raw:
+            qn = r.get("qualified_name")
+            if qn is None:
+                continue
+            r_repo = repo_map.get(qn)
+            if r_repo is not None and (r_repo or "") == repo:
+                filtered.append(r)
+        raw = filtered
+
+    surv_qns = [
+        r.get("qualified_name") for r in raw if r.get("qualified_name") is not None
+    ]
+    surviving_set: set[str] = set()
+    if surv_qns:
+        cursor = store._conn.execute(
+            "SELECT n.qualified_name FROM nodes n "
+            "JOIN json_each(?) j ON n.qualified_name = j.value "
+            "WHERE n.valid_to_sha IS NULL",
+            (json.dumps(surv_qns),),
+        )
+        surviving_set = {row["qualified_name"] for row in cursor}
+    surviving: list[dict] = []
+    for r in raw:
+        qn = r.get("qualified_name")
+        if qn is None:
+            continue
+        if qn in surviving_set:
+            surviving.append(r)
+    raw = surviving[:limit]
+
+    return {
+        "status": "ok",
+        "query": query,
+        "search_mode": "semantic",
+        "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
+        + (f" (kind={kind})" if kind else ""),
+        "header": _build_response_header(store, db_path, keyword_only=False),
+        "results": raw,
+    }
+
+
+def _perform_keyword_search(
+    query: str,
+    kind: str | None,
+    limit: int,
+    repo: str,
+    as_of: str,
+    store: "GraphStore",
+    db_path: Path,
+) -> dict[str, Any]:
+    """Perform keyword-based search with scoring and intent warnings."""
+    results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
+
+    if kind:
+        results = [r for r in results if r.kind == kind]
+
+    def score(node):
+        name_lower = node.name.lower()
+        q_lower = query.lower()
+        if name_lower == q_lower:
+            return 0
+        if name_lower.startswith(q_lower):
+            return 1
+        return 2
+
+    results.sort(key=score)
+    results = results[:limit]
+
+    response: dict[str, Any] = {
+        "status": "ok",
+        "query": query,
+        "search_mode": "keyword",
+        "summary": f"Found {len(results)} node(s) matching '{query}'"
+        + (f" (kind={kind})" if kind else ""),
+        "header": _build_response_header(store, db_path, keyword_only=True),
+        "results": [node_to_dict(r) for r in results],
+    }
+
+    if not _looks_like_literal_identifier(query):
+        response["warning"] = (
+            "embeddings_count=0 - results are keyword-substring matches "
+            "only, not semantic similarity. Query shape suggests semantic "
+            "intent; rebuild with embeddings enabled "
+            "(graph action=embed) or reword as a literal identifier."
+        )
+    return response
+
+
 def semantic_search_nodes(
     query: str,
     kind: str | None = None,
@@ -2278,7 +2473,6 @@ def semantic_search_nodes(
         db_path = get_db_path(root)
         backend = init_backend()
         emb_store = EmbeddingStore(db_path, backend)
-        search_mode = "keyword"
 
         try:
             # Phase 3 Task 9: an explicit ``as_of`` skips the vector path —
@@ -2286,121 +2480,13 @@ def semantic_search_nodes(
             # safely return historical snapshots through it. Fall through
             # to the keyword path which threads ``as_of`` into the SQL.
             if as_of == "" and emb_store.available and emb_store.count() > 0:
-                # Vector search
-                search_mode = "semantic"
-                raw = semantic_search(query, store, emb_store, limit=limit * 2)
-                if kind:
-                    raw = [r for r in raw if r.get("kind") == kind]
-                if repo:
-                    # The vector store has no repo_id column; cross-check
-                    # each hit against the SQL row and drop misses. Batched
-                    # via json_each so it stays O(1) queries regardless of
-                    # how many hits the vector store returned.
-                    repo_qns = [
-                        r.get("qualified_name")
-                        for r in raw
-                        if r.get("qualified_name") is not None
-                    ]
-                    repo_map: dict[str, str] = {}
-                    if repo_qns:
-                        cursor = store._conn.execute(
-                            "SELECT n.qualified_name, n.repo_id FROM nodes n "
-                            "JOIN json_each(?) j ON n.qualified_name = j.value",
-                            (json.dumps(repo_qns),),
-                        )
-                        repo_map = {
-                            row["qualified_name"]: row["repo_id"] for row in cursor
-                        }
-                    filtered = []
-                    for r in raw:
-                        qn = r.get("qualified_name")
-                        if qn is None:
-                            continue
-                        r_repo = repo_map.get(qn)
-                        if r_repo is not None and (r_repo or "") == repo:
-                            filtered.append(r)
-                    raw = filtered
-                # Default-path filter: vector hits should also exclude
-                # rows that have been closed-out at a later commit. The
-                # vector store does not know about ``valid_to_sha`` so
-                # we cross-check via the SQL row — batched via json_each.
-                surv_qns = [
-                    r.get("qualified_name")
-                    for r in raw
-                    if r.get("qualified_name") is not None
-                ]
-                surviving_set: set[str] = set()
-                if surv_qns:
-                    cursor = store._conn.execute(
-                        "SELECT n.qualified_name FROM nodes n "
-                        "JOIN json_each(?) j ON n.qualified_name = j.value "
-                        "WHERE n.valid_to_sha IS NULL",
-                        (json.dumps(surv_qns),),
-                    )
-                    surviving_set = {row["qualified_name"] for row in cursor}
-                surviving: list[dict] = []
-                for r in raw:
-                    qn = r.get("qualified_name")
-                    if qn is None:
-                        continue
-                    if qn in surviving_set:
-                        surviving.append(r)
-                raw = surviving
-                raw = raw[:limit]
-                return {
-                    "status": "ok",
-                    "query": query,
-                    "search_mode": search_mode,
-                    "summary": f"Found {len(raw)} node(s) matching '{query}' via semantic search"
-                    + (f" (kind={kind})" if kind else ""),
-                    "header": _build_response_header(
-                        store, db_path, keyword_only=False
-                    ),
-                    "results": raw,
-                }
+                return _perform_semantic_search(
+                    query, kind, limit, repo, store, emb_store, db_path
+                )
         finally:
             emb_store.close()
 
-        # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
-
-        if kind:
-            results = [r for r in results if r.kind == kind]
-
-        def score(node):
-            name_lower = node.name.lower()
-            q_lower = query.lower()
-            if name_lower == q_lower:
-                return 0
-            if name_lower.startswith(q_lower):
-                return 1
-            return 2
-
-        results.sort(key=score)
-        results = results[:limit]
-
-        response: dict[str, Any] = {
-            "status": "ok",
-            "query": query,
-            "search_mode": search_mode,
-            "summary": f"Found {len(results)} node(s) matching '{query}'"
-            + (f" (kind={kind})" if kind else ""),
-            "header": _build_response_header(store, db_path, keyword_only=True),
-            "results": [node_to_dict(r) for r in results],
-        }
-
-        # #317: warn when running keyword fallback on a query that looks
-        # semantic. Users who pass single identifiers (`foo`, `foo_bar`,
-        # `Foo.bar`) are fine; users who pass phrases (`how does X work`,
-        # `firebase auth setup`) get garbage from keyword-substring match.
-        if not _looks_like_literal_identifier(query):
-            response["warning"] = (
-                "embeddings_count=0 - results are keyword-substring matches "
-                "only, not semantic similarity. Query shape suggests semantic "
-                "intent; rebuild with embeddings enabled "
-                "(graph action=embed) or reword as a literal identifier."
-            )
-        return response
+        return _perform_keyword_search(query, kind, limit, repo, as_of, store, db_path)
     finally:
         store.close()
 
