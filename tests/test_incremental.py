@@ -14,6 +14,7 @@ from better_code_review_graph.incremental import (
     get_all_tracked_files,
     get_changed_files,
     get_db_path,
+    get_head_sha,
     get_staged_and_unstaged,
     incremental_update,
     incremental_update_from_hook,
@@ -188,6 +189,24 @@ class TestGitOperations:
         )
         result = get_all_tracked_files(tmp_path)
         assert result == ["a.py", "b.py", "c.go"]
+
+    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    @patch("better_code_review_graph.incremental.subprocess.run")
+    def test_git_calls_detach_stdin(self, mock_run, mock_which, tmp_path):
+        """Every git subprocess passes stdin=DEVNULL so an inherited stdio pipe
+        cannot stall the output reader inside the MCP worker thread on Windows."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="")
+        for invoke in (
+            lambda: get_changed_files(tmp_path),
+            lambda: get_staged_and_unstaged(tmp_path),
+            lambda: get_all_tracked_files(tmp_path),
+            lambda: get_head_sha(tmp_path),
+        ):
+            mock_run.reset_mock()
+            invoke()
+            assert mock_run.call_args.kwargs.get("stdin") is subprocess.DEVNULL, (
+                f"git call is missing stdin=DEVNULL: {mock_run.call_args}"
+            )
 
 
 class TestFullBuild:

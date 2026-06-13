@@ -137,6 +137,18 @@ def _is_binary(path: Path) -> bool:
 
 _GIT_TIMEOUT = 30  # seconds
 
+# Every git subprocess below passes ``stdin=subprocess.DEVNULL``.
+#
+# The git child must not inherit the parent's stdin handle. When the MCP server
+# runs over stdio, its own stdin is a pipe from the client, and FastMCP executes
+# each sync tool in an anyio worker thread (under the asyncio Proactor loop). On
+# Windows, a git child that inherits that stdin pipe keeps subprocess's
+# output-reader thread (``_communicate`` -> ``_readerthread``) from ever seeing
+# EOF, so ``communicate()`` blocks until ``_GIT_TIMEOUT`` -- turning an instant
+# ``git ls-files``/``git status`` into a 30 s stall per call (a full build that
+# makes several git calls then takes a minute+). Detaching stdin breaks the
+# inheritance and the reads return immediately.
+
 
 def _run_git(
     repo_root: Path, args: list[str]
@@ -152,6 +164,7 @@ def _run_git(
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            stdin=subprocess.DEVNULL,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None
@@ -190,6 +203,7 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            stdin=subprocess.DEVNULL,
         )
         if result.returncode != 0:
             # Fallback: try diff against empty tree (initial commit)
@@ -219,6 +233,7 @@ def get_staged_and_unstaged(repo_root: Path) -> list[str]:
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            stdin=subprocess.DEVNULL,
         )
         files = []
         for line in result.stdout.splitlines():
@@ -246,6 +261,7 @@ def get_all_tracked_files(repo_root: Path) -> list[str]:
             text=True,
             cwd=str(repo_root),
             timeout=_GIT_TIMEOUT,
+            stdin=subprocess.DEVNULL,
         )
         return [f.strip() for f in result.stdout.splitlines() if f.strip()]
     except (FileNotFoundError, subprocess.TimeoutExpired):

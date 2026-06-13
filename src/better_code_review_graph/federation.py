@@ -292,6 +292,9 @@ def backfill_commits_for_repo(
             text=True,
             check=False,
             timeout=_GIT_LOG_TIMEOUT_SECONDS,
+            # Detach stdin: an inherited stdio pipe stalls the output reader in
+            # the MCP server's worker thread on Windows. See incremental.py.
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.TimeoutExpired):
         return 0
