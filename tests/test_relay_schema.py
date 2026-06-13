@@ -40,6 +40,8 @@ class TestRelaySchema:
             "GEMINI_API_KEY",
             "OPENAI_API_KEY",
             "COHERE_API_KEY",
+            "XAI_API_KEY",
+            "ANTHROPIC_API_KEY",
         ):
             assert key in fields
             assert fields[key]["derived"] is True
@@ -48,3 +50,13 @@ class TestRelaySchema:
         for cap in RELAY_SCHEMA["capabilityInfo"]:
             assert ">" not in cap["priority"], cap
             assert cap["priority"] == "configurable"
+
+    def test_key_fields_are_passwords(self):
+        for f in RELAY_SCHEMA["fields"]:
+            if f.get("derived"):
+                assert f["type"] == "password"
+
+    def test_key_fields_have_https_help_urls(self):
+        for f in RELAY_SCHEMA["fields"]:
+            if f.get("derived"):
+                assert f["helpUrl"].startswith("https://")

@@ -87,6 +87,13 @@ RELAY_SCHEMA: dict[str, Any] = {
             "co-...",
             "https://dashboard.cohere.com/api-keys",
         ),
+        _key_field("XAI_API_KEY", "xAI API Key", "xai-...", "https://console.x.ai"),
+        _key_field(
+            "ANTHROPIC_API_KEY",
+            "Anthropic API Key",
+            "sk-ant-...",
+            "https://console.anthropic.com",
+        ),
     ],
     "capabilityInfo": [
         {
