@@ -1005,14 +1005,26 @@ def _handle_callers_of(
 
 def _handle_callees_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving callees (issue #342).
+    # If the target is a File or Class, we want to see what its members call.
+    search_sources = [qn]
+    if node:
+        if node.kind == "File":
+            child_nodes = store.get_nodes_by_file(node.file_path, as_of=as_of)
+            search_sources.extend([n.qualified_name for n in child_nodes])
+        elif node.kind == "Class":
+            child_edges = store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of)
+            search_sources.extend([e.target_qualified for e in child_edges])
+
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in store.get_edges_by_sources(search_sources, kind="CALLS", as_of=as_of):
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1284,7 +1296,9 @@ def _dispatch_query_pattern(
             store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "callees_of":
-        _handle_callees_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
+        _handle_callees_of(
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
     elif pattern == "imports_of":
         _handle_imports_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
     elif pattern == "importers_of":
