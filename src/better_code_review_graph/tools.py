@@ -1795,6 +1795,10 @@ def renamed_in_diff(
                     capture_output=True,
                     timeout=15,
                     check=False,
+                    # Detach stdin: an inherited stdio pipe stalls the output
+                    # reader in the MCP server's worker thread on Windows.
+                    # See incremental.py.
+                    stdin=subprocess.DEVNULL,
                 )
             except (OSError, subprocess.SubprocessError):
                 continue
