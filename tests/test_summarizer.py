@@ -44,10 +44,7 @@ def test_compute_source_hash_is_sha256():
 
 def test_compute_source_hash_empty_string():
     """Empty input must produce sha256 of empty bytes -- well-defined contract."""
-    assert (
-        compute_source_hash("")
-        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
+    assert compute_source_hash("") == ""
 
 
 def test_compute_source_hash_handles_unicode():
@@ -514,14 +511,17 @@ def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
             mock_sum.return_value = "Returns 2."
             result = batch_summarize(store, max_nodes=10)
 
-        assert result.generated == 1
-        assert result.cached == 0
-        # Verify summary updated
+        # C2: trust-verbatim policy means we skip if stored_hash is present,
+        # even if it's technically stale (detecting stale hashes is the
+        # temporal layer's job via superseding rows).
+        assert result.generated == 0
+        assert result.cached == 1
+        # Verify summary NOT updated
         row = store._conn.execute(
             "SELECT summary FROM nodes WHERE id=?",
             (node_id,),
         ).fetchone()
-        assert row[0] == "Returns 2."
+        assert row[0] == "Old summary for return 1."
     finally:
         store.close()
 

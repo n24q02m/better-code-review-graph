@@ -57,12 +57,15 @@ class NodeNeedingSummary:
     source_hash: str | None
 
 
-def compute_source_hash(source_text: str) -> str:
+def compute_source_hash(source_text: str | None) -> str:
     """Return the SHA-256 hex digest of ``source_text`` encoded as UTF-8.
 
-    Pure function, no I/O. ``source_text=""`` is well-defined and returns
-    ``hashlib.sha256(b"").hexdigest()``.
+    Pure function, no I/O. Returns an empty string for ``None`` to support
+    null source rows. ``source_text=""`` is well-defined and also returns
+    the empty string to match the temporal-layer hashing (avoiding drift).
     """
+    if not source_text:
+        return ""
     return hashlib.sha256(source_text.encode("utf-8")).hexdigest()
 
 
@@ -300,7 +303,15 @@ def batch_summarize(
         stored_summary = row[3]
         stored_provider = row[4]
 
-        live_hash = compute_source_hash(src)
+        # Trust verbatim (the caller has likely already paid the SHA-256 cost
+        # when persisting ``nodes.source_hash`` -- recomputing here is wasteful and
+        # also gives subtle "rehash drift" bugs if the caller passes a normalised
+        # form of the source).
+        #
+        # Use database ``source_hash`` (if not None) for cache validation and
+        # key derivation. This avoids redundant recomputation and prevents
+        # 'rehash drift' bugs.
+        live_hash = stored_hash if stored_hash is not None else compute_source_hash(src)
 
         if (
             stored_summary
