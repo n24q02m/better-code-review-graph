@@ -35,7 +35,7 @@ CLOUD_KEYS = [
 ]
 
 # Shorter timeout for optional-credential servers (user can skip)
-RELAY_TIMEOUT_S = 120.0
+RELAY_TIMEOUT_S = 30.0
 
 
 def apply_config(config: dict[str, str]) -> None:

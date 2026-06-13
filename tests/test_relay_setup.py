@@ -63,7 +63,7 @@ class TestEnsureConfig:
             mock_store_cls.return_value.load.return_value = None
             await ensure_config()
 
-    async def test_relay_success(self, monkeypatch):
+    async def test_relay_success(self, monkeypatch, capsys):
         for key in CLOUD_KEYS:
             monkeypatch.delenv(key, raising=False)
 
@@ -95,10 +95,14 @@ class TestEnsureConfig:
                 result = await ensure_config()
                 assert result is not None
                 assert result["JINA_AI_API_KEY"] == "from-relay"
+                captured = capsys.readouterr()
+                assert "Configure cloud embedding" in captured.err
                 mock_create.assert_called_once_with(
                     TEST_RELAY_URL, SERVER_NAME, RELAY_SCHEMA
                 )
-                mock_poll.assert_called_once()
+                mock_poll.assert_called_once_with(
+                    TEST_RELAY_URL, mock_session, timeout_s=30.0
+                )
                 mock_store_cls.return_value.save.assert_called_once_with(
                     {"JINA_AI_API_KEY": "from-relay"}
                 )
