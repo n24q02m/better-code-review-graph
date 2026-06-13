@@ -1033,6 +1033,23 @@ def serve_main(repo_root: str | None = None) -> None:
     global _default_repo_root
     _default_repo_root = repo_root
 
+    # Warm numpy's C-extension import on the MAIN thread before serving.
+    #
+    # The embedding backends import numpy lazily, inside a tool call. FastMCP
+    # runs each sync tool in an anyio worker thread while the asyncio event loop
+    # holds the GIL on the main thread. On Windows, the very first import of
+    # numpy's ``_multiarray_umath`` C extension from a non-main thread in that
+    # configuration deadlocks (the C-extension init waits on the main thread,
+    # which is parked in the Proactor loop), so the first local-ONNX
+    # ``graph embed`` would hang forever. Importing numpy here -- on the main
+    # thread, before the loop starts -- makes the later worker-thread import a
+    # no-op cache hit. Cheap (numpy is already a transitive dependency) and
+    # backend-agnostic (both local ONNX and the cloud vector paths touch numpy).
+    try:
+        import numpy  # noqa: F401
+    except ImportError:
+        pass
+
     is_http = (
         "--http" in sys.argv
         or os.environ.get("MCP_TRANSPORT") == "http"
