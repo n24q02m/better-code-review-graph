@@ -1050,6 +1050,7 @@ class GraphStore:
             (json.dumps(unique_qns), *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
+
     def search_edges_by_target_name(
         self, name: str, kind: str = "CALLS", *, as_of: str = ""
     ) -> list[GraphEdge]:
