@@ -271,95 +271,61 @@ def query(
     """
     match action:
         case "query":
-            if not pattern:
-                return _json(
-                    {
-                        "error": "pattern is required for query action",
-                        "valid_patterns": [
-                            "callers_of",
-                            "callees_of",
-                            "imports_of",
-                            "importers_of",
-                            "children_of",
-                            "tests_for",
-                            "inheritors_of",
-                            "file_summary",
-                        ],
-                    }
-                )
-            if not target:
-                return _json({"error": "target is required for query action"})
-            return _json(
-                query_graph(
-                    pattern=pattern,
-                    target=target,
-                    repo_root=repo_root,
-                    languages=languages,
-                    repo=repo,
-                    as_of=as_of,
-                )
+            return _handle_query_action(
+                pattern=pattern,
+                target=target,
+                repo_root=repo_root,
+                languages=languages,
+                repo=repo,
+                as_of=as_of,
             )
         case "search":
-            if not search_query:
-                return _json({"error": "search_query is required for search action"})
-            result = semantic_search_nodes(
-                query=search_query,
+            return _handle_query_search(
+                search_query=search_query,
                 kind=kind,
                 limit=limit,
                 repo_root=repo_root,
                 repo=repo,
                 as_of=as_of,
             )
-            result = _maybe_include_setup_hint(result)
-            return _json(result)
         case "impact":
-            return _json(
-                get_impact_radius(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    max_results=max_results,
-                    repo_root=repo_root,
-                    base=base,
-                    max_payload_bytes=max_payload_bytes,
-                    repo=repo,
-                    as_of=as_of,
-                )
+            return _handle_query_impact(
+                changed_files=changed_files,
+                max_depth=max_depth,
+                max_results=max_results,
+                repo_root=repo_root,
+                base=base,
+                max_payload_bytes=max_payload_bytes,
+                repo=repo,
+                as_of=as_of,
             )
         case "large_functions":
-            return _json(
-                find_large_functions(
-                    min_lines=min_lines,
-                    kind=kind,
-                    file_path_pattern=file_path_pattern,
-                    limit=limit,
-                    repo_root=repo_root,
-                    repo=repo,
-                )
+            return _handle_query_large_functions(
+                min_lines=min_lines,
+                kind=kind,
+                file_path_pattern=file_path_pattern,
+                limit=limit,
+                repo_root=repo_root,
+                repo=repo,
             )
         case "spot_check":
-            return _json(
-                spot_check_last_callers(
-                    n=n,
-                    repo_root=repo_root,
-                    context_lines=context_lines,
-                )
+            return _handle_query_spot_check(
+                n=n,
+                repo_root=repo_root,
+                context_lines=context_lines,
             )
         case "renamed_in_diff":
-            return _json(
-                renamed_in_diff(
-                    base=base,
-                    changed_files=changed_files,
-                    repo_root=repo_root,
-                )
+            return _handle_query_renamed_in_diff(
+                base=base,
+                changed_files=changed_files,
+                repo_root=repo_root,
             )
         case "diff":
-            return _json(
-                diff_graph(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    repo=repo,
-                )
+            return _handle_query_diff(
+                repo_root=repo_root,
+                from_sha=from_sha,
+                to_sha=to_sha,
+                repo=repo,
             )
         case _:
             import difflib
@@ -381,6 +347,154 @@ def query(
                     "valid_actions": valid_actions,
                 }
             )
+
+
+def _handle_query_action(
+    pattern: str | None,
+    target: str | None,
+    repo_root: str | None,
+    languages: list[str] | None,
+    repo: str,
+    as_of: str,
+) -> str:
+    if not pattern:
+        return _json(
+            {
+                "error": "pattern is required for query action",
+                "valid_patterns": [
+                    "callers_of",
+                    "callees_of",
+                    "imports_of",
+                    "importers_of",
+                    "children_of",
+                    "tests_for",
+                    "inheritors_of",
+                    "file_summary",
+                ],
+            }
+        )
+    if not target:
+        return _json({"error": "target is required for query action"})
+    return _json(
+        query_graph(
+            pattern=pattern,
+            target=target,
+            repo_root=repo_root,
+            languages=languages,
+            repo=repo,
+            as_of=as_of,
+        )
+    )
+
+
+def _handle_query_search(
+    search_query: str | None,
+    kind: str | None,
+    limit: int,
+    repo_root: str | None,
+    repo: str,
+    as_of: str,
+) -> str:
+    if not search_query:
+        return _json({"error": "search_query is required for search action"})
+    result = semantic_search_nodes(
+        query=search_query,
+        kind=kind,
+        limit=limit,
+        repo_root=repo_root,
+        repo=repo,
+        as_of=as_of,
+    )
+    result = _maybe_include_setup_hint(result)
+    return _json(result)
+
+
+def _handle_query_impact(
+    changed_files: list[str] | None,
+    max_depth: int,
+    max_results: int,
+    repo_root: str | None,
+    base: str,
+    max_payload_bytes: int,
+    repo: str,
+    as_of: str,
+) -> str:
+    return _json(
+        get_impact_radius(
+            changed_files=changed_files,
+            max_depth=max_depth,
+            max_results=max_results,
+            repo_root=repo_root,
+            base=base,
+            max_payload_bytes=max_payload_bytes,
+            repo=repo,
+            as_of=as_of,
+        )
+    )
+
+
+def _handle_query_large_functions(
+    min_lines: int,
+    kind: str | None,
+    file_path_pattern: str | None,
+    limit: int,
+    repo_root: str | None,
+    repo: str,
+) -> str:
+    return _json(
+        find_large_functions(
+            min_lines=min_lines,
+            kind=kind,
+            file_path_pattern=file_path_pattern,
+            limit=limit,
+            repo_root=repo_root,
+            repo=repo,
+        )
+    )
+
+
+def _handle_query_spot_check(
+    n: int,
+    repo_root: str | None,
+    context_lines: int,
+) -> str:
+    return _json(
+        spot_check_last_callers(
+            n=n,
+            repo_root=repo_root,
+            context_lines=context_lines,
+        )
+    )
+
+
+def _handle_query_renamed_in_diff(
+    base: str,
+    changed_files: list[str] | None,
+    repo_root: str | None,
+) -> str:
+    return _json(
+        renamed_in_diff(
+            base=base,
+            changed_files=changed_files,
+            repo_root=repo_root,
+        )
+    )
+
+
+def _handle_query_diff(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    repo: str,
+) -> str:
+    return _json(
+        diff_graph(
+            repo_root=repo_root,
+            from_sha=from_sha,
+            to_sha=to_sha,
+            repo=repo,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -466,27 +580,23 @@ def review(
     """
     match action:
         case "context":
-            return _json(
-                get_review_context(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    include_source=include_source,
-                    max_lines_per_file=max_lines_per_file,
-                    repo_root=repo_root,
-                    base=base,
-                    languages=languages,
-                    repo=repo,
-                )
+            return _handle_review_context(
+                changed_files=changed_files,
+                max_depth=max_depth,
+                include_source=include_source,
+                max_lines_per_file=max_lines_per_file,
+                repo_root=repo_root,
+                base=base,
+                languages=languages,
+                repo=repo,
             )
         case "delta":
-            return _json(
-                review_delta(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    show_line_shifts=show_line_shifts,
-                    repo=repo,
-                )
+            return _handle_review_delta(
+                repo_root=repo_root,
+                from_sha=from_sha,
+                to_sha=to_sha,
+                show_line_shifts=show_line_shifts,
+                repo=repo,
             )
         case _:
             import difflib
@@ -500,6 +610,48 @@ def review(
                     "valid_actions": valid_actions,
                 }
             )
+
+
+def _handle_review_context(
+    changed_files: list[str] | None,
+    max_depth: int,
+    include_source: bool,
+    max_lines_per_file: int,
+    repo_root: str | None,
+    base: str,
+    languages: list[str] | None,
+    repo: str,
+) -> str:
+    return _json(
+        get_review_context(
+            changed_files=changed_files,
+            max_depth=max_depth,
+            include_source=include_source,
+            max_lines_per_file=max_lines_per_file,
+            repo_root=repo_root,
+            base=base,
+            languages=languages,
+            repo=repo,
+        )
+    )
+
+
+def _handle_review_delta(
+    repo_root: str | None,
+    from_sha: str,
+    to_sha: str,
+    show_line_shifts: bool,
+    repo: str,
+) -> str:
+    return _json(
+        review_delta(
+            repo_root=repo_root,
+            from_sha=from_sha,
+            to_sha=to_sha,
+            show_line_shifts=show_line_shifts,
+            repo=repo,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -563,107 +715,15 @@ async def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
-            from mcp_core.storage.per_plugin_store import PerPluginStore
-
-            from . import credential_state as _cs
-
-            # Refresh module-level state from live PerPluginStore load + env
-            # to ensure setup_status is always accurate.
-            _cs.resolve_credential_state()
-
-            _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
-            _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
-            _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
-            _providers = list(dict.fromkeys(_env_keys + _store_keys))
-
-            # Logic for deriving state when resolve_credential_state() is limited
-            # (e.g. in stdio mode where it ignores PerPluginStore).
-            _state = _cs.get_state().value
-            if _providers and _state != "configured":
-                _state = "configured"
-
-            return _json(
-                {
-                    "state": _state,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": _env_keys,
-                    "providers_configured": _providers,
-                }
-            )
+            return _config_setup_status()
         case "setup_start":
-            from .credential_state import CredentialState, get_state
-
-            if get_state() == CredentialState.CONFIGURED and not force:
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use force=true to reconfigure.",
-                    }
-                )
-            # In stdio mode (default after spec 2026-05-01) the server reads
-            # API keys from env vars only; the browser-based relay form is
-            # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
-            public_url = os.environ.get("PUBLIC_URL")
-            if public_url:
-                url = f"{public_url.rstrip('/')}/authorize"
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {
-                    "status": "stdio_mode",
-                    "message": (
-                        "Stdio mode reads API keys from env vars only. "
-                        "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
-                        "COHERE_API_KEY in the plugin config, or switch to HTTP "
-                        "mode to use the browser-based setup form."
-                    ),
-                }
-            )
+            return _config_setup_start(force)
         case "setup_skip":
-            from mcp_core import set_local_mode
-
-            from .credential_state import CredentialState, set_state
-
-            set_local_mode(SERVER_NAME)
-            set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
+            return _config_setup_skip()
         case "setup_reset":
-            from .credential_state import reset_state
-
-            reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
+            return _config_setup_reset()
         case "setup_complete":
-            from .credential_state import (
-                get_state as _get_state,
-            )
-            from .credential_state import (
-                resolve_credential_state,
-            )
-
-            resolve_credential_state()
-            state = _get_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
+            return _config_setup_complete()
         case _:
             import difflib
 
@@ -685,6 +745,118 @@ async def config(
                     "valid_actions": valid_actions,
                 }
             )
+
+
+def _config_setup_status() -> str:
+    from mcp_core.storage.per_plugin_store import PerPluginStore
+
+    from . import credential_state as _cs
+
+    # Refresh module-level state from live PerPluginStore load + env
+    # to ensure setup_status is always accurate.
+    _cs.resolve_credential_state()
+
+    _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
+    _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
+    _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
+    _providers = list(dict.fromkeys(_env_keys + _store_keys))
+
+    # Logic for deriving state when resolve_credential_state() is limited
+    # (e.g. in stdio mode where it ignores PerPluginStore).
+    _state = _cs.get_state().value
+    if _providers and _state != "configured":
+        _state = "configured"
+
+    return _json(
+        {
+            "state": _state,
+            "setup_url": _cs.get_setup_url(),
+            "cloud_keys_in_env": _env_keys,
+            "providers_configured": _providers,
+        }
+    )
+
+
+def _config_setup_start(force: bool) -> str:
+    from .credential_state import CredentialState, get_state
+
+    if get_state() == CredentialState.CONFIGURED and not force:
+        return _json(
+            {
+                "status": "already_configured",
+                "message": "Already configured. Use force=true to reconfigure.",
+            }
+        )
+    # In stdio mode (default after spec 2026-05-01) the server reads
+    # API keys from env vars only; the browser-based relay form is
+    # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
+    public_url = os.environ.get("PUBLIC_URL")
+    if public_url:
+        url = f"{public_url.rstrip('/')}/authorize"
+        return _json(
+            {
+                "status": "setup_started",
+                "setup_url": url,
+                "message": "Open this URL to configure API keys.",
+            }
+        )
+    return _json(
+        {
+            "status": "stdio_mode",
+            "message": (
+                "Stdio mode reads API keys from env vars only. "
+                "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
+                "COHERE_API_KEY in the plugin config, or switch to HTTP "
+                "mode to use the browser-based setup form."
+            ),
+        }
+    )
+
+
+def _config_setup_skip() -> str:
+    from mcp_core import set_local_mode
+
+    from .credential_state import CredentialState, set_state
+
+    set_local_mode(SERVER_NAME)
+    set_state(CredentialState.LOCAL)
+    return _json(
+        {
+            "status": "ok",
+            "message": "Local mode set. Relay will not trigger on restart.",
+        }
+    )
+
+
+def _config_setup_reset() -> str:
+    from .credential_state import reset_state
+
+    reset_state()
+    return _json(
+        {
+            "status": "ok",
+            "message": "Credentials cleared. Next tool call will offer setup.",
+        }
+    )
+
+
+def _config_setup_complete() -> str:
+    from .credential_state import (
+        get_state as _get_state,
+    )
+    from .credential_state import (
+        resolve_credential_state,
+    )
+
+    resolve_credential_state()
+    state = _get_state()
+    return _json(
+        {
+            "status": "ok",
+            "state": state.value,
+            "message": "Credential state refreshed.",
+        }
+    )
 
 
 def _config_status(repo_root: str | None) -> str:
