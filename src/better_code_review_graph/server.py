@@ -283,6 +283,7 @@ def query(
                             "children_of",
                             "tests_for",
                             "inheritors_of",
+                            "parents_of",
                             "file_summary",
                         ],
                     }

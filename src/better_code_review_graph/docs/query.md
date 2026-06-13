@@ -16,6 +16,7 @@ Run predefined graph queries to explore code relationships.
   - `children_of`: Find nodes contained in a file or class
   - `tests_for`: Find tests for the target
   - `inheritors_of`: Find classes inheriting from the target
+  - `parents_of`: Find base classes or interfaces the target inherits from or implements
   - `file_summary`: Get all nodes in a file
 - `target` (required): Node name, qualified name, or file path
 - `repo_root`: Repository root path (auto-detected)

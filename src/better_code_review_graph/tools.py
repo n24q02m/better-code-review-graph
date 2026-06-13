@@ -672,6 +672,7 @@ _QUERY_PATTERNS = {
     "importers_of": "Find all files that import a given file or module",
     "children_of": "Find all nodes contained in a file or class",
     "tests_for": "Find all tests for a given function or class",
+    "parents_of": "Find all classes or interfaces that the target inherits from or implements",
     "inheritors_of": "Find all classes that inherit from a given class",
     "file_summary": "Get a summary of all nodes in a file",
 }
@@ -1095,20 +1096,59 @@ def _handle_tests_for(
             results.append(node_to_dict(t))
 
 
-def _handle_inheritors_of(
+def _handle_parents_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    """Find all classes or interfaces that the target inherits from or implements.
+
+    Bolt: Optimized to prevent N+1 queries by using batched edge lookup (issue #343).
+    """
+    # Inheritance edges are Child (source) -> Parent (target).
+    # To find parents of qn, we look for edges where qn is the source.
+    # We search for the qualified name only, as source is always qualified.
+    edges = store.get_edges_by_source(qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of)
+
+    qns = []
+    for e in edges:
+        qns.append(e.target_qualified)
+        edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                results.append(node_to_dict(node_map[qn_tgt]))
+
+
+def _handle_inheritors_of(
+    store: Any,
+    node: Any,
+    qn: str,
+    results: list[dict],
+    edges_out: list[dict],
+    *,
+    as_of: str = "",
+) -> None:
+    """Find all classes that inherit from a given class.
+
+    Bolt: Optimized to prevent N+1 queries by using batched node fetching (issue #343).
+    Note: Inheritance lookups are strict by default (fallback=False) to avoid
+    incorrectly attributing subclasses across different namespaces.
+    """
     qns = []
     for e in store.get_edges_by_target(
         qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
     ):
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
+
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1204,6 +1244,7 @@ def _add_query_response_decorations(
         "callers_of",
         "callees_of",
         "inheritors_of",
+        "parents_of",
         "importers_of",
     ):
         _LAST_CALLERS_RESULT[str(root.resolve())] = {
@@ -1299,7 +1340,11 @@ def _dispatch_query_pattern(
         )
     elif pattern == "inheritors_of":
         _handle_inheritors_of(
-            store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
+    elif pattern == "parents_of":
+        _handle_parents_of(
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "file_summary":
         _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
@@ -1324,7 +1369,7 @@ def query_graph(
 
     Args:
         pattern: Query pattern. One of: callers_of, callees_of, imports_of,
-                 importers_of, children_of, tests_for, inheritors_of, file_summary.
+                 importers_of, children_of, tests_for, inheritors_of, parents_of, file_summary.
         target: The node name, qualified name, or file path to query about.
         repo_root: Repository root path. Auto-detected if omitted.
         languages: Optional list of language names to filter results to. Only
@@ -1670,7 +1715,7 @@ def spot_check_last_callers(
         return {
             "status": "no_cache",
             "summary": (
-                "No prior callers_of/callees_of/inheritors_of/importers_of "
+                "No prior callers_of/callees_of/inheritors_of/parents_of/importers_of "
                 "result cached for this repo. Run that query first."
             ),
             "samples": [],

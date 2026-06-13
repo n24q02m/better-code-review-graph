@@ -37,7 +37,8 @@ def test_inheritors_of_no_bare_fallback(store):
 
     results = []
     edges_out = []
-    _handle_inheritors_of(store, "a.py::Base", results, edges_out)
+    node = store.get_node("a.py::Base")
+    _handle_inheritors_of(store, node, "a.py::Base", results, edges_out)
 
     # It should NOT find b.py::Sub because we disabled fallback.
     assert len(results) == 0
