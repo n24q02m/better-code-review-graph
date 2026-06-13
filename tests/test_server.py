@@ -503,3 +503,18 @@ class TestServeMain:
             serve_main(repo_root=None)
         assert server_module._default_repo_root is None
         mock_run.assert_called_once_with(transport="stdio")
+
+    @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
+    def test_serve_main_survives_missing_numpy(self):
+        """The main-thread numpy warm-up is best-effort: a missing numpy must
+        not abort startup (the import is only there to dodge a worker-thread
+        C-extension import deadlock, not a hard requirement to serve)."""
+        import sys
+
+        import better_code_review_graph.server as server_module
+
+        # ``sys.modules[name] = None`` makes ``import name`` raise ImportError.
+        with patch.dict(sys.modules, {"numpy": None}):
+            with patch.object(server_module.mcp, "run") as mock_run:
+                serve_main(repo_root=None)
+        mock_run.assert_called_once_with(transport="stdio")
