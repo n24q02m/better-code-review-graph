@@ -305,6 +305,37 @@ class TestConfigTool:
         assert "Unknown action 'models'" in result["error"]
         assert "models" not in result["valid_actions"]
 
+    async def test_status_does_not_load_embedding_model(self, tmp_path):
+        """config(status) must NOT init the embedding backend.
+
+        Constructing the local backend loads the qwen3-embed ONNX model, which
+        can block/hang the status call on Windows under stdio. embeddings_count
+        is a pure SQL COUNT(*), so no model is needed. Patch init_backend to
+        explode if it is ever called from the status path.
+        """
+        repo = _make_mini_repo(tmp_path)
+        with patch(
+            "better_code_review_graph.embeddings.init_backend",
+            side_effect=AssertionError("status must not init the embedding backend"),
+        ):
+            result = json.loads(await config(action="status", repo_root=str(repo)))
+        assert result["status"] == "ok"
+        assert "embeddings_count" in result
+        assert result["embedding_backend"] in ("local", "cloud")
+
+    async def test_cache_clear_does_not_load_embedding_model(self, tmp_path):
+        """config(cache_clear) only counts + deletes rows: no model load."""
+        repo = _make_mini_repo(tmp_path)
+        with patch(
+            "better_code_review_graph.embeddings.init_backend",
+            side_effect=AssertionError(
+                "cache_clear must not init the embedding backend"
+            ),
+        ):
+            result = json.loads(await config(action="cache_clear", repo_root=str(repo)))
+        assert result["status"] == "cache cleared"
+        assert "embeddings_removed" in result
+
     async def test_set_missing_key(self):
         result = json.loads(await config(action="set"))
         assert result["error"] == "key is required for set action"
