@@ -737,7 +737,9 @@ def _mock_embed(texts, _dims=None):
 class TestEmbedGraph:
     @pytest.fixture(autouse=True)
     def force_local_backend(self, monkeypatch):
-        monkeypatch.setenv("EMBEDDING_BACKEND", "local")
+        # Use a mode that triggers CloudEmbeddingBackend so we can mock it
+        # and avoid the 570MB Qwen download in CI.
+        monkeypatch.setenv("EMBEDDING_BACKEND", "cloud")
 
     def test_embed_graph(self, repo_with_graph):
         with patch(
