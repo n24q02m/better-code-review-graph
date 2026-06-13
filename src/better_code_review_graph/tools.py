@@ -1012,7 +1012,7 @@ def _handle_callees_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in store.get_edges_by_sources([qn], kind="CALLS", as_of=as_of):
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1031,9 +1031,23 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
-        results.append({"import_target": e.target_qualified})
+    # Bolt: Use batched node fetching to avoid N+1 queries (#342 consistency).
+    qns = []
+    for e in store.get_edges_by_sources([qn], kind="IMPORTS_FROM", as_of=as_of):
+        qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                res = node_to_dict(node_map[qn_tgt])
+                # Preserve legacy key for backward compatibility
+                res["import_target"] = qn_tgt
+                results.append(res)
+            else:
+                results.append({"import_target": qn_tgt})
 
 
 def _handle_importers_of(
@@ -1044,18 +1058,33 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
-    ):
-        results.append({"importer": e.source_qualified, "file": e.file_path})
+    # Bolt: Use batched node fetching to avoid N+1 queries (#342 consistency).
+    qns = []
+    edge_map = {}
+    for e in store.get_edges_by_targets([abs_target], kind="IMPORTS_FROM", as_of=as_of):
+        qns.append(e.source_qualified)
+        edge_map[e.source_qualified] = e
         edges_out.append(edge_to_dict(e))
+
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                res = node_to_dict(node_map[qn_src])
+                # Preserve legacy keys
+                res["importer"] = qn_src
+                results.append(res)
+            else:
+                e = edge_map[qn_src]
+                results.append({"importer": qn_src, "file": e.file_path})
 
 
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], *, as_of: str = ""
 ) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
+    for e in store.get_edges_by_sources([qn], kind="CONTAINS", as_of=as_of):
         qns.append(e.target_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1075,9 +1104,7 @@ def _handle_tests_for(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
+    for e in store.get_edges_by_targets([qn], kind="TESTED_BY", as_of=as_of):
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1104,8 +1131,8 @@ def _handle_inheritors_of(
     as_of: str = "",
 ) -> None:
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
+    for e in store.get_edges_by_targets(
+        [qn], kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
     ):
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
