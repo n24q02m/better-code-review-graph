@@ -377,3 +377,41 @@ def test_scan_nodes_falls_back_to_name_when_no_qualified(tmp_path):
     node.name = "barfn"
     result = scanner.scan_nodes([node])
     assert "barfn" in result.tags_by_node
+
+
+def test_parse_simple_yaml_empty_key():
+    text = ": value\nvalid: key"
+    data = _parse_simple_yaml(text)
+    assert "valid" in data
+    assert "" not in data
+
+
+def test_load_rules_from_dir_non_existent(tmp_path):
+    rules = _load_rules_from_dir(tmp_path / "non-existent")
+    assert rules == []
+
+
+def test_load_rules_from_dir_single_language_string(tmp_path):
+    f = tmp_path / "single-lang.yaml"
+    f.write_text(
+        "id: l1\nseverity: LOW\npattern: x\nlanguages: python\nmessage: m\n",
+        encoding="utf-8",
+    )
+    rules = _load_rules_from_dir(tmp_path)
+    assert len(rules) == 1
+    assert rules[0].languages == frozenset({"python"})
+
+
+def test_default_rules_dir_trigger_except_block(monkeypatch):
+    import better_code_review_graph.security.heuristic as heuristic
+
+    # Mock files to raise ModuleNotFoundError
+    def fake_files(package):
+        raise ModuleNotFoundError("simulated")
+
+    monkeypatch.setattr(heuristic, "files", fake_files)
+
+    path = heuristic._default_rules_dir()
+    # It should fall back to REPO_ROOT / "rules" / "heuristic"
+    assert path.name == "heuristic"
+    assert path.parent.name == "rules"
