@@ -84,7 +84,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
-- Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
+- Fixed 768-dim storage keeps the table schema valid, but switching embedding MODEL changes the vector space -- B2 identity guard blocks boot (set REINDEX_ON_MODEL_CHANGE=true to re-embed). Same dims != same space; mixing vectors from different models corrupts search.
 - Deprecated (honored one release with a warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend is now inferred from whether the chain is empty). The old "Jina > Gemini > OpenAI > Cohere" auto-detect router is gone.
 
 ### Manual config example

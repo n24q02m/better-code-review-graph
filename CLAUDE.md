@@ -87,7 +87,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name. Summarizer providers must expose a chat-completion API (Jina/Cohere do not).
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` (embedding), `LLM_API_BASE` (summarizer)
-- Fixed 768-dim storage -- switching backend does NOT invalidate existing vectors
+- Fixed 768-dim storage keeps the table schema valid, but switching embedding MODEL changes the vector space -- B2 identity guard blocks boot (set REINDEX_ON_MODEL_CHANGE=true to re-embed). Same dims != same space; mixing vectors from different models corrupts search.
 - Deprecated (honored one release voi warning): singular `EMBEDDING_MODEL`/`SUMMARY_MODEL` + `EMBEDDING_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
 
 ### Manual config example
