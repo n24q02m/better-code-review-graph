@@ -212,6 +212,55 @@ class TestGraphStore:
         assert self.store.get_metadata("test_key") == "test_value"
         assert self.store.get_metadata("nonexistent") is None
 
+    def test_get_all_nodes(self):
+        """Test retrieving all nodes from the graph."""
+        # Empty graph
+        assert self.store.get_all_nodes() == []
+
+        # Add some nodes
+        n1 = NodeInfo(
+            kind="File",
+            name="/a.py",
+            file_path="/a.py",
+            line_start=1,
+            line_end=10,
+            language="python",
+        )
+        n2 = NodeInfo(
+            kind="Function",
+            name="foo",
+            file_path="/a.py",
+            line_start=2,
+            line_end=5,
+            language="python",
+            parent_name="/a.py",
+            extra={"key": "val"},
+        )
+        self.store.upsert_node(n1)
+        self.store.upsert_node(n2)
+        self.store.commit()
+
+        nodes = self.store.get_all_nodes()
+        assert len(nodes) == 2
+
+        # Check n1
+        node_a = next(n for n in nodes if n.name == "/a.py")
+        assert node_a.kind == "File"
+        assert node_a.file_path == "/a.py"
+        assert node_a.line_start == 1
+        assert node_a.line_end == 10
+        assert node_a.language == "python"
+
+        # Check n2
+        node_foo = next(n for n in nodes if n.name == "foo")
+        assert node_foo.kind == "Function"
+        assert node_foo.file_path == "/a.py"
+        assert node_foo.line_start == 2
+        assert node_foo.line_end == 5
+        assert node_foo.language == "python"
+        assert node_foo.parent_name == "/a.py"
+        assert node_foo.extra == {"key": "val"}
+
 
 # --- Multi-word search tests (Task 2.1) ---
 
