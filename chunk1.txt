@@ -1,0 +1,98 @@
+"""Dual-mode embedding: local ONNX (default) + cloud (litellm passthrough).
+
+Supports two backends:
+- **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
+  download on first use. Default backend.
+- **cloud**: Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
+  Supports Jina, Gemini, OpenAI, Cohere, or any litellm ``provider/model``.
+  Models come from the ``EMBEDDING_MODELS`` chain (ordered ``provider/model``
+  list, first entry is the active model).
+
+Backend selection:
+- ``EMBEDDING_MODELS`` non-empty -> 'cloud' (first entry is the model).
+- Empty -> 'local' (default ONNX, always available).
+- Default chain keeps only models whose provider key is configured.
+- Legacy ``EMBEDDING_BACKEND`` / ``EMBEDDING_MODEL`` honored one release
+  (with a deprecation warning).
+
+All embeddings are stored at fixed 768 dimensions (MRL truncation).
+Switching backend does NOT invalidate existing vectors.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import math
+import os
+import sqlite3
+import struct
+import time
+from pathlib import Path
+from typing import Any, Protocol
+
+from .graph import GraphNode, GraphStore, node_to_dict
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_DEFAULT_DIMS = 768  # Fixed storage dimension (MRL truncation)
+
+# Retry config for transient errors (rate limits, 5xx, network).
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 1.0  # seconds, doubles each retry
+
+_RETRYABLE_PATTERNS = (
+    "rate limit",
+    "rate_limit",
+    "429",
+    "quota",
+    "too many requests",
+    "500",
+    "502",
+    "503",
+    "504",
+    "timeout",
+    "timed out",
+    "connection",
+    "temporarily unavailable",
+    "overloaded",
+    "resource exhausted",
+    "resource_exhausted",
+)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Check if an exception is transient and worth retrying."""
+    msg = str(exc).lower()
+    return any(p in msg for p in _RETRYABLE_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Provider detection
+# ---------------------------------------------------------------------------
+
+
+def _detect_embedding_provider(model: str) -> str:
+    """Detect provider from model name. Returns 'jina', 'gemini', 'openai', or 'cohere'."""
+    lower = model.lower()
+    if lower.startswith("jina_ai/") or lower.startswith("jina"):
+        return "jina"
+    if lower.startswith("gemini/") or "gemini" in lower:
+        return "gemini"
+    if lower.startswith("embed-") or lower.startswith("cohere/"):
+        return "cohere"
+    if lower.startswith("text-embedding") or lower.startswith("openai/"):
+        return "openai"
+    # Fallback: check env vars in priority order
+    if os.getenv("JINA_AI_API_KEY"):
+        return "jina"
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        return "gemini"
+    if os.getenv("OPENAI_API_KEY"):
+        return "openai"
+    return "cohere"

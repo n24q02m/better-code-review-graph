@@ -1,0 +1,99 @@
+        return self.model
+
+    def _call_provider(
+        self, texts: list[str], dimensions: int | None = None
+    ) -> list[list[float]]:
+        """Single cloud path via mcp_core.llm (litellm passthrough)."""
+        # Lazy import: litellm costs ~1-2s on first import.
+        from mcp_core.llm import embedding
+
+        kwargs: dict[str, Any] = {}
+        if dimensions:
+            kwargs["dimensions"] = dimensions
+        if self._provider == "cohere":
+            kwargs["input_type"] = "search_document"
+
+        # Normalise empty string to None: mcp_core.llm forwards a non-None
+        # api_key to litellm, which suppresses provider env-var fallback (401).
+        resp = embedding(
+            model=self._litellm_model(),
+            input=texts,
+            api_base=os.getenv("EMBEDDING_API_BASE") or None,
+            api_key=self._resolve_api_key() or None,
+            **kwargs,
+        )
+
+        # litellm embedding items may be pydantic ``Embedding`` objects or
+        # plain dicts depending on provider/version -- handle both shapes,
+        # and ``resp.data`` may be None.
+        def _idx(item: Any) -> int:
+            return (
+                item.get("index", 0)
+                if isinstance(item, dict)
+                else getattr(item, "index", 0)
+            )
+
+        def _vec(item: Any) -> list[float]:
+            return item["embedding"] if isinstance(item, dict) else item.embedding
+
+        data = sorted(resp.data or [], key=_idx)
+        embeddings = [_vec(item) for item in data]
+
+        # Truncate locally if server returned more dims than requested (Cohere
+        # and other providers that ignore ``dimensions`` server-side).
+        if dimensions and embeddings and len(embeddings[0]) > dimensions:
+            embeddings = [e[:dimensions] for e in embeddings]
+        return embeddings
+
+    def _embed_batch_inner(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed a single batch with retry logic for transient errors."""
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                return self._call_provider(texts, dimensions)
+            except Exception as e:
+                last_exc = e
+                if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
+                    delay = _RETRY_BASE_DELAY * (2**attempt)
+                    time.sleep(delay)
+                else:
+                    break
+
+        # Loop always sets last_exc before breaking (range is non-empty for
+        # _MAX_RETRIES >= 1); fall back to a RuntimeError defensively.
+        if last_exc is None:
+            raise RuntimeError("embed batch failed without capturing an exception")
+        raise last_exc
+
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed texts with auto batch splitting."""
+        if not texts:
+            return []
+
+        if len(texts) <= self.MAX_BATCH_SIZE:
+            return self._embed_batch_inner(texts, dimensions)
+
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), self.MAX_BATCH_SIZE):
+            batch = texts[i : i + self.MAX_BATCH_SIZE]
+            batch_result = self._embed_batch_inner(batch, dimensions)
+            all_embeddings.extend(batch_result)
+
+        return all_embeddings
+
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text."""
+        results = self.embed_texts([text], dimensions)
+        return results[0]

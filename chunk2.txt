@@ -1,0 +1,100 @@
+def _strip_provider(model: str) -> str:
+    """Strip provider prefix (e.g. 'gemini/model' -> 'model')."""
+    if "/" in model:
+        return model.split("/", 1)[1]
+    return model
+
+
+# ---------------------------------------------------------------------------
+# Backend Protocol
+# ---------------------------------------------------------------------------
+
+
+class EmbeddingBackend(Protocol):  # pragma: no cover
+    """Protocol for embedding backends."""
+
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed a batch of texts. Returns list of embedding vectors."""
+        ...
+
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text. Returns embedding vector."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Qwen3EmbedBackend (local ONNX)
+# ---------------------------------------------------------------------------
+
+
+class Qwen3EmbedBackend:
+    """Local ONNX embedding via qwen3-embed (Qwen3-Embedding-0.6B).
+
+    Uses last-token pooling with instruction-aware queries.
+    Model is downloaded on first use (~0.57GB).
+    Batch size is forced to 1 (static ONNX graph).
+    """
+
+    DEFAULT_MODEL = "n24q02m/Qwen3-Embedding-0.6B-ONNX"
+
+    def __init__(self, model_name: str | None = None):
+        self._model_name = model_name or self.DEFAULT_MODEL
+        self._model = None
+
+    @property
+    def name(self) -> str:
+        return f"local:{self._model_name}"
+
+    def _get_model(self):
+        """Lazy-load the embedding model.
+
+        On first call, downloads the ONNX model (~570 MB) from HuggingFace
+        if not already cached.
+        """
+        if self._model is None:
+            from qwen3_embed import TextEmbedding
+
+            self._model = TextEmbedding(model_name=self._model_name)
+        return self._model
+
+    def embed_texts(
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+    ) -> list[list[float]]:
+        """Embed texts using local ONNX model."""
+        if not texts:
+            return []
+
+        model = self._get_model()
+        kwargs: dict[str, Any] = {}
+        if dimensions and dimensions > 0:
+            kwargs["dim"] = dimensions
+        embeddings = list(model.embed(texts, **kwargs))
+        return [emb.tolist() for emb in embeddings]
+
+    def embed_single(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a single text (document/passage)."""
+        results = self.embed_texts([text], dimensions)
+        return results[0]
+
+    def embed_single_query(
+        self,
+        text: str,
+        dimensions: int | None = None,
+    ) -> list[float]:
+        """Embed a query with instruction prefix (asymmetric retrieval)."""
+        model = self._get_model()
+        kwargs: dict[str, Any] = {}

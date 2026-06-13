@@ -1,0 +1,100 @@
+        if dimensions and dimensions > 0:
+            kwargs["dim"] = dimensions
+        result = list(model.query_embed(text, **kwargs))
+        return result[0].tolist()
+
+
+# ---------------------------------------------------------------------------
+# Cloud Embedding Backend (multi-provider: Jina, Gemini, OpenAI, Cohere)
+# ---------------------------------------------------------------------------
+
+
+# Explicit provider prefixes -> unambiguous key detection + litellm routing.
+_DEFAULT_EMBEDDING_CHAIN = (
+    "jina_ai/jina-embeddings-v5-text-small",
+    "gemini/gemini-embedding-001",
+    "openai/text-embedding-3-large",
+    "cohere/embed-multilingual-v3.0",
+)
+_KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KEY"}
+
+
+def _key_available(env_var: str) -> bool:
+    if os.getenv(env_var):
+        return True
+    alias = _KEY_ALIASES.get(env_var)
+    return bool(alias and os.getenv(alias))
+
+
+def resolve_embedding_chain() -> list[str]:
+    """Ordered embedding chain from EMBEDDING_MODELS (fallback order).
+
+    Empty -> local ONNX. Legacy EMBEDDING_MODEL honored one release (warning).
+    Default keeps ONLY models whose provider key is configured; none -> empty
+    -> local. Not "any key" (that would keep keyless cloud models).
+    """
+    from mcp_core.llm.providers import key_env_for_model
+
+    explicit = os.getenv("EMBEDDING_MODELS", "").strip()
+    if explicit:
+        return [m.strip() for m in explicit.split(",") if m.strip()]
+    legacy = os.getenv("EMBEDDING_MODEL", "").strip()
+    if legacy:
+        logger.warning(
+            "Deprecated EMBEDDING_MODEL honored; migrate to EMBEDDING_MODELS "
+            "(removed next release)."
+        )
+        return [legacy]
+    return [m for m in _DEFAULT_EMBEDDING_CHAIN if _key_available(key_env_for_model(m))]
+
+
+class CloudEmbeddingBackend:
+    """Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
+
+    Provider is auto-detected from the model name or env vars and mapped to
+    a litellm ``provider/model`` string. Priority: jina > gemini > openai >
+    cohere.
+    """
+
+    MAX_BATCH_SIZE = 96
+
+    def __init__(
+        self,
+        model: str | None = None,
+        api_key: str | None = None,
+    ):
+        self.model = (
+            model
+            or (resolve_embedding_chain() or ["cohere/embed-multilingual-v3.0"])[0]
+        )
+        self.api_key = api_key
+        self._provider = _detect_embedding_provider(self.model)
+
+    @property
+    def name(self) -> str:
+        return f"cloud:{self._provider}:{self.model}"
+
+    def _resolve_api_key(self) -> str:
+        """Resolve API key for the current provider."""
+        if self.api_key:
+            return self.api_key
+        if self._provider == "jina":
+            return os.getenv("JINA_AI_API_KEY") or ""
+        if self._provider == "gemini":
+            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+        if self._provider == "openai":
+            return os.getenv("OPENAI_API_KEY") or ""
+        # cohere
+        return os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
+
+    def _litellm_model(self) -> str:
+        """Map crg's model naming to a litellm ``provider/model`` string."""
+        if "/" in self.model:
+            return self.model
+        if self._provider == "jina":
+            return f"jina_ai/{self.model}"
+        if self._provider == "gemini":
+            return f"gemini/{self.model}"
+        if self._provider == "cohere":
+            return f"cohere/{self.model}"
+        # OpenAI-style bare names (text-embedding-3-*) pass through as-is.
