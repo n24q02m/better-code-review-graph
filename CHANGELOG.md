@@ -2,6 +2,50 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.5 (2026-06-13)
+
+### Bug Fixes
+
+- Bump deps and stop Renovate raising the semgrep floor
+  ([#708](https://github.com/n24q02m/better-code-review-graph/pull/708),
+  [`31c9f50`](https://github.com/n24q02m/better-code-review-graph/commit/31c9f50d6cba064991071f2accf306673a36e074))
+
+- Config status hangs on Windows under stdio
+  ([#705](https://github.com/n24q02m/better-code-review-graph/pull/705),
+  [`ef38e43`](https://github.com/n24q02m/better-code-review-graph/commit/ef38e43a924ddd6f3443dd160d8bd72b99e9f8c5))
+
+- Graph build slow on Windows under stdio (git subprocess stall)
+  ([#707](https://github.com/n24q02m/better-code-review-graph/pull/707),
+  [`a0dca19`](https://github.com/n24q02m/better-code-review-graph/commit/a0dca198c4062ede7b4e3efdf42cba3643b7dedc))
+
+- Local ONNX embed hangs on Windows under stdio
+  ([#706](https://github.com/n24q02m/better-code-review-graph/pull/706),
+  [`aafa6fe`](https://github.com/n24q02m/better-code-review-graph/commit/aafa6febc6b3ae362e8b8aa992a5a7ea6fa2ef1a))
+
+- Remove literal v<auto> placeholder from stabilization note
+  ([#698](https://github.com/n24q02m/better-code-review-graph/pull/698),
+  [`8ddf9cc`](https://github.com/n24q02m/better-code-review-graph/commit/8ddf9cc98b93a6cbe72e49898e63b50c4f7d7e08))
+
+- Sync README tagline to current capability description
+  ([#700](https://github.com/n24q02m/better-code-review-graph/pull/700),
+  [`b587687`](https://github.com/n24q02m/better-code-review-graph/commit/b587687ee5027785f013d7c972fb60d89deebd15))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#704](https://github.com/n24q02m/better-code-review-graph/pull/704),
+  [`e7af10e`](https://github.com/n24q02m/better-code-review-graph/commit/e7af10e47f2ecbc3d649ecdb3db93d25f4407251))
+
+- **deps**: Update python:3.13-slim-bookworm docker digest to 05b9539
+  ([#702](https://github.com/n24q02m/better-code-review-graph/pull/702),
+  [`ad0b213`](https://github.com/n24q02m/better-code-review-graph/commit/ad0b213876450ab27859c3851355dcf123988e60))
+
+### Features
+
+- Sync cross-promo section ([#701](https://github.com/n24q02m/better-code-review-graph/pull/701),
+  [`1994678`](https://github.com/n24q02m/better-code-review-graph/commit/1994678e1405c93f2018a2685deec80cc9610784))
+
+
 ## v3.18.0-beta.4 (2026-06-12)
 
 ### Bug Fixes
