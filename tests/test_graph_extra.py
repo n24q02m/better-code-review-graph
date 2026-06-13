@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from better_code_review_graph.graph import (
     GraphStore,
     _sanitize_name,
@@ -525,4 +527,129 @@ class TestGraphStoreExtra:
         store.commit()
         node = store.get_node("/f.py::f")
         assert node.extra == {"decorator": "@property"}
+        store.close()
+
+    def test_search_edges_by_target_names_empty(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        assert store.search_edges_by_target_names([]) == []
+        store.close()
+
+    def test_search_edges_by_target_names_basic(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        # Setup edges
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="a", target="b", file_path="f.py", line=1)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="c", target="d", file_path="f.py", line=2)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="OTHER", source="e", target="b", file_path="f.py", line=3)
+        )
+        store.commit()
+
+        # Default kind is CALLS
+        edges = store.search_edges_by_target_names(["b", "d"])
+        assert len(edges) == 2
+        targets = {e.target_qualified for e in edges}
+        assert targets == {"b", "d"}
+        assert all(e.kind == "CALLS" for e in edges)
+        store.close()
+
+    def test_search_edges_by_target_names_deduplication(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="a", target="b", file_path="f.py", line=1)
+        )
+        store.commit()
+
+        # Requesting "b" twice should still return only one edge
+        edges = store.search_edges_by_target_names(["b", "b"])
+        assert len(edges) == 1
+        assert edges[0].target_qualified == "b"
+        store.close()
+
+    def test_search_edges_by_target_names_kind_filter(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="a", target="b", file_path="f.py", line=1)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="OTHER", source="c", target="b", file_path="f.py", line=2)
+        )
+        store.commit()
+
+        edges = store.search_edges_by_target_names(["b"], kind="OTHER")
+        assert len(edges) == 1
+        assert edges[0].kind == "OTHER"
+        assert edges[0].source_qualified == "c"
+        store.close()
+
+    def test_search_edges_by_target_names_as_of(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        SHA_OLD = "1" * 40
+        SHA_NEW = "2" * 40
+        now = time.time()
+
+        # Row 1: Old version of 'b' (superseded)
+        store._conn.execute(
+            "INSERT INTO edges (kind, source_qualified, target_qualified, file_path, line, updated_at, valid_from_sha, valid_to_sha) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("CALLS", "old_src", "b", "f.py", 1, now, SHA_OLD, SHA_NEW),
+        )
+        # Row 2: Current version of 'b'
+        store._conn.execute(
+            "INSERT INTO edges (kind, source_qualified, target_qualified, file_path, line, updated_at, valid_from_sha, valid_to_sha) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("CALLS", "new_src", "b", "f.py", 1, now, SHA_NEW, None),
+        )
+        store.commit()
+
+        # Current version (as_of="")
+        edges = store.search_edges_by_target_names(["b"])
+        assert len(edges) == 1
+        assert edges[0].source_qualified == "new_src"
+
+        # Snapshot at SHA_OLD
+        edges = store.search_edges_by_target_names(["b"], as_of=SHA_OLD)
+        assert len(edges) == 1
+        assert edges[0].source_qualified == "old_src"
+
+        # Snapshot at SHA_NEW
+        edges = store.search_edges_by_target_names(["b"], as_of=SHA_NEW)
+        assert len(edges) == 2
+        store.close()
+
+    def test_search_edges_by_target_names_kind_tuple(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="a", target="b", file_path="f.py", line=1)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="INHERITS", source="c", target="b", file_path="f.py", line=2)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="OTHER", source="d", target="b", file_path="f.py", line=3)
+        )
+        store.commit()
+
+        edges = store.search_edges_by_target_names(["b"], kind=("CALLS", "INHERITS"))
+        assert len(edges) == 2
+        kinds = {e.kind for e in edges}
+        assert kinds == {"CALLS", "INHERITS"}
+        store.close()
+
+    def test_search_edges_by_target_names_kind_none(self, tmp_path):
+        store = GraphStore(str(tmp_path / "t.db"))
+        store.upsert_edge(
+            EdgeInfo(kind="CALLS", source="a", target="b", file_path="f.py", line=1)
+        )
+        store.upsert_edge(
+            EdgeInfo(kind="OTHER", source="c", target="b", file_path="f.py", line=2)
+        )
+        store.commit()
+
+        # kind=None should return all edges regardless of kind
+        edges = store.search_edges_by_target_names(["b"], kind=None)
+        assert len(edges) == 2
         store.close()
