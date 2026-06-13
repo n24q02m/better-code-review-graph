@@ -17,7 +17,7 @@ from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from mcp_core.relay.tool_helpers import register_open_relay_tool
 
-from .embeddings import EmbeddingStore, init_backend, resolve_backend
+from .embeddings import EmbeddingStore, resolve_backend
 from .incremental import get_db_path
 from .tools import (
     build_or_update_graph,
@@ -698,8 +698,12 @@ def _config_status(repo_root: str | None) -> str:
         try:
             stats = store.get_stats()
             db_path = get_db_path(root)
-            backend = init_backend()
-            emb_store = EmbeddingStore(db_path, backend)
+            # Counting stored embeddings is a pure SQL op (SELECT COUNT(*)).
+            # Do NOT init_backend() here: constructing the local backend loads
+            # the qwen3-embed ONNX model, which can block/hang the status call
+            # on Windows under stdio. Open the store without a backend; the
+            # backend name is reported separately via resolve_backend().
+            emb_store = EmbeddingStore(db_path)
             try:
                 emb_count = emb_store.count()
             finally:
@@ -772,8 +776,9 @@ def _config_cache_clear(repo_root: str | None) -> str:
         store, root = _get_store(repo_root)
         try:
             db_path = get_db_path(root)
-            backend = init_backend()
-            emb_store = EmbeddingStore(db_path, backend)
+            # count() + clear() are pure SQL; no backend/model load needed
+            # (avoids blocking on the local ONNX model under Windows stdio).
+            emb_store = EmbeddingStore(db_path)
             try:
                 count_before = emb_store.count()
                 emb_store.clear()

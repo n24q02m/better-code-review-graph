@@ -63,7 +63,6 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -95,6 +94,11 @@ depends_on: str | Sequence[str] | None = None
 # the test fixture's tmp_path ``.git``. Pinning to exactly 3 slashes
 # preserves the leading slash on POSIX absolute paths.
 _SQLITE_URL_RE = re.compile(r"^sqlite:///(?P<path>.+)$")
+
+# A git object name is 40 lower-hex chars (SHA-1) or 64 (SHA-256). Used to
+# tell a detached-HEAD raw SHA apart from a symbolic ``ref: ...`` line and
+# to validate the value read out of a loose / packed ref.
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
 
 # Sentinel SHA used when the migration cannot read a real HEAD:
 # 40 zeros is git's empty-tree marker and stable across hosts. The
@@ -171,40 +175,111 @@ def _find_repo_root(db_path: Path) -> Path:
     )
 
 
-def _read_head_sha(repo_root: Path) -> str:
-    """Run ``git rev-parse HEAD`` in ``repo_root`` and return the SHA.
+def _looks_like_sha(value: str) -> bool:
+    """True if ``value`` is a bare git object name (SHA-1 or SHA-256)."""
+    return bool(_SHA_RE.match(value))
 
-    Raises :class:`RuntimeError` with the actionable message on any
-    git failure (binary missing, repo corrupt, no commits yet). The
-    error spells out the same downgrade escape hatch as the no-git
-    branch so operators see one consistent recovery path.
+
+def _resolve_ref(gitdir: Path, commondir: Path, ref: str) -> str | None:
+    """Resolve a symbolic ref (e.g. ``refs/heads/main``) to a SHA.
+
+    Checks loose refs first (per-worktree ``gitdir`` then the shared
+    ``commondir``), then ``packed-refs`` in the common dir. Follows a
+    chained symref one hop. Returns ``None`` when the ref cannot be
+    resolved on disk.
     """
+    for base in (gitdir, commondir):
+        loose = base / ref
+        try:
+            if loose.is_file():
+                value = loose.read_text(encoding="utf-8").strip()
+                if value.startswith("ref:"):  # chained symbolic ref
+                    return _resolve_ref(gitdir, commondir, value[4:].strip())
+                if _looks_like_sha(value):
+                    return value
+        except OSError:
+            pass
+
+    packed = commondir / "packed-refs"
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(repo_root),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as exc:
-        raise RuntimeError(
+        if packed.is_file():
+            for raw in packed.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith(("#", "^")):
+                    continue
+                sha, _, name = line.partition(" ")
+                if name.strip() == ref and _looks_like_sha(sha):
+                    return sha
+    except OSError:
+        pass
+    return None
+
+
+def _read_head_sha(repo_root: Path) -> str:
+    """Resolve the current HEAD commit SHA by reading git's on-disk refs.
+
+    Pure-Python: deliberately does NOT shell out to ``git rev-parse``.
+    Spawning a subprocess from inside the MCP stdio server's worker
+    thread stalls for tens of seconds on Windows (subprocess creation
+    under the asyncio Proactor event loop), so the first ``GraphStore``
+    construction — which runs this migration — would appear to hang.
+    Reading ``.git`` directly is both faster and free of that
+    interaction (and drops the hard dependency on a ``git`` binary at
+    migration time).
+
+    Handles the regular-clone, detached-HEAD, git-worktree and submodule
+    layouts (``.git`` as a directory or as a ``gitdir:`` pointer file)
+    plus both loose and packed refs. Raises :class:`RuntimeError` with
+    the same actionable message as the rest of the module on any failure
+    so the ``CRG_TEST_ALLOW_NO_GIT`` escape hatch keeps working.
+    """
+
+    def _fail(reason: str) -> RuntimeError:
+        return RuntimeError(
             "005_temporal_columns requires git in repo containing the graph "
             "DB. The migration backfills valid_from_sha with the current "
-            f"HEAD commit. `git rev-parse HEAD` failed in {repo_root}: "
-            f"{exc}. To skip migration, set CRG_DOWNGRADE_TO_1_X=1 to "
-            "restore the pre-2.0 backup."
-        ) from exc
-    sha = result.stdout.strip()
-    if not sha:
-        raise RuntimeError(
-            "005_temporal_columns requires git in repo containing the graph "
-            "DB. The migration backfills valid_from_sha with the current "
-            f"HEAD commit. `git rev-parse HEAD` returned empty output in "
-            f"{repo_root}. To skip migration, set CRG_DOWNGRADE_TO_1_X=1 "
-            "to restore the pre-2.0 backup."
+            f"HEAD commit. {reason} in {repo_root}. To skip migration, set "
+            "CRG_DOWNGRADE_TO_1_X=1 to restore the pre-2.0 backup."
         )
-    return sha
+
+    marker = repo_root / ".git"
+    try:
+        if marker.is_file():
+            # Worktree / submodule: ``.git`` is a text file ``gitdir: <path>``.
+            content = marker.read_text(encoding="utf-8").strip()
+            if not content.startswith("gitdir:"):
+                raise _fail(f"unrecognized .git file contents {content!r}")
+            gitdir = Path(content[len("gitdir:") :].strip())
+            if not gitdir.is_absolute():
+                gitdir = (repo_root / gitdir).resolve()
+        elif marker.is_dir():
+            gitdir = marker
+        else:
+            raise _fail("no .git found")
+
+        # Linked worktrees keep shared refs in the common dir; HEAD itself
+        # is per-worktree under ``gitdir``.
+        commondir_file = gitdir / "commondir"
+        if commondir_file.is_file():
+            cd = Path(commondir_file.read_text(encoding="utf-8").strip())
+            commondir = cd if cd.is_absolute() else (gitdir / cd).resolve()
+        else:
+            commondir = gitdir
+
+        head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise _fail(f"could not read git HEAD ({exc})") from exc
+
+    if head.startswith("ref:"):
+        ref = head[len("ref:") :].strip()
+        sha = _resolve_ref(gitdir, commondir, ref)
+        if sha is None:
+            raise _fail(f"could not resolve HEAD ref {ref!r} (no commits yet?)")
+        return sha
+    # Detached HEAD: the file already holds the raw object name.
+    if _looks_like_sha(head):
+        return head
+    raise _fail(f"unrecognized HEAD contents {head!r}")
 
 
 def _resolve_head_sha() -> str:

@@ -13,14 +13,15 @@ It also creates ``idx_nodes_temporal(valid_from_sha, valid_to_sha)``
 and the analogous ``idx_edges_temporal``.
 
 Because the column is NOT NULL but no compile-time default exists,
-the migration has to read the actual repo HEAD via ``git rev-parse
-HEAD`` and bake it into the DDL default. These tests verify both
-the happy path (real git fixture in tmp_path) and the no-git path
-(synthesized DB outside any repo → migration aborts with an actionable
-:class:`RuntimeError`).
+the migration has to read the actual repo HEAD (by reading git's
+on-disk refs — no ``git`` subprocess; see ``_read_head_sha``) and bake
+it into the DDL default. These tests verify both the happy path (real
+git fixture in tmp_path) and the no-git path (synthesized DB outside
+any repo → migration aborts with an actionable :class:`RuntimeError`).
 
-Test fixtures use real ``git init`` + ``git commit`` so the migration's
-subprocess.run path is exercised end-to-end.
+Test fixtures use real ``git init`` + ``git commit`` to produce a
+genuine ``.git`` directory; the migration then resolves HEAD straight
+from that directory's refs end-to-end.
 """
 
 from __future__ import annotations
@@ -557,29 +558,92 @@ def test_find_repo_root_detects_dot_git_file(tmp_path: Path) -> None:
     assert found == repo_root
 
 
-def test_read_head_sha_handles_empty_output(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Empty ``git rev-parse HEAD`` output → RuntimeError with downgrade hint."""
+def test_read_head_sha_loose_ref(tmp_path: Path) -> None:
+    """HEAD -> loose ref -> SHA (the regular-clone path)."""
     module = _load_migration_module()
+    git = tmp_path / ".git"
+    (git / "refs" / "heads").mkdir(parents=True)
+    sha = "a" * 40
+    (git / "HEAD").write_text("ref: refs/heads/main\n")
+    (git / "refs" / "heads" / "main").write_text(sha + "\n")
+    assert module._read_head_sha(tmp_path) == sha
 
-    class _Result:
-        stdout = ""
 
-    monkeypatch.setattr(module.subprocess, "run", lambda *_a, **_kw: _Result())
-    with pytest.raises(RuntimeError, match="returned empty"):
+def test_read_head_sha_detached(tmp_path: Path) -> None:
+    """A detached HEAD stores the raw object name directly in ``HEAD``."""
+    module = _load_migration_module()
+    git = tmp_path / ".git"
+    git.mkdir()
+    sha = "b" * 40
+    (git / "HEAD").write_text(sha + "\n")
+    assert module._read_head_sha(tmp_path) == sha
+
+
+def test_read_head_sha_packed_refs(tmp_path: Path) -> None:
+    """HEAD ref absent as a loose file but present in ``packed-refs``."""
+    module = _load_migration_module()
+    git = tmp_path / ".git"
+    git.mkdir()
+    sha = "c" * 40
+    (git / "HEAD").write_text("ref: refs/heads/main\n")
+    (git / "packed-refs").write_text(
+        "# pack-refs with: peeled fully-peeled sorted\n"
+        f"{sha} refs/heads/main\n"
+        f"^{'0' * 40}\n"  # peeled tag line — must be ignored
+    )
+    assert module._read_head_sha(tmp_path) == sha
+
+
+def test_read_head_sha_worktree_pointer(tmp_path: Path) -> None:
+    """A ``.git`` file ``gitdir:`` pointer (worktree) resolves via commondir."""
+    module = _load_migration_module()
+    # Common repo dir holds the shared refs.
+    common = tmp_path / "main" / ".git"
+    (common / "refs" / "heads").mkdir(parents=True)
+    sha = "d" * 40
+    (common / "refs" / "heads" / "feature").write_text(sha + "\n")
+    # Linked-worktree private gitdir: per-worktree HEAD + commondir pointer.
+    wt_gitdir = common / "worktrees" / "wt1"
+    wt_gitdir.mkdir(parents=True)
+    (wt_gitdir / "HEAD").write_text("ref: refs/heads/feature\n")
+    (wt_gitdir / "commondir").write_text("../..\n")  # -> common
+    # The worktree checkout dir with the ``.git`` text-file pointer.
+    repo_root = tmp_path / "wt"
+    repo_root.mkdir()
+    (repo_root / ".git").write_text(f"gitdir: {wt_gitdir}\n")
+    assert module._read_head_sha(repo_root) == sha
+
+
+def test_read_head_sha_unresolvable_ref(tmp_path: Path) -> None:
+    """HEAD points at a ref with no loose/packed entry (no commits yet)."""
+    module = _load_migration_module()
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "HEAD").write_text("ref: refs/heads/main\n")
+    with pytest.raises(RuntimeError, match="could not resolve HEAD ref"):
         module._read_head_sha(tmp_path)
 
 
-def test_read_head_sha_wraps_subprocess_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A subprocess failure is wrapped with the actionable downgrade message."""
+def test_read_head_sha_no_git(tmp_path: Path) -> None:
+    """No ``.git`` at the repo root → actionable RuntimeError."""
     module = _load_migration_module()
-
-    def _boom(*_a, **_kw):
-        raise FileNotFoundError("git not on PATH")
-
-    monkeypatch.setattr(module.subprocess, "run", _boom)
     with pytest.raises(RuntimeError, match="CRG_DOWNGRADE_TO_1_X"):
+        module._read_head_sha(tmp_path)
+
+
+def test_read_head_sha_unrecognized_head(tmp_path: Path) -> None:
+    """A HEAD file that is neither a ref nor a SHA → RuntimeError."""
+    module = _load_migration_module()
+    git = tmp_path / ".git"
+    git.mkdir()
+    (git / "HEAD").write_text("garbage contents\n")
+    with pytest.raises(RuntimeError, match="unrecognized HEAD"):
+        module._read_head_sha(tmp_path)
+
+
+def test_read_head_sha_bad_git_file(tmp_path: Path) -> None:
+    """A ``.git`` file without a ``gitdir:`` prefix → RuntimeError."""
+    module = _load_migration_module()
+    (tmp_path / ".git").write_text("not a gitdir pointer\n")
+    with pytest.raises(RuntimeError, match="unrecognized .git file"):
         module._read_head_sha(tmp_path)
