@@ -81,27 +81,54 @@ def test_query_graph_n1_performance(tmp_path):
         for i in range(500):
             assert result["results"][i]["name"] == f"child{i}"
 
+
 def test_inheritors_of_n1_performance(tmp_path):
     db_path = tmp_path / "test_inh.db"
     with GraphStore(db_path) as store:
-        base = NodeInfo(kind="Class", name="Base", file_path="base.py", line_start=1, line_end=10, language="python")
+        base = NodeInfo(
+            kind="Class",
+            name="Base",
+            file_path="base.py",
+            line_start=1,
+            line_end=10,
+            language="python",
+        )
         store.upsert_node(base)
         for i in range(100):
-            sub = NodeInfo(kind="Class", name=f"Sub{i}", file_path=f"sub{i}.py", line_start=1, line_end=10, language="python")
+            sub = NodeInfo(
+                kind="Class",
+                name=f"Sub{i}",
+                file_path=f"sub{i}.py",
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
             store.upsert_node(sub)
-            store.upsert_edge(EdgeInfo(kind="INHERITS", source=f"sub{i}.py::Sub{i}", target="base.py::Base", file_path=f"sub{i}.py", line=1))
+            store.upsert_edge(
+                EdgeInfo(
+                    kind="INHERITS",
+                    source=f"sub{i}.py::Sub{i}",
+                    target="base.py::Base",
+                    file_path=f"sub{i}.py",
+                    line=1,
+                )
+            )
         store.commit()
 
     with patch("better_code_review_graph.tools._get_store") as mock_get_store:
         store = GraphStore(db_path)
         mock_get_store.return_value = (store, tmp_path)
         query_count = 0
+
         def _count_queries(statement: str) -> None:
             nonlocal query_count
             query_count += 1
+
         store._conn.set_trace_callback(_count_queries)
         try:
-            result = query_graph("inheritors_of", "base.py::Base", repo_root=str(tmp_path))
+            result = query_graph(
+                "inheritors_of", "base.py::Base", repo_root=str(tmp_path)
+            )
         finally:
             try:
                 store._conn.set_trace_callback(None)
@@ -112,24 +139,49 @@ def test_inheritors_of_n1_performance(tmp_path):
         # If N+1, it would be > 100 queries. Batched should be < 30.
         assert query_count < 30
 
+
 def test_parents_of_n1_performance(tmp_path):
     db_path = tmp_path / "test_par_perf.db"
     with GraphStore(db_path) as store:
-        sub = NodeInfo(kind="Class", name="Sub", file_path="sub.py", line_start=1, line_end=10, language="python")
+        sub = NodeInfo(
+            kind="Class",
+            name="Sub",
+            file_path="sub.py",
+            line_start=1,
+            line_end=10,
+            language="python",
+        )
         store.upsert_node(sub)
         for i in range(100):
-            base = NodeInfo(kind="Class", name=f"Base{i}", file_path=f"base{i}.py", line_start=1, line_end=10, language="python")
+            base = NodeInfo(
+                kind="Class",
+                name=f"Base{i}",
+                file_path=f"base{i}.py",
+                line_start=1,
+                line_end=10,
+                language="python",
+            )
             store.upsert_node(base)
-            store.upsert_edge(EdgeInfo(kind="INHERITS", source="sub.py::Sub", target=f"base{i}.py::Base{i}", file_path="sub.py", line=1))
+            store.upsert_edge(
+                EdgeInfo(
+                    kind="INHERITS",
+                    source="sub.py::Sub",
+                    target=f"base{i}.py::Base{i}",
+                    file_path="sub.py",
+                    line=1,
+                )
+            )
         store.commit()
 
     with patch("better_code_review_graph.tools._get_store") as mock_get_store:
         store = GraphStore(db_path)
         mock_get_store.return_value = (store, tmp_path)
         query_count = 0
+
         def _count_queries(statement: str) -> None:
             nonlocal query_count
             query_count += 1
+
         store._conn.set_trace_callback(_count_queries)
         try:
             result = query_graph("parents_of", "sub.py::Sub", repo_root=str(tmp_path))
