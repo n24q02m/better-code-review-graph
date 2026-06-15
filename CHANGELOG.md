@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.6 (2026-06-15)
+
+### Bug Fixes
+
+- Clarify embedding-model switch requires reindex (B2 guard)
+  ([#709](https://github.com/n24q02m/better-code-review-graph/pull/709),
+  [`e39ed42`](https://github.com/n24q02m/better-code-review-graph/commit/e39ed42e1901b4ff5b391d828855f50b5fe99134))
+
+- Correct relay/storage docs to match OAuth-form setup and PerPluginStore
+  ([`1c044d7`](https://github.com/n24q02m/better-code-review-graph/commit/1c044d7c175f8e24f94402f0e3f5166f83428da1))
+
+- Stop flaky model download in CI
+  ([`5bbcb6b`](https://github.com/n24q02m/better-code-review-graph/commit/5bbcb6b13b49972b2eda20ae5d7779671bbdc637))
+
+
 ## v3.18.0-beta.5 (2026-06-13)
 
 ### Bug Fixes
