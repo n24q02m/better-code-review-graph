@@ -6,8 +6,10 @@ import os
 import sys
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
+from better_code_review_graph.embeddings import _DEFAULT_DIMS
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
 from better_code_review_graph.tools import (
@@ -729,9 +731,20 @@ class TestListGraphStats:
 # ---------------------------------------------------------------------------
 
 
-def _mock_embed(texts, _dims=None):
-    """Return fake embeddings for testing without API keys."""
-    return [[0.1] * 128 for _ in texts]
+def _stub_local_model():
+    """Build a stub qwen3-embed model that returns deterministic vectors.
+
+    Mirrors the ``mock_qwen_inference`` fixture in test_embeddings.py so the
+    local-backend path runs without downloading the ONNX model from HuggingFace.
+    """
+    model = MagicMock()
+    model.embed.side_effect = lambda texts, **kwargs: [
+        np.full(kwargs.get("dim", _DEFAULT_DIMS), 0.1) for _ in texts
+    ]
+    model.query_embed.side_effect = lambda text, **kwargs: [
+        np.full(kwargs.get("dim", _DEFAULT_DIMS), 0.1)
+    ]
+    return model
 
 
 class TestEmbedGraph:
@@ -741,8 +754,8 @@ class TestEmbedGraph:
 
     def test_embed_graph(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
-            side_effect=_mock_embed,
+            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            return_value=_stub_local_model(),
         ):
             result = embed_graph(repo_root=str(repo_with_graph))
         assert result["status"] == "ok"
@@ -908,8 +921,8 @@ class TestSemanticSearchWithEmbeddings:
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
         with patch(
-            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
-            side_effect=_mock_embed,
+            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            return_value=_stub_local_model(),
         ):
             embed_result = embed_graph(repo_root=str(repo_with_graph))
             assert embed_result["status"] == "ok"
@@ -923,8 +936,8 @@ class TestSemanticSearchWithEmbeddings:
 
     def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.CloudEmbeddingBackend._call_provider",
-            side_effect=_mock_embed,
+            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
             result = semantic_search_nodes(
