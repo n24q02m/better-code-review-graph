@@ -239,8 +239,9 @@ def save_credentials(
 ) -> dict | None:
     """Save credentials from OAuth form and apply to environment.
 
-    Single-user mode (default, ``PUBLIC_URL`` unset): writes to the shared
-    ``config.enc`` on the host -- one set of cloud API keys for one user.
+    Single-user mode (default, ``PUBLIC_URL`` unset): writes via
+    ``PerPluginStore`` to ``~/.better-code-review-graph-mcp/config.json``
+    (AES-GCM, machine-bound key) -- one set of cloud API keys for one user.
 
     Multi-user remote mode (``PUBLIC_URL`` set): scopes credentials by the
     per-authorize JWT ``sub`` from ``context``. Each user's keys land in

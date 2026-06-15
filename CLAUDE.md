@@ -13,7 +13,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
-  - `relay_setup.py` -- Zero-config relay: create session, poll for config
+  - `relay_setup.py` -- `apply_config` env-applier used by the OAuth setup form (live setup UX = OAuth-AS browser form at `<PUBLIC_URL>/authorize`; the `ensure_config` create-session/poll path is legacy/unused)
   - `relay_schema.py` -- Relay form schema (embedding provider fields)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md, recipes.md, security.md)
   - `cli.py` -- CLI: starts MCP server (pure entry point)
