@@ -1456,6 +1456,7 @@ class GraphStore:
 # Strips control chars 0x00-0x1F except \t (0x09) and \n (0x0A)
 _CONTROL_CHARS_MAP = {i: None for i in range(0x20) if i not in (0x09, 0x0A)}
 
+
 def _sanitize_name(s: str, max_len: int = 256) -> str:
     """Strip ASCII control characters and truncate to prevent prompt injection.
 
