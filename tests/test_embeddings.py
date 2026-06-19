@@ -180,6 +180,31 @@ class TestResolveBackend:
         with patch.dict(os.environ, {}, clear=True):
             assert resolve_backend() == "local"
 
+    def test_unavailable_when_local_disabled_and_no_chain(self):
+        """DISABLE_LOCAL_EMBED + empty chain -> 'unavailable' (NOT forced)."""
+        with patch.dict(os.environ, {"DISABLE_LOCAL_EMBED": "true"}, clear=True):
+            assert resolve_backend() == "unavailable"
+
+    def test_cloud_wins_even_when_local_disabled(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DISABLE_LOCAL_EMBED": "true",
+                "EMBEDDING_MODELS": "gemini/gemini-embedding-001",
+            },
+            clear=True,
+        ):
+            assert resolve_backend() == "cloud"
+
+    def test_init_backend_unavailable_raises_clear_error(self):
+        import pytest
+
+        from better_code_review_graph.embeddings import init_backend
+
+        with patch.dict(os.environ, {"DISABLE_LOCAL_EMBED": "true"}, clear=True):
+            with pytest.raises(ValueError, match="DISABLE_LOCAL_EMBED"):
+                init_backend()
+
 
 # ---------------------------------------------------------------------------
 # Embedding model chain (per-task model-chain redesign)
