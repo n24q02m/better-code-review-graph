@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.7 (2026-06-19)
+
+### Features
+
+- DISABLE_LOCAL_EMBED disable-local toggle for embedding
+  ([#734](https://github.com/n24q02m/better-code-review-graph/pull/734),
+  [`b00b834`](https://github.com/n24q02m/better-code-review-graph/commit/b00b8344ab8b9f7b96a72273d666a6eb13f77922))
+
+
 ## v3.18.0-beta.6 (2026-06-15)
 
 ### Bug Fixes
