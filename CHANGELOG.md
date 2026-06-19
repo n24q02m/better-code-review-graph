@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.8 (2026-06-19)
+
+### Bug Fixes
+
+- Bump mcp-core floor to 1.18.0b14 for the key-rotation primitive
+  ([`fd88d4f`](https://github.com/n24q02m/better-code-review-graph/commit/fd88d4f1bcd0a6a6769840e2a0885a2220307a49))
+
+
 ## v3.18.0-beta.7 (2026-06-19)
 
 ### Features
