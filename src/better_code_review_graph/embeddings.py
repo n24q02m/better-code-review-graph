@@ -32,6 +32,9 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
+from mcp_core.chains import local_enabled_from_env
+from mcp_core.chains import resolve_backend as _resolve_capability_backend
+
 from .graph import GraphNode, GraphStore, node_to_dict
 
 logger = logging.getLogger(__name__)
@@ -405,11 +408,14 @@ class CloudEmbeddingBackend:
 
 
 def resolve_backend() -> str:
-    """Resolve the embedding backend ('cloud' or 'local').
+    """Resolve the embedding backend: 'cloud', 'local', or 'unavailable'.
 
-    Legacy ``EMBEDDING_BACKEND`` is honored one release (warning); otherwise
-    inferred from the resolved embedding chain: a non-empty chain -> 'cloud',
-    empty -> 'local'.
+    3-way resolution via the shared mcp-core primitive: 'cloud' (non-empty
+    EMBEDDING_MODELS chain), 'local' (empty chain + local leg enabled), or
+    'unavailable' (empty chain + DISABLE_LOCAL_EMBED set -> the local qwen3 ONNX
+    download is skipped and no cloud chain is configured, so embedding is
+    gracefully unavailable, NOT forced). Legacy ``EMBEDDING_BACKEND`` is honored
+    one release (warning).
     """
     legacy = os.getenv("EMBEDDING_BACKEND")
     if legacy:
@@ -417,7 +423,10 @@ def resolve_backend() -> str:
             "Deprecated EMBEDDING_BACKEND honored; inferred from EMBEDDING_MODELS now."
         )
         return "cloud" if legacy in ("cloud", "litellm") else legacy
-    return "cloud" if resolve_embedding_chain() else "local"
+    return _resolve_capability_backend(
+        has_cloud_chain=bool(resolve_embedding_chain()),
+        local_enabled=local_enabled_from_env("DISABLE_LOCAL_EMBED"),
+    ).value
 
 
 def init_backend(mode: str | None = None) -> EmbeddingBackend:
@@ -434,6 +443,11 @@ def init_backend(mode: str | None = None) -> EmbeddingBackend:
         return CloudEmbeddingBackend()
     if mode == "local":
         return Qwen3EmbedBackend()
+    if mode == "unavailable":
+        raise ValueError(
+            "Embedding unavailable: DISABLE_LOCAL_EMBED is set but no EMBEDDING_MODELS cloud "
+            "chain is configured. Set EMBEDDING_MODELS + a provider key, or unset DISABLE_LOCAL_EMBED."
+        )
     raise ValueError(f"Unknown backend type: {mode}")
 
 
