@@ -9,3 +9,8 @@
 **Learning:** When testing edge cases in environments with missing heavy dependencies (like `networkx` or `tree-sitter`), using `sys.modules` to mock these dependencies *before* importing the target module allows for reliable unit testing without triggering `ModuleNotFoundError`.
 
 **Action:** For specialized coverage tests, implement a `MockModule` that uses `__getattr__` to return `MagicMock()` and patch `sys.modules` prior to tool imports. This ensures that even deeply nested or lazy imports within the target module are safely handled during test execution.
+
+## 2024-06-19 - String sanitization performance with str.translate
+
+**Learning:** String manipulation for security sanitization in serialization loops (e.g., `_sanitize_name` in `src/better_code_review_graph/graph.py`) is a significant performance bottleneck.
+**Action:** Use `str.translate` with a pre-compiled translation map. It is substantially faster than using a generator expression with `"".join(...)` for filtering control characters.
