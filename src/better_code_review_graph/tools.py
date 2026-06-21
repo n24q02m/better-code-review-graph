@@ -1790,6 +1790,7 @@ def renamed_in_diff(
             # Fetch base-ref content via git.
             try:
                 import shutil
+
                 git_bin = shutil.which("git") or "git"
                 proc = subprocess.run(
                     [git_bin, "show", "--end-of-options", f"{base}:{rel_path}"],

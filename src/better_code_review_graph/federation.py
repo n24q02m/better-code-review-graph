@@ -280,6 +280,7 @@ def backfill_commits_for_repo(
         return 0
     try:
         import shutil
+
         git_bin = shutil.which("git") or "git"
         proc = subprocess.run(
             [
