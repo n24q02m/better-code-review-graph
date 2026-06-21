@@ -279,9 +279,11 @@ def backfill_commits_for_repo(
     if not (repo_root / ".git").exists():
         return 0
     try:
+        import shutil
+        git_bin = shutil.which("git") or "git"
         proc = subprocess.run(
             [
-                "git",
+                git_bin,
                 "log",
                 "--first-parent",
                 f"--format={_GIT_LOG_FORMAT}",

@@ -985,11 +985,11 @@ async def run_http(port: int = 0) -> None:
                 "MCP_DCR_SERVER_SECRET missing. Multi-user remote mode "
                 "requires the DCR secret."
             )
-        host = "0.0.0.0"
+        host = os.environ.get("MCP_HOST", "0.0.0.0")  # noqa: S104
         if port == 0:
             port = int(os.environ.get("MCP_PORT", "8080"))
     else:
-        host = "127.0.0.1"
+        host = os.environ.get("MCP_HOST", "127.0.0.1")  # noqa: S104
 
     async def _per_request_sub_scope(claims: dict, next_):
         """Bind the verified JWT ``sub`` to a contextvar for this request.
