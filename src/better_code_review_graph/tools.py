@@ -1046,9 +1046,8 @@ def _handle_importers_of(
     as_of: str = "",
 ) -> None:
     # Bolt: Use batched search to avoid N+1 queries when resolving importers (issue #412).
+    # Note: We ONLY search for the qualified name to honor the "no bare fallback" rule.
     search_targets = [qn]
-    if node and node.qualified_name and node.qualified_name != qn:
-        search_targets.append(node.qualified_name)
 
     edges = store.search_edges_by_target_names(
         search_targets, kind="IMPORTS_FROM", as_of=as_of
@@ -1082,17 +1081,22 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
-    qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
-        qns.append(e.source_qualified)
+    # Bolt: Use batched search to avoid N+1 queries when resolving tests (issue #412).
+    # Note: We ONLY search for the qualified name to honor the "no bare fallback" rule.
+    search_targets = [qn]
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind="TESTED_BY", as_of=as_of
+    )
+    qns = [e.source_qualified for e in edges]
+
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
                 results.append(node_to_dict(node_map[qn_src]))
+
     # Also search by naming convention
     name = node.name if node else target
     test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
@@ -1105,18 +1109,25 @@ def _handle_tests_for(
 
 def _handle_inheritors_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving inheritors (issue #412).
+    # Note: We ONLY search for the qualified name to honor the "no bare fallback" rule.
+    search_targets = [qn]
+
+    edges = store.search_edges_by_target_names(
+        search_targets, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    )
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
+
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1307,7 +1318,7 @@ def _dispatch_query_pattern(
         )
     elif pattern == "inheritors_of":
         _handle_inheritors_of(
-            store, resolved_qn_or_path, results, edges_out, as_of=as_of
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "file_summary":
         _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
