@@ -2,6 +2,45 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.9 (2026-06-21)
+
+### Bug Fixes
+
+- Bump pydantic-settings to 2.14.2 (GHSA-4xgf-cpjx-pc3j)
+  ([#739](https://github.com/n24q02m/better-code-review-graph/pull/739),
+  [`754b3a6`](https://github.com/n24q02m/better-code-review-graph/commit/754b3a682f2746bcc687bcacb7142d7145b6da95))
+
+- Route per-sub creds + model chains through request-scoped dispatch
+  ([#741](https://github.com/n24q02m/better-code-review-graph/pull/741),
+  [`23785da`](https://github.com/n24q02m/better-code-review-graph/commit/23785da8a2420d02cc20ef1b275aa092c629760b))
+
+- Scope graph DB per JWT sub in HTTP multi-user mode
+  ([#742](https://github.com/n24q02m/better-code-review-graph/pull/742),
+  [`afead8b`](https://github.com/n24q02m/better-code-review-graph/commit/afead8b8aa688944def2ed4dd578f59e13c549c0))
+
+- **deps**: Update non-major dependencies
+  ([#725](https://github.com/n24q02m/better-code-review-graph/pull/725),
+  [`42dc3e9`](https://github.com/n24q02m/better-code-review-graph/commit/42dc3e9b750aeb49a96b14abc300029a4cadc8eb))
+
+### Chores
+
+- **deps**: Update actions/checkout action to v7
+  ([#732](https://github.com/n24q02m/better-code-review-graph/pull/732),
+  [`87923ac`](https://github.com/n24q02m/better-code-review-graph/commit/87923ac7dd904d1212d08924aba20f3b17c59543))
+
+### Performance Improvements
+
+- Optimize _sanitize_name with str.translate
+  ([#737](https://github.com/n24q02m/better-code-review-graph/pull/737),
+  [`7daa7fd`](https://github.com/n24q02m/better-code-review-graph/commit/7daa7fd919965bd71f30afca861f54aceea80fd6))
+
+### Testing
+
+- Add coverage for security/heuristic.py
+  ([#710](https://github.com/n24q02m/better-code-review-graph/pull/710),
+  [`9cf4333`](https://github.com/n24q02m/better-code-review-graph/commit/9cf4333f699f26250beb427f574d028e4a72b6a9))
+
+
 ## v3.18.0-beta.8 (2026-06-19)
 
 ### Bug Fixes
