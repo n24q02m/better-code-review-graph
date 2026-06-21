@@ -9,7 +9,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - `src/better_code_review_graph/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server, 7 tools: graph + query + review (3 main) + config + security + help + config__open_relay (mcp-core relay helper)
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
-  - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
+  - `parser.py` -- Tree-sitter parsing (14 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
@@ -84,7 +84,8 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
-- Fixed 768-dim storage keeps the table schema valid, but switching embedding MODEL changes the vector space -- B2 identity guard blocks boot (set REINDEX_ON_MODEL_CHANGE=true to re-embed). Same dims != same space; mixing vectors from different models corrupts search.
+- `DISABLE_LOCAL_EMBED` -- skip the local ONNX download; embedding is `unavailable` unless a cloud chain is configured (`resolve_backend` 3-way: cloud / local / unavailable)
+- Fixed 768-dim storage keeps the table schema valid across providers. Switching embedding MODEL changes the vector space; embeddings are tagged per provider (`embeddings.provider` column) and `EmbeddingStore.search` restricts the cosine scan to the active provider, so a provider switch just re-embeds rather than mixing incomparable vectors.
 - Deprecated (honored one release with a warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend is now inferred from whether the chain is empty). The old "Jina > Gemini > OpenAI > Cohere" auto-detect router is gone.
 
 ### Manual config example
@@ -96,7 +97,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
       "command": "uvx", "args": ["better-code-review-graph"],
       "env": {
         "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "SUMMARY_MODELS": "gemini/gemini-3-flash-preview",
+        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
         "JINA_AI_API_KEY": "jina_xxx",
         "GEMINI_API_KEY": "AIza_xxx"
       }
@@ -134,7 +135,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
 ## Luu y quan trong
 
-- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, cohere) -- tranh startup cost
+- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, litellm via `mcp_core.llm`, numpy) -- tranh startup cost
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
