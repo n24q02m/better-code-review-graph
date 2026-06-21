@@ -76,11 +76,31 @@ def find_project_root(start: Path | None = None) -> Path:
 def get_db_path(repo_root: Path) -> Path:
     """Determine the database path for a repository.
 
+    HTTP multi-user remote mode (a JWT ``sub`` is bound to the current
+    request by the ``auth_scope`` middleware): the graph DB is scoped to
+    that sub at ``<CRG_DATA_DIR>/subs/<sub>/graph.db`` so one user's
+    code-graph nodes/edges/summaries never reach another concurrent user
+    sharing the same deployment. ``repo_root`` is ignored in this mode --
+    the analyzed-repo directory is not a safe shared location for a
+    per-tenant database.
+
+    Stdio / single-user HTTP (no sub bound): the database lives inside the
+    analyzed repository at ``<repo_root>/.code-review-graph/graph.db``.
     Creates the ``.code-review-graph/`` directory and an inner ``.gitignore``
     (with ``*``) so generated files are never committed.  If a legacy
     ``.code-review-graph.db`` exists at the repo root the database is migrated
     into the new directory (WAL/SHM side-files are discarded).
+
+    Imported lazily to keep the module-load import graph (and the stdio
+    hot path) untouched; the per-sub value flows request-scoped and is
+    never written to the process-global environment.
     """
+    from .credential_state import db_path_for_sub, get_current_sub
+
+    sub = get_current_sub()
+    if sub is not None:
+        return db_path_for_sub(sub)
+
     crg_dir = repo_root / ".code-review-graph"
     new_db = crg_dir / "graph.db"
 
