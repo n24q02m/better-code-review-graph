@@ -438,3 +438,16 @@ def test_scan_path_with_registry_config(tmp_path):
     # Verify -- is still before target
     assert "--" in cmd
     assert cmd.index("--") == cmd.index(str(target)) - 1
+
+
+def test_scan_path_uses_devnull_stdin(tmp_path):
+    target = tmp_path / "src.py"
+    target.write_text("print(1)")
+    scanner = SemgrepScanner(executable="/fake/semgrep")
+    with patch(
+        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        return_value=_mock_completed(0, stdout='{"results": []}'),
+    ) as run_mock:
+        scanner.scan_path(target)
+
+    assert run_mock.call_args.kwargs["stdin"] == subprocess.DEVNULL
