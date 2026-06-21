@@ -1,6 +1,6 @@
 {
   "name": "better-code-review-graph",
-  "description": "Persistent incremental knowledge graph for token-efficient code reviews",
+  "description": "Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.",
   "version": "3.18.0-beta.9",
   "userConfig": {
     "EMBEDDING_MODELS": {
@@ -12,7 +12,7 @@
     "SUMMARY_MODELS": {
       "type": "string",
       "title": "Summarizer model chain (optional)",
-      "description": "CSV 'provider/model,...' for the graph summarize action; provider inferred from prefix. Empty = summaries disabled. Chat-completion providers only (gemini/openai). Example: gemini/gemini-3-flash-preview",
+      "description": "CSV 'provider/model,...' for the graph summarize action; provider inferred from prefix. Empty = summaries disabled. Chat-completion providers only (gemini/openai). Example: gemini/gemini-2.5-flash,openai/gpt-4o-mini",
       "required": false
     },
     "JINA_AI_API_KEY": {

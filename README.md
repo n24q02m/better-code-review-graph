@@ -42,128 +42,151 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 </details>
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
 
-## Table of contents
-
-- [Features](#features)
-- [Status](#status)
-- [Documentation](#documentation)
-- [Tools](#tools)
-- [Comparison](#comparison)
-- [Security](#security)
-- [Build from Source](#build-from-source)
-- [Trust Model](#trust-model)
-- [License](#license)
-
-
-
 <!-- Glama badge -->
 <a href="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph">
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph/badge" alt="better-code-review-graph MCP server" />
 </a>
 
-Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with critical bug fixes, configurable embeddings, and production CI/CD. Parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters.
+An MCP server that parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters instead of the whole tree. Semantic search runs on a local ONNX embedding model by default (zero config, no API key), with an optional cloud embedding chain. Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with fixed multi-word search, qualified call resolution, dual-mode embeddings, output pagination, and production CI/CD.
 
 ## v2.0 migration (BREAKING)
 
-See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full
-schema-change list, behavior-change summary, environment
-requirements, and rollback procedure.
+v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + edge) and an opt-in security scanner. The schema migration is auto-applied on first `GraphStore` open, and a backup of the pre-2.0 DB is saved to `<graph_db>.pre-2.0.bak` so you can roll back. See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full schema-change list, behavior changes, environment requirements, and the downgrade procedure (`CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph`).
 
-This release adds **temporal columns** (`valid_from_sha` /
-`valid_to_sha` on every node + edge) and an opt-in **security
-scanner**. The schema migration is auto-applied on first
-`GraphStore` open, and a backup of the pre-2.0 DB is saved to
-`<graph_db>.pre-2.0.bak` so you can roll back if needed.
+## Table of contents
 
-To downgrade and restore the pre-2.0 backup:
+- [v2.0 migration (BREAKING)](#v20-migration-breaking)
+- [Install](#install)
+- [Configuration](#configuration)
+- [Tools](#tools)
+- [Features](#features)
+- [Comparison](#comparison)
+- [Security](#security)
+- [Build from source](#build-from-source)
+- [Trust model](#trust-model)
+- [Migration & changelog](#migration--changelog)
+- [Documentation](#documentation)
+- [License](#license)
 
-```sh
-CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph
+## Install
+
+The server runs over **stdio** by default and works with any MCP client. The
+recommended launcher is [`uvx`](https://docs.astral.sh/uv/) (no install step --
+it fetches and runs the published package in an isolated environment):
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph"],
+      "env": { "MCP_TRANSPORT": "stdio" }
+    }
+  }
+}
 ```
 
-The backup is created the first time alembic crosses the breaking
-boundary (revision `005_temporal_columns`); subsequent runs reuse
-the existing backup file. After a downgrade the v2-state DB is
-preserved at `<graph_db>.post-2.0.archived` so you can forward-roll
-again later.
+Or install it as a Python package:
 
-What you get on v2.0+:
-
-- **Temporal queries** -- `query`/`search`/`impact` accept
-  `as_of=<sha>` for snapshot semantics; `query(action="diff",
-  from_sha=X, to_sha=Y)` returns `{added, removed, modified}`
-  buckets driven entirely by the temporal columns (no re-parse).
-  See `help(topic="query")`.
-- **Refactor auditing** -- `review(action="delta",
-  show_line_shifts=true, ...)` surfaces symbols whose `line_start`
-  moved between two commits.
-- **Security scanning** -- `security(action="scan", ...)` runs a
-  regex-based Tier-1 scanner (5 rules) by default; pass
-  `engine="semgrep"` (after `uv add 'better-code-review-graph[security]'`)
-  for the Tier-2 engine, which runs Semgrep's `p/auto` registry pack
-  plus a 3-rule curated overlay. Findings persist on
-  `nodes.security_tags`; `report` re-emits the cache as JSON or
-  SARIF v2.1.0. See `help(topic="security")`.
-
-## What's new in v1.6
-
-- **LLM-generated summaries** -- `graph(action="summarize")` writes a one-paragraph docstring for each `Function` node via Gemini or OpenAI (cloud opt-in, no key = no-op). Run it after `graph(action="update")` to lift semantic-search recall by ~15% on repos with terse function names.
-- **Graph export in 4 formats** -- `graph(action="export", format=...)` emits `graphml` (Gephi/Cytoscape), `json-ld`, `dot` (Graphviz), or `cypher` (Neo4j replay). Inline by default; pass `output_path` to write to disk.
-- **Source text capture** -- `Function` nodes now persist their raw source so summaries can be regenerated whenever an edit changes the body. The cache key is `sha256(source_text):provider`; unchanged nodes cost zero LLM calls on re-run.
-- **Cost cap on summaries** -- `max_nodes` (default 500) caps LLM calls per invocation; pair with cron / `update` cadence for predictable spend.
-- **Phase 1 quality wins** (also new in this train): `query(action="spot_check")` for random callsite snippets, `query(action="renamed_in_diff")` for shifted callsites, dynamic-dispatch hints in `callers_of` results, a dedicated `recipes` help topic, and `embeddings_count` exposed in `graph(action="stats")`.
-
-Example -- after pulling new functions in, refresh embeddings with summaries:
-```
-graph(action="update")
-graph(action="summarize", max_nodes=200)
-graph(action="embed")
+```bash
+uvx better-code-review-graph        # run without installing
+pip install better-code-review-graph
 ```
 
-## Features
+The optional Semgrep engine for deeper security scans is a separate extra:
 
-| Feature | code-review-graph | better-code-review-graph |
-|:--------|:------------------|:-------------------------|
-| Multi-word search | Broken (literal substring) | AND-logic word splitting |
-| callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
-| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
-| Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
-| Tool design | 9 individual tools | 7 tools: graph + query + review + config + security + help + config__open_relay |
-| Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
+```bash
+pip install 'better-code-review-graph[security]'
+```
 
-## Status
-
-> **2026-05-02 -- Architecture stabilization update**
->
-> Past months saw significant churn around credential handling and the daemon-bridge auto-spawn pattern. This caused multi-process races, browser tab spam, and inconsistent setup UX across plugins. **The architecture is now stable**: 2 clean modes (stdio + HTTP), no daemon-bridge layer, no auto-spawn from stdio.
->
-> Apologies for the instability period. If you encountered issues with prior versions, please update to the latest release and follow the current [Setup guide](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- most prior workarounds are no longer needed.
->
-> **Related plugins from the same author**:
-> - [wet-mcp](https://github.com/n24q02m/wet-mcp) -- Web search + content extraction
-> - [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) -- Persistent AI memory
-> - [imagine-mcp](https://github.com/n24q02m/imagine-mcp) -- Image/video understanding + generation
-> - [better-notion-mcp](https://github.com/n24q02m/better-notion-mcp) -- Notion API
-> - [better-email-mcp](https://github.com/n24q02m/better-email-mcp) -- Email management
-> - [better-telegram-mcp](https://github.com/n24q02m/better-telegram-mcp) -- Telegram
-> - [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) -- Godot Engine
->
-> All plugins share the same architecture -- install once, learn pattern transfers.
-
-## Documentation
-
-Full docs at **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**:
-
-- [Setup](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
-- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
-- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
-
-**Install with AI agent** -- paste this to your AI coding agent:
+**Install with an AI agent** -- paste this to your AI coding agent:
 
 > Install MCP server `better-code-review-graph` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-code-review-graph/setup-with-agent.md
 
+Full per-client setup (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, raw
+`mcp.json`) is at
+**[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**.
+
+## Configuration
+
+Everything works **out of the box with zero configuration** -- semantic search
+uses a local [qwen3-embed](https://github.com/n24q02m/qwen3-embed) ONNX model
+(`Qwen3-Embedding-0.6B`, ~570 MB downloaded on first `graph embed`). All
+environment variables below are optional and only needed for cloud embeddings
+or LLM summaries.
+
+### Model chains
+
+Embeddings and summaries are each driven by an **ordered model chain** -- a
+CSV of `provider/model` entries where the order is the litellm fallback order
+(first entry is the active model). The provider is inferred from the model
+prefix, so the matching `<PROVIDER>_API_KEY` is all you need to add.
+
+| Variable | Purpose | Empty (default) |
+|---|---|---|
+| `EMBEDDING_MODELS` | Cloud embedding chain, e.g. `jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001` | Local ONNX (qwen3-embed) |
+| `SUMMARY_MODELS` | Summarizer chain for `graph(action="summarize")`, e.g. `gemini/gemini-2.5-flash,openai/gpt-4o-mini` | Summaries disabled |
+
+All vectors are stored at a fixed 768 dimensions (MRL truncation), so the
+embeddings table schema stays valid across providers. Switching embedding
+*model* changes the vector space; embeddings are tracked per provider and a
+provider switch triggers re-embedding rather than mixing incomparable vectors.
+
+### Provider API keys
+
+Cloud models need the provider key for whatever prefixes appear in your chains.
+Without any cloud key the server stays on local ONNX. Summarizers must expose a
+chat-completion API (so Jina and Cohere are embedding-only).
+
+| Model prefix | API key env var | Get a key |
+|---|---|---|
+| `jina_ai/` | `JINA_AI_API_KEY` | <https://jina.ai/api-key> |
+| `gemini/` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | <https://aistudio.google.com/apikey> |
+| `openai/` (or bare `text-embedding-*`) | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> |
+| `cohere/` | `COHERE_API_KEY` | <https://dashboard.cohere.com/api-keys> |
+
+Any other [litellm provider](https://docs.litellm.ai/docs/providers) works via
+its standard `<PROVIDER>_API_KEY`.
+
+### Advanced
+
+| Variable | Purpose |
+|---|---|
+| `EMBEDDING_API_BASE` | Custom OpenAI-compatible base URL for cloud embedding (SSRF-guarded) |
+| `LLM_API_BASE` | Custom OpenAI-compatible base URL for the summarizer (SSRF-guarded) |
+| `DISABLE_LOCAL_EMBED` | Skip the local ONNX download; embedding is unavailable unless a cloud chain is configured |
+| `CRG_DATA_DIR` | Override the per-user data directory (default `~/.crg`) used for per-user graphs and credentials in HTTP multi-user mode |
+| `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` / `SUMMARY_MODEL` | **Deprecated** singular vars, honored one release with a warning -- migrate to the `*_MODELS` chains |
+
+### Example -- cloud embeddings + summaries
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "command": "uvx",
+      "args": ["--python", "3.13", "better-code-review-graph"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
+        "JINA_AI_API_KEY": "jina_...",
+        "GEMINI_API_KEY": "AIza..."
+      }
+    }
+  }
+}
+```
+
+You can also configure cloud keys interactively in HTTP mode via the relay
+setup form (`config(action="setup_start")` returns the browser URL). See the
+[modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) and
+[multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/).
+
 ## Tools
+
+Seven tools, each grouping related actions to keep the tool surface small.
 
 ### `graph` -- Graph lifecycle
 
@@ -171,27 +194,38 @@ Actions: `build` | `update` | `stats` | `embed` | `export` | `summarize`
 
 | Action | Description |
 |:-------|:------------|
-| `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files. |
+| `build` | Full or incremental graph build. Set `full_rebuild=true` to re-parse all files; pass `roots` to federate extra repo directories into one graph. |
 | `update` | Alias for `build` with `full_rebuild=false` (incremental). |
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
-| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud. |
-| `export` | Export graph in `graphml` / `json-ld` / `dot` / `cypher`. Inline or to `output_path`. |
-| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (Gemini or OpenAI, cloud opt-in). Cost-capped via `max_nodes`. |
+| `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud chain. |
+| `export` | Export the graph as `graphml` / `json-ld` / `dot` / `cypher`. Inline or to `output_path`. |
+| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (via the `SUMMARY_MODELS` chain; no-op when no provider key is set). Cost-capped via `max_nodes`. |
 
 ### `query` -- Graph queries
 
-Actions: `query` | `search` | `impact` | `large_functions`
+Actions: `query` | `search` | `impact` | `large_functions` | `spot_check` | `renamed_in_diff` | `diff`
 
 | Action | Description |
 |:-------|:------------|
-| `query` | Predefined pattern queries: `callers_of`, `callees_of`, `imports_of`, `importers_of`, `children_of`, `tests_for`, `inheritors_of`, `file_summary`. |
+| `query` | Predefined patterns: `callers_of`, `callees_of`, `imports_of`, `importers_of`, `children_of`, `tests_for`, `inheritors_of`, `file_summary`. |
 | `search` | Search code entities by name/keyword or semantic similarity. |
 | `impact` | Blast radius of changed files. Auto-detects from git diff. Paginated with `max_results`. |
 | `large_functions` | Find functions/classes exceeding a line-count threshold. |
+| `spot_check` | Random callsite snippets from the last `callers_of`/`callees_of`/`inheritors_of`/`importers_of` result. |
+| `renamed_in_diff` | Symbols whose callsite line shifted versus a base ref. |
+| `diff` | Nodes added/removed/modified between two commit SHAs (`from_sha`, `to_sha`). |
+
+Most read actions accept `as_of=<sha>` for temporal (point-in-time) snapshots
+and `repo=<repo_id>` to scope a federated multi-repo graph.
 
 ### `review` -- Code review context
 
-Token-optimized review context with structural summary, source snippets, and review guidance. Auto-detects changed files from git diff.
+Actions: `context` (default) | `delta`
+
+Token-optimized review context with structural summary, impacted nodes, source
+snippets, and review guidance. `context` auto-detects changed files from the
+git diff; `delta` (with `from_sha`/`to_sha`, optional `show_line_shifts`)
+surfaces refactor moves between two commits.
 
 ### `config` -- Server configuration and credential setup
 
@@ -199,11 +233,11 @@ Actions: `status` | `set` | `cache_clear` | `setup_status` | `setup_start` | `se
 
 | Action | Description |
 |:-------|:------------|
-| `status` | Server info: version, graph path, node/edge counts, embedding backend. |
-| `set` | Update runtime settings (e.g., `log_level`). |
+| `status` | Server info: version, graph path, node/edge counts, embedding backend, embeddings count. |
+| `set` | Update a runtime setting (`key=log_level`). |
 | `cache_clear` | Remove all computed embeddings. |
-| `setup_status` | Show current credential state and setup URL. |
-| `setup_start` | Start relay setup to configure API keys via browser. |
+| `setup_status` | Show current credential state, providers configured, and setup URL. |
+| `setup_start` | Start relay setup to configure API keys via browser (HTTP mode). |
 | `setup_skip` | Set local mode (skip relay permanently, use ONNX only). |
 | `setup_reset` | Clear credentials and reset state. |
 | `setup_complete` | Re-resolve credentials from environment variables. |
@@ -214,20 +248,40 @@ Actions: `scan` | `report` | `suppress` | `rule_list`
 
 | Action | Description |
 |:-------|:------------|
-| `scan` | Run a security scan (`engine='heuristic'` default, or `'semgrep'`). Findings persist on `nodes.security_tags`. |
+| `scan` | Run a security scan (`engine='heuristic'` default = 5 regex rules, or `'semgrep'`). Findings persist on `nodes.security_tags`. |
 | `report` | Re-emit cached findings as JSON (`format='json'`) or SARIF v2.1.0 (`format='sarif'`). |
 | `suppress` | Suppress a finding by `rule_id` (or `remove=true` to un-suppress). |
 | `rule_list` | List available rules for an engine. |
+
+The `semgrep` engine requires the `[security]` extra and runs Semgrep's
+`p/auto` registry pack plus a 3-rule curated overlay.
 
 ### `help` -- Full documentation
 
 Topics: `graph` | `query` | `review` | `config` | `security` | `recipes`
 
-Returns complete documentation for each tool. Use when the compressed descriptions above are insufficient.
+Returns complete documentation for each tool. Use when the compressed
+descriptions above are insufficient.
 
 ### `config__open_relay` -- Re-trigger the relay setup form
 
-Registered automatically from `mcp-core`. In HTTP mode it returns `<PUBLIC_URL>/authorize` so the agent can re-open the browser setup form (e.g. after credential expiry); in stdio mode it returns `status: 'stdio_unsupported'`.
+Registered automatically from [mcp-core](https://github.com/n24q02m/mcp-core).
+In HTTP mode it returns `<PUBLIC_URL>/authorize` so the agent can re-open the
+browser setup form (e.g. after credential expiry); in stdio mode it returns
+`status: 'stdio_unsupported'`.
+
+## Features
+
+What this fork fixes versus the upstream [code-review-graph](https://github.com/tirth8205/code-review-graph):
+
+| Feature | code-review-graph | better-code-review-graph |
+|:--------|:------------------|:-------------------------|
+| Multi-word search | Broken (literal substring) | AND-logic word splitting |
+| callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
+| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
+| Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
+| Tool design | 9 individual tools | 7 grouped tools: graph + query + review + config + security + help + config__open_relay |
+| Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
 
 ## Comparison
 
@@ -248,11 +302,14 @@ Sources: [Greptile](https://www.greptile.com/docs/introduction) · [Greptile pri
 
 ## Security
 
-- **Graceful fallbacks** -- Cloud embedding failure falls back to local ONNX
-- **Error handling** -- Tools return error strings with fix suggestions, never crash
-- **Read-only mount** -- Docker mode mounts repo as `:ro` (read-only)
+- **Graceful fallbacks** -- Cloud embedding failure falls back to local ONNX.
+- **Error handling** -- Tools return error strings with fix suggestions, never crash.
+- **Read-only mount** -- Docker mode mounts the repo as `:ro` (read-only).
+- **SSRF-guarded endpoints** -- Custom `EMBEDDING_API_BASE` / `LLM_API_BASE` URLs are validated before any outbound call.
 
-## Build from Source
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
+## Build from source
 
 ```bash
 git clone https://github.com/n24q02m/better-code-review-graph
@@ -262,16 +319,42 @@ uv run pytest
 uv run better-code-review-graph
 ```
 
-**Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/)
+**Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/).
 
-## Trust Model
+## Trust model
 
 This plugin implements **TC-Local** (machine-bound, single trust principal). See the [mcp-core trust model](https://mcp.n24q02m.com/servers/mcp-core/trust-model/) for full classification.
 
-| Mode | Storage | Encryption | Who can read your data? |
+| Mode | Graph DB | Cloud credentials | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `~/.better-code-review-graph-mcp/config.json` | AES-GCM, machine-bound key | Only your OS user (file perm 0600) |
-| HTTP self-host | Same as stdio | Same | Only you (admin = user) |
+| stdio (default) | `<repo>/.code-review-graph/graph.db` (git-ignored) | `~/.better-code-review-graph-mcp/config.json` (AES-GCM, machine-bound key) | Only your OS user |
+| HTTP self-host (multi-user) | Per-user `~/.crg/subs/<sub>/graph.db` | Per-user `~/.crg/subs/<sub>/config.json` | Only the authenticated user |
+
+## Migration & changelog
+
+The v2.0 release added **temporal columns** (`valid_from_sha` / `valid_to_sha`
+on every node and edge) plus an opt-in security scanner. The schema migration
+is auto-applied on first `GraphStore` open, and a backup of the pre-2.0 DB is
+written to `<graph_db>.pre-2.0.bak`. To downgrade and restore it:
+
+```sh
+CRG_DOWNGRADE_TO_1_X=1 uvx better-code-review-graph
+```
+
+Full schema-change list, behavior changes, and rollback procedure:
+[BREAKING_CHANGES.md](BREAKING_CHANGES.md). Release-by-release history:
+[CHANGELOG.md](CHANGELOG.md).
+
+## Documentation
+
+Full docs at
+**[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**:
+
+- [Setup](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/) -- install methods for Claude Code, Codex, Gemini CLI, Cursor, Windsurf, mcp.json
+- [Modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) -- stdio / local-relay / remote-relay / remote-oauth
+- [Multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/) -- per-JWT-sub credential model
+
+Use the `help` tool from any MCP client for inline per-tool reference.
 
 ## License
 

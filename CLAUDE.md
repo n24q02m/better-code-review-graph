@@ -9,7 +9,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - `src/better_code_review_graph/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server, 7 tools: graph + query + review (3 main) + config (incl. setup_*) + security + help + config__open_relay (mcp-core relay helper)
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
-  - `parser.py` -- Tree-sitter parsing (13 langs) + call target resolution
+  - `parser.py` -- Tree-sitter parsing (14 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
@@ -87,7 +87,8 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name. Summarizer providers must expose a chat-completion API (Jina/Cohere do not).
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` (embedding), `LLM_API_BASE` (summarizer)
-- Fixed 768-dim storage keeps the table schema valid, but switching embedding MODEL changes the vector space -- B2 identity guard blocks boot (set REINDEX_ON_MODEL_CHANGE=true to re-embed). Same dims != same space; mixing vectors from different models corrupts search.
+- `DISABLE_LOCAL_EMBED` -- skip local ONNX download; `resolve_backend` returns `unavailable` (not local) when no cloud chain is configured
+- Fixed 768-dim storage keeps the table schema valid across providers. Switching embedding MODEL changes the vector space; embeddings are tagged per provider and the cosine search restricts to the active provider, so a provider switch re-embeds rather than mixing incomparable vectors.
 - Deprecated (honored one release voi warning): singular `EMBEDDING_MODEL`/`SUMMARY_MODEL` + `EMBEDDING_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
 
 ### Manual config example
@@ -99,7 +100,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
       "command": "uvx", "args": ["better-code-review-graph"],
       "env": {
         "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "SUMMARY_MODELS": "gemini/gemini-3-flash-preview",
+        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
         "JINA_AI_API_KEY": "jina_xxx",
         "GEMINI_API_KEY": "AIza_xxx"
       }
