@@ -49,8 +49,13 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 
 An MCP server that parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters instead of the whole tree. Semantic search runs on a local ONNX embedding model by default (zero config, no API key), with an optional cloud embedding chain. Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with fixed multi-word search, qualified call resolution, dual-mode embeddings, output pagination, and production CI/CD.
 
+## v2.0 migration (BREAKING)
+
+v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + edge) and an opt-in security scanner. The schema migration is auto-applied on first `GraphStore` open, and a backup of the pre-2.0 DB is saved to `<graph_db>.pre-2.0.bak` so you can roll back. See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full schema-change list, behavior changes, environment requirements, and the downgrade procedure (`CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph`).
+
 ## Table of contents
 
+- [v2.0 migration (BREAKING)](#v20-migration-breaking)
 - [Install](#install)
 - [Configuration](#configuration)
 - [Tools](#tools)
