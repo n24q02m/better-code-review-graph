@@ -754,8 +754,10 @@ def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch
 def test_batch_summarize_default_chain_passes_prefixed_model(monkeypatch, tmp_path):
     """Default chain (key-gated) passes chain[0] as an explicit prefixed model.
 
-    api_key is always None (litellm resolves the provider's env key from the
-    model prefix) and the cache provider is derived from the model prefix.
+    The provider key is resolved request-scoped and forwarded explicitly to
+    ``summarize_node`` (stdio path: from ``os.environ``; HTTP multi-user: from
+    the bound sub's bucket) so one user's key never reaches another concurrent
+    user's call. The cache provider is derived from the model prefix.
     """
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
@@ -793,7 +795,9 @@ def test_batch_summarize_default_chain_passes_prefixed_model(monkeypatch, tmp_pa
         assert result.generated == 1
         assert result.provider == "gemini"
         call_kwargs = mock_sum.call_args.kwargs
-        assert call_kwargs["api_key"] is None
+        # Stdio path: GEMINI_API_KEY env value is resolved request-scoped and
+        # forwarded explicitly (was None pre-fix when litellm read env itself).
+        assert call_kwargs["api_key"] == "g-key"
         assert call_kwargs["provider"] == "gemini"
         assert call_kwargs["model"] == "gemini/gemini-2.5-flash"
     finally:
