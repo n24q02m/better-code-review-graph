@@ -223,10 +223,17 @@ _KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KE
 
 
 def _key_available(env_var: str) -> bool:
-    if os.getenv(env_var):
+    """True if ``env_var`` (or its alias) is set for the current request.
+
+    Request-scoped: in HTTP multi-user mode reads the bound sub's per-sub
+    bucket; in stdio/single-user falls back to ``os.environ``.
+    """
+    from .credential_state import config_value_for_current_request
+
+    if config_value_for_current_request(env_var):
         return True
     alias = _KEY_ALIASES.get(env_var)
-    return bool(alias and os.getenv(alias))
+    return bool(alias and config_value_for_current_request(alias))
 
 
 def resolve_embedding_chain() -> list[str]:
@@ -235,13 +242,20 @@ def resolve_embedding_chain() -> list[str]:
     Empty -> local ONNX. Legacy EMBEDDING_MODEL honored one release (warning).
     Default keeps ONLY models whose provider key is configured; none -> empty
     -> local. Not "any key" (that would keep keyless cloud models).
+
+    Request-scoped: ``EMBEDDING_MODELS`` / ``EMBEDDING_MODEL`` come from the
+    bound JWT sub's per-sub bucket in HTTP multi-user mode, falling back to
+    ``os.environ`` in stdio/single-user mode. Per-sub model selection must
+    not leak across concurrent users.
     """
     from mcp_core.llm.providers import key_env_for_model
 
-    explicit = os.getenv("EMBEDDING_MODELS", "").strip()
+    from .credential_state import config_value_for_current_request
+
+    explicit = (config_value_for_current_request("EMBEDDING_MODELS") or "").strip()
     if explicit:
         return [m.strip() for m in explicit.split(",") if m.strip()]
-    legacy = os.getenv("EMBEDDING_MODEL", "").strip()
+    legacy = (config_value_for_current_request("EMBEDDING_MODEL") or "").strip()
     if legacy:
         logger.warning(
             "Deprecated EMBEDDING_MODEL honored; migrate to EMBEDDING_MODELS "
@@ -278,17 +292,33 @@ class CloudEmbeddingBackend:
         return f"cloud:{self._provider}:{self.model}"
 
     def _resolve_api_key(self) -> str:
-        """Resolve API key for the current provider."""
+        """Resolve API key for the current provider (request-scoped).
+
+        In HTTP multi-user mode the key comes from the bound JWT sub's
+        per-sub bucket; in stdio/single-user mode it falls back to
+        ``os.environ``. The per-sub key is read at dispatch time and never
+        written to the process-global environment, so one user's key cannot
+        leak to another concurrent user's embedding call.
+        """
         if self.api_key:
             return self.api_key
+        from .credential_state import config_value_for_current_request
+
+        def _cfg(*keys: str) -> str:
+            for key in keys:
+                value = config_value_for_current_request(key)
+                if value:
+                    return value
+            return ""
+
         if self._provider == "jina":
-            return os.getenv("JINA_AI_API_KEY") or ""
+            return _cfg("JINA_AI_API_KEY")
         if self._provider == "gemini":
-            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
+            return _cfg("GEMINI_API_KEY", "GOOGLE_API_KEY")
         if self._provider == "openai":
-            return os.getenv("OPENAI_API_KEY") or ""
+            return _cfg("OPENAI_API_KEY")
         # cohere
-        return os.getenv("COHERE_API_KEY") or os.getenv("CO_API_KEY") or ""
+        return _cfg("COHERE_API_KEY", "CO_API_KEY")
 
     def _litellm_model(self) -> str:
         """Map crg's model naming to a litellm ``provider/model`` string."""

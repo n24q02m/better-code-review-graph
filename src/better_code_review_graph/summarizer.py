@@ -92,11 +92,18 @@ def resolve_summary_chain() -> list[str]:
     Empty -> summaries disabled. Legacy ``SUMMARY_MODEL`` honored one release
     (warning). Default keeps ONLY models whose provider key is configured;
     none -> empty -> disabled.
+
+    Request-scoped: ``SUMMARY_MODELS`` / ``SUMMARY_MODEL`` and the default
+    chain's key-gate come from the bound JWT sub's per-sub bucket in HTTP
+    multi-user mode, falling back to ``os.environ`` in stdio/single-user
+    mode. Per-sub model selection must not leak across concurrent users.
     """
-    explicit = os.getenv("SUMMARY_MODELS", "").strip()
+    from .credential_state import config_value_for_current_request
+
+    explicit = (config_value_for_current_request("SUMMARY_MODELS") or "").strip()
     if explicit:
         return [m.strip() for m in explicit.split(",") if m.strip()]
-    legacy = os.getenv("SUMMARY_MODEL", "").strip()
+    legacy = (config_value_for_current_request("SUMMARY_MODEL") or "").strip()
     if legacy:
         logger.warning(
             "Deprecated SUMMARY_MODEL honored; migrate to SUMMARY_MODELS "
@@ -110,8 +117,9 @@ def resolve_summary_chain() -> list[str]:
     keyed = []
     for m in _DEFAULT_SUMMARY_CHAIN:
         env_var = key_env_for_model(m)
-        if os.getenv(env_var) or (
-            env_var == "GEMINI_API_KEY" and os.getenv("GOOGLE_API_KEY")
+        if config_value_for_current_request(env_var) or (
+            env_var == "GEMINI_API_KEY"
+            and config_value_for_current_request("GOOGLE_API_KEY")
         ):
             keyed.append(m)
     return keyed
@@ -278,10 +286,25 @@ def batch_summarize(
 
     # The chain carries explicit ``provider/model`` routing. Use the primary
     # (first) model and derive the cache-key provider tag from its prefix so a
-    # model swap invalidates stale summaries. ``api_key=None`` lets litellm
-    # resolve the provider's key from the environment for the chosen model.
+    # model swap invalidates stale summaries.
     model = chain[0]
     cache_provider = provider_of_model(model)
+
+    # Resolve the provider key request-scoped: in HTTP multi-user mode it
+    # comes from the bound JWT sub's per-sub bucket; in stdio/single-user mode
+    # ``config_value_for_current_request`` falls back to ``os.environ``. We
+    # pass it explicitly to ``summarize_node`` rather than letting litellm read
+    # the process environment, so one user's key never reaches another
+    # concurrent user's summary call. ``None`` (stdio, no key set) preserves
+    # litellm's env fallback for the single-user path.
+    from mcp_core.llm.providers import key_env_for_model
+
+    from .credential_state import config_value_for_current_request
+
+    key_env = key_env_for_model(model)
+    api_key = config_value_for_current_request(key_env)
+    if not api_key and key_env == "GEMINI_API_KEY":
+        api_key = config_value_for_current_request("GOOGLE_API_KEY")
 
     rows = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
@@ -318,7 +341,7 @@ def batch_summarize(
                     source_hash=live_hash,
                 ),
                 provider=cache_provider,
-                api_key=None,
+                api_key=api_key,
                 model=model,
             )
         except Exception as exc:

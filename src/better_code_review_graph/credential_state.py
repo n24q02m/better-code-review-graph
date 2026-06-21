@@ -234,6 +234,31 @@ def credentials_for_current_request() -> dict[str, str]:
     return read_for_sub(sub)
 
 
+def config_value_for_current_request(key: str) -> str | None:
+    """Return a single config value scoped to the current request.
+
+    HTTP multi-user mode (``_current_sub`` set by the ``auth_scope``
+    middleware): reads ``key`` from that user's per-sub bucket
+    (``<CRG_DATA_DIR>/subs/<sub>/config.json``) and NOTHING else, so one
+    user's API keys / model chain never reach another concurrent user's
+    request. Returns ``None`` if the sub has not configured that key.
+
+    Stdio / single-user HTTP / no-JWT contexts (``_current_sub`` is
+    ``None``): falls back to the process environment via ``os.environ.get``,
+    preserving the existing single-user ``apply_config`` -> env behavior.
+
+    This helper is the request-scoped read path that live dispatch
+    (embedding + summarizer chain/key resolution) MUST use instead of
+    reading ``os.environ`` directly: per-sub values flow request-scoped and
+    are never written to the process-global environment.
+    """
+    sub = _current_sub.get()
+    if sub is None:
+        return os.environ.get(key)
+    value = read_for_sub(sub).get(key)
+    return value if value else None
+
+
 def save_credentials(
     config: dict[str, str], context: dict[str, str] | None = None
 ) -> dict | None:
