@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.10 (2026-06-22)
+
+### Bug Fixes
+
+- Port SessionStart hook to cross-platform python -c (bare .sh opened Notepad on Windows)
+  ([#746](https://github.com/n24q02m/better-code-review-graph/pull/746),
+  [`6a241b5`](https://github.com/n24q02m/better-code-review-graph/commit/6a241b5574c3d74dd9d670263e793d93e80dc769))
+
+- Restore v2.0 migration section in README (test_phase_3 README guard)
+  ([#743](https://github.com/n24q02m/better-code-review-graph/pull/743),
+  [`805e30b`](https://github.com/n24q02m/better-code-review-graph/commit/805e30bca6e1c5c7bdd4574f2df25b750184a814))
+
+- Rewrite README for accuracy and add Install + Configuration sections
+  ([#743](https://github.com/n24q02m/better-code-review-graph/pull/743),
+  [`805e30b`](https://github.com/n24q02m/better-code-review-graph/commit/805e30bca6e1c5c7bdd4574f2df25b750184a814))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#744](https://github.com/n24q02m/better-code-review-graph/pull/744),
+  [`66fb9bc`](https://github.com/n24q02m/better-code-review-graph/commit/66fb9bc5a1f34f1609c36f44b748837725c38659))
+
+
 ## v3.18.0-beta.9 (2026-06-21)
 
 ### Bug Fixes
