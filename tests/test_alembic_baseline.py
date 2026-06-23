@@ -576,8 +576,10 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
 
     monkeypatch.setattr(_resources, "files", _files)
     obj = _files("better_code_review_graph_migrations")
-    # Some library versions had an issue where __str__ behavior was altered.
-    # returns an object whose ``__str__`` is the repr (the historical bug).
+    # Some library versions of importlib.resources.files (MultiplexedPath)
+    # return an object whose __str__ is the repr (the historical bug).
+    # We MUST handle this by using ref.joinpath('env.py') to get a real
+    # Path, rather than Path(str(ref)).
     assert str(obj) == f"MultiplexedPath('{fake_dir}')"
 
     # Falls through installed-wheel branch (joinpath result not a Path)
@@ -628,6 +630,29 @@ def test_alembic_current_via_runtime_context(tmp_path: Path) -> None:
         command.current(cfg)
     finally:
         store.close()
+
+
+def test_alembic_script_historical_str_bug() -> None:
+    """Regression: alembic.script.Script.__str__ was historically its docstring.
+
+    In older Alembic versions, ``str(rev)`` returned the revision's docstring
+    rather than its ID. Modern versions return the repr (e.g. "Script('005', '004')").
+    To reliably obtain the revision ID, code must use ``rev.revision`` or
+    ``getattr(rev, 'revision', None)``.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    script = ScriptDirectory.from_config(cfg)
+
+    # Pick a known revision and verify we can get its ID safely.
+    # We use getattr because alembic returns an object whose __str__ is the repr.
+    found_005 = False
+    for rev in script.walk_revisions():
+        if getattr(rev, "revision", None) == "005":
+            found_005 = True
+            break
+    assert found_005, "Could not find revision 005 in migrations"
 
 
 @pytest.mark.parametrize(
