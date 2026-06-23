@@ -908,6 +908,78 @@ _DYNAMIC_DISPATCH_PATTERNS_JS_TS: tuple[tuple[str, str], ...] = (
 )
 
 
+def _get_dynamic_dispatch_patterns(language: str) -> tuple[tuple[str, str], ...]:
+    """Return the list of dynamic-dispatch patterns for the given language."""
+    lang = (language or "").lower()
+    if lang == "python":
+        return _DYNAMIC_DISPATCH_PATTERNS_PYTHON
+    if lang in ("javascript", "typescript"):
+        return _DYNAMIC_DISPATCH_PATTERNS_JS_TS
+    return ()
+
+
+def _get_dynamic_dispatch_candidates(store: Any, target_file: str) -> set[str]:
+    """Discover files in the graph that might contain dynamic-dispatch hits."""
+    candidates: set[str] = {target_file}
+    # Add same-package siblings that the graph already indexed as files that
+    # import the target's file -- those are the most likely sites for
+    # asyncio.to_thread(<target>) / functools.partial(<target>).
+    try:
+        for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
+            candidates.add(e.file_path)
+    except Exception:
+        pass
+    return candidates
+
+
+def _match_dynamic_dispatch_line(
+    line: str,
+    target_name: str,
+    patterns: tuple[tuple[str, str], ...],
+) -> dict[str, str] | None:
+    """Check if a single line matches any dynamic-dispatch patterns for the target."""
+    if target_name not in line:
+        return None
+
+    for label, marker in patterns:
+        if marker in line and target_name in line:
+            # Avoid trivially flagging the function's own def line.
+            stripped = line.lstrip()
+            if stripped.startswith(("def ", "async def ", "class ")):
+                continue
+            return {
+                "pattern": label,
+                "context": line.strip()[:160],
+            }
+    return None
+
+
+def _scan_file_for_dynamic_dispatch(
+    file_path: str,
+    target_name: str,
+    patterns: tuple[tuple[str, str], ...],
+) -> list[dict[str, Any]]:
+    """Scan a single file for dynamic-dispatch patterns referencing the target."""
+    try:
+        text = Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+
+    hits: list[dict[str, Any]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        match = _match_dynamic_dispatch_line(line, target_name, patterns)
+        if match:
+            hits.append(
+                {
+                    "file": file_path,
+                    "line": line_no,
+                    "pattern": match["pattern"],
+                    "context": match["context"],
+                }
+            )
+    return hits
+
+
 def _scan_dynamic_dispatch_hints(
     store: Any,
     node: Any,
@@ -923,51 +995,16 @@ def _scan_dynamic_dispatch_hints(
     """
     if node is None or not target_name:
         return []
-    language = (getattr(node, "language", "") or "").lower()
-    if language == "python":
-        patterns = _DYNAMIC_DISPATCH_PATTERNS_PYTHON
-    elif language in ("javascript", "typescript"):
-        patterns = _DYNAMIC_DISPATCH_PATTERNS_JS_TS
-    else:
-        # Heuristic only implemented for Python + JS/TS today; other
-        # languages return empty rather than guessing.
+
+    patterns = _get_dynamic_dispatch_patterns(getattr(node, "language", ""))
+    if not patterns:
         return []
 
-    target_file = node.file_path
-    candidate_files: set[str] = {target_file}
-    # Add same-package siblings that the graph already indexed as files that
-    # import the target's file -- those are the most likely sites for
-    # asyncio.to_thread(<target>) / functools.partial(<target>).
-    try:
-        for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
-            candidate_files.add(e.file_path)
-    except Exception:
-        pass
+    candidate_files = _get_dynamic_dispatch_candidates(store, node.file_path)
 
     hits: list[dict[str, Any]] = []
     for fp in candidate_files:
-        try:
-            text = Path(fp).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if target_name not in line:
-                continue
-            for label, marker in patterns:
-                if marker in line and target_name in line:
-                    # Avoid trivially flagging the function's own def line.
-                    stripped = line.lstrip()
-                    if stripped.startswith(("def ", "async def ", "class ")):
-                        continue
-                    hits.append(
-                        {
-                            "file": fp,
-                            "line": line_no,
-                            "pattern": label,
-                            "context": line.strip()[:160],
-                        }
-                    )
-                    break  # one hit per line is enough
+        hits.extend(_scan_file_for_dynamic_dispatch(fp, target_name, patterns))
     return hits
 
 
