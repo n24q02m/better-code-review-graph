@@ -78,16 +78,18 @@ class TestEnsureConfig:
 
             with (
                 patch(
-                    "mcp_core.relay.client.create_session",
+                    "better_code_review_graph.relay_setup.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ) as mock_create,
                 patch(
-                    "mcp_core.relay.client.poll_for_result",
+                    "better_code_review_graph.relay_setup.poll_for_result",
                     new_callable=AsyncMock,
                     return_value={"JINA_AI_API_KEY": "from-relay"},
                 ) as mock_poll,
-                patch("httpx.AsyncClient") as mock_http_cls,
+                patch(
+                    "better_code_review_graph.relay_setup.httpx.AsyncClient"
+                ) as mock_http_cls,
             ):
                 mock_http = mock_http_cls.return_value.__aenter__.return_value
                 mock_http.post = AsyncMock()
@@ -113,7 +115,7 @@ class TestEnsureConfig:
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
             with patch(
-                "mcp_core.relay.client.create_session",
+                "better_code_review_graph.relay_setup.create_session",
                 new_callable=AsyncMock,
                 side_effect=ConnectionError("unreachable"),
             ):
@@ -133,12 +135,12 @@ class TestEnsureConfig:
 
             with (
                 patch(
-                    "mcp_core.relay.client.create_session",
+                    "better_code_review_graph.relay_setup.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_core.relay.client.poll_for_result",
+                    "better_code_review_graph.relay_setup.poll_for_result",
                     new_callable=AsyncMock,
                     side_effect=RuntimeError("timed out"),
                 ),
@@ -159,12 +161,12 @@ class TestEnsureConfig:
 
             with (
                 patch(
-                    "mcp_core.relay.client.create_session",
+                    "better_code_review_graph.relay_setup.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_core.relay.client.poll_for_result",
+                    "better_code_review_graph.relay_setup.poll_for_result",
                     new_callable=AsyncMock,
                     side_effect=RuntimeError("RELAY_SKIPPED"),
                 ),
@@ -203,7 +205,7 @@ class TestEnsureConfigFileReadException:
         ) as mock_store_cls:
             mock_store_cls.return_value.load.side_effect = OSError("corrupt file")
             with patch(
-                "mcp_core.relay.client.create_session",
+                "better_code_review_graph.relay_setup.create_session",
                 side_effect=Exception("no relay"),
             ):
                 result = await ensure_config()
@@ -240,16 +242,19 @@ class TestEnsureConfigRelayNotifyFailure:
             mock_store_cls.return_value.save = MagicMock()
             with (
                 patch(
-                    "mcp_core.relay.client.create_session",
+                    "better_code_review_graph.relay_setup.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_core.relay.client.poll_for_result",
+                    "better_code_review_graph.relay_setup.poll_for_result",
                     new_callable=AsyncMock,
                     return_value={"GEMINI_API_KEY": "k"},
                 ),
-                patch("httpx.AsyncClient", _FailingClient),
+                patch(
+                    "better_code_review_graph.relay_setup.httpx.AsyncClient",
+                    _FailingClient,
+                ),
             ):
                 result = await ensure_config()
                 assert result is not None
@@ -270,12 +275,12 @@ class TestEnsureConfigRelayNotifyFailure:
             mock_store_cls.return_value.load.return_value = None
             with (
                 patch(
-                    "mcp_core.relay.client.create_session",
+                    "better_code_review_graph.relay_setup.create_session",
                     new_callable=AsyncMock,
                     return_value=mock_session,
                 ),
                 patch(
-                    "mcp_core.relay.client.poll_for_result",
+                    "better_code_review_graph.relay_setup.poll_for_result",
                     new_callable=AsyncMock,
                     side_effect=RuntimeError("some other issue"),
                 ),
@@ -299,7 +304,7 @@ async def test_read_config_exception(monkeypatch):
     ):
         # To avoid going into relay setup, we also mock create_session to fail
         with patch(
-            "mcp_core.relay.client.create_session",
+            "better_code_review_graph.relay_setup.create_session",
             side_effect=Exception("no relay"),
         ):
             result = await ensure_config()
@@ -323,16 +328,19 @@ async def test_httpx_post_exception(monkeypatch):
     with patch("better_code_review_graph.relay_setup.PerPluginStore") as mock_store_cls:
         mock_store_cls.return_value.load.return_value = None
         with patch(
-            "mcp_core.relay.client.create_session",
+            "better_code_review_graph.relay_setup.create_session",
             new_callable=AsyncMock,
             return_value=mock_session,
         ):
             with patch(
-                "mcp_core.relay.client.poll_for_result",
+                "better_code_review_graph.relay_setup.poll_for_result",
                 new_callable=AsyncMock,
                 return_value={"GEMINI_API_KEY": "new-key"},
             ):
-                with patch("httpx.AsyncClient", return_value=mock_client):
+                with patch(
+                    "better_code_review_graph.relay_setup.httpx.AsyncClient",
+                    return_value=mock_client,
+                ):
                     result = await ensure_config()
                     assert result is not None
                     assert result["GEMINI_API_KEY"] == "new-key"
@@ -351,13 +359,13 @@ async def test_poll_for_result_runtime_error_unexpected(monkeypatch):
         mock_session.relay_url = "https://relay.example.com/setup"
 
         with patch(
-            "mcp_core.relay.client.create_session",
+            "better_code_review_graph.relay_setup.create_session",
             new_callable=AsyncMock,
             return_value=mock_session,
         ):
             # RuntimeError with unexpected message -- should return None
             with patch(
-                "mcp_core.relay.client.poll_for_result",
+                "better_code_review_graph.relay_setup.poll_for_result",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("something went wrong"),
             ):

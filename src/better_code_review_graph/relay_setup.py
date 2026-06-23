@@ -13,6 +13,8 @@ import logging
 import os
 import sys
 
+import httpx
+from mcp_core.relay.client import create_session, poll_for_result
 from mcp_core.storage.per_plugin_store import PerPluginStore
 
 from .relay_schema import RELAY_SCHEMA
@@ -80,14 +82,11 @@ async def ensure_config() -> dict[str, str] | None:
         raise RuntimeError(
             "MCP_RELAY_URL env var is required for remote-relay mode. "
             "better-code-review-graph default mode is 'http local relay' "
-            "(no remote URL needed). For self-host remote-relay, "
             "set MCP_RELAY_URL=https://<your-instance>."
         )
 
     logger.info("No credentials found. Starting relay setup...")
     try:
-        from mcp_core.relay.client import create_session
-
         # RELAY_SCHEMA is dict[str, Any] for forward-compat with newer
         # relay UI keys — see relay_schema.py for details.
         session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)  # ty: ignore[invalid-argument-type]
@@ -101,23 +100,17 @@ async def ensure_config() -> dict[str, str] | None:
         f"\n{session.relay_url}"
         f"\nSkip to use local mode (qwen3-embed ONNX).\n",
         file=sys.stderr,
-        flush=True,
     )
 
     # Poll for result with shorter timeout
     try:
-        from mcp_core.relay.client import poll_for_result
-
         config = await poll_for_result(relay_url, session, timeout_s=RELAY_TIMEOUT_S)
 
-        # Save to per-plugin store
         PerPluginStore(SERVER_NAME).save(config)
         logger.info("Config saved successfully")
 
         # Notify relay page that setup is complete
         try:
-            import httpx
-
             async with httpx.AsyncClient() as http:
                 await http.post(
                     f"{relay_url}/api/sessions/{session.session_id}/messages",
