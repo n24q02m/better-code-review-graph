@@ -3,6 +3,8 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.incremental import (
     _is_binary,
@@ -309,6 +311,60 @@ class TestIncrementalUpdateFromHook:
         # Verify graph was created
         db_path = tmp_path / ".code-review-graph" / "graph.db"
         assert db_path.exists()
+
+    def test_incremental_update_from_hook_mocked(self, tmp_path):
+        """Verify the orchestration logic of incremental_update_from_hook."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        db_path = repo_root / "graph.db"
+
+        with (
+            patch(
+                "better_code_review_graph.incremental.find_repo_root",
+                return_value=repo_root,
+            ),
+            patch(
+                "better_code_review_graph.incremental.get_db_path", return_value=db_path
+            ),
+            patch("better_code_review_graph.incremental.GraphStore") as mock_store_cls,
+            patch(
+                "better_code_review_graph.incremental.incremental_update"
+            ) as mock_update,
+        ):
+            mock_store = mock_store_cls.return_value
+
+            incremental_update_from_hook()
+
+            mock_store_cls.assert_called_once_with(db_path)
+            mock_update.assert_called_once_with(repo_root, mock_store, base="HEAD~1")
+            mock_store.close.assert_called_once()
+
+    def test_incremental_update_from_hook_closes_on_error(self, tmp_path):
+        """Verify store is closed even if incremental_update raises."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        db_path = repo_root / "graph.db"
+
+        with (
+            patch(
+                "better_code_review_graph.incremental.find_repo_root",
+                return_value=repo_root,
+            ),
+            patch(
+                "better_code_review_graph.incremental.get_db_path", return_value=db_path
+            ),
+            patch("better_code_review_graph.incremental.GraphStore") as mock_store_cls,
+            patch(
+                "better_code_review_graph.incremental.incremental_update",
+                side_effect=RuntimeError("fail"),
+            ),
+        ):
+            mock_store = mock_store_cls.return_value
+
+            with pytest.raises(RuntimeError, match="fail"):
+                incremental_update_from_hook()
+
+            mock_store.close.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
