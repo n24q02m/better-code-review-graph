@@ -713,6 +713,45 @@ def _lookup_node_directly(
     return node
 
 
+def _maybe_autopick_call_graph_node(
+    candidates: list[Any], pattern: str, original_target: str
+) -> list[Any]:
+    """Handle ambiguity between File and Function for call-graph patterns.
+
+    #316: when the pattern is call-graph oriented and the only ambiguity
+    is between a File and a Function (common when a module name equals
+    a function name), the File target is meaningless -- callers_of /
+    callees_of want the Function. Auto-pick.
+    """
+    if (
+        len(candidates) > 1
+        and pattern in ("callers_of", "callees_of")
+        and "::" not in original_target
+    ):
+        functions = [c for c in candidates if c.kind == "Function"]
+        files = [c for c in candidates if c.kind == "File"]
+        non_call_kinds = [c for c in candidates if c.kind not in ("Function", "File")]
+        if len(functions) == 1 and len(files) >= 1 and not non_call_kinds:
+            return [functions[0]]
+    return candidates
+
+
+def _format_ambiguous_response(target: str, candidates: list[Any]) -> dict[str, Any]:
+    """Format the error response for ambiguous unqualified bare-name lookup."""
+    return {
+        "status": "ambiguous",
+        "reason": "ambiguous_unqualified",
+        "summary": f"Multiple matches for {target!r}. Please use a qualified name.",
+        "candidates": [node_to_dict(c) for c in candidates],
+        "indexed_kinds": sorted({c.kind for c in candidates}),
+        "indexed_under": [c.qualified_name for c in candidates],
+        "hint": (
+            f"Multiple symbols match {target!r}. "
+            "Try qualifying with namespace from indexed_under."
+        ),
+    }
+
+
 def _resolve_search_candidates(
     store: Any,
     target: str,
@@ -724,25 +763,11 @@ def _resolve_search_candidates(
 ) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
     """Search for nodes by name and handle ambiguity/promotion."""
     candidates = store.search_nodes(target, limit=5, repo=repo, as_of=as_of)
-    promoted_indexed_under: list[str] = []
-
-    # #316: when the pattern is call-graph oriented and the only ambiguity
-    # is between a File and a Function (common when a module name equals
-    # a function name), the File target is meaningless -- callers_of /
-    # callees_of want the Function. Auto-pick.
-    if (
-        len(candidates) > 1
-        and pattern in ("callers_of", "callees_of")
-        and "::" not in original_target
-    ):
-        functions = [c for c in candidates if c.kind == "Function"]
-        files = [c for c in candidates if c.kind == "File"]
-        non_call_kinds = [c for c in candidates if c.kind not in ("Function", "File")]
-        if len(functions) == 1 and len(files) >= 1 and not non_call_kinds:
-            candidates = [functions[0]]
+    candidates = _maybe_autopick_call_graph_node(candidates, pattern, original_target)
 
     if len(candidates) == 1:
         node = candidates[0]
+        promoted_indexed_under: list[str] = []
         # Bare-name target was promoted to a qualified node; surface this
         # via the D15 advisory fields when the bare target differs from
         # the resolved qualified_name.
@@ -754,25 +779,8 @@ def _resolve_search_candidates(
         # D15: distinguish ambiguous unqualified bare-name lookup from a
         # genuine "not_found". Keep status="ambiguous" for backward compat
         # but add reason="ambiguous_unqualified" + indexed_kinds + hint.
-        return (
-            None,
-            target,
-            {
-                "status": "ambiguous",
-                "reason": "ambiguous_unqualified",
-                "summary": (
-                    f"Multiple matches for {target!r}. Please use a qualified name."
-                ),
-                "candidates": [node_to_dict(c) for c in candidates],
-                "indexed_kinds": sorted({c.kind for c in candidates}),
-                "indexed_under": [c.qualified_name for c in candidates],
-                "hint": (
-                    f"Multiple symbols match {target!r}. "
-                    "Try qualifying with namespace from indexed_under."
-                ),
-            },
-            [],
-        )
+        error_resp = _format_ambiguous_response(target, candidates)
+        return None, target, error_resp, []
 
     return None, target, None, []
 
