@@ -15,6 +15,7 @@ Exposes 9 tools:
 import hashlib
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -1160,15 +1161,20 @@ def _validate_languages(languages: list[str] | None) -> dict[str, Any] | None:
     return None
 
 
+@dataclass(frozen=True)
+class QueryDecorationContext:
+    pattern: str
+    target: str
+    node: Any
+    results: list[dict]
+    edges_out: list[dict]
+
+
 def _add_query_response_decorations(
     store: "GraphStore",
     root: Path,
     response: dict[str, Any],
-    pattern: str,
-    target: str,
-    node: Any,
-    results: list[dict],
-    edges_out: list[dict],
+    ctx: QueryDecorationContext,
 ) -> None:
     """Add promotion hints, dynamic dispatch hints, and cache results."""
     # D15: surface bare-name -> qualified-name promotion (issue #339).
@@ -1177,7 +1183,7 @@ def _add_query_response_decorations(
         response["resolved_from_unqualified"] = True
         response["indexed_under"] = list(promoted)
         response["hint"] = (
-            f"Bare name '{target}' was auto-resolved to "
+            f"Bare name '{ctx.target}' was auto-resolved to "
             f"{promoted[0]}. Pass the qualified form to disambiguate."
         )
 
@@ -1185,11 +1191,11 @@ def _add_query_response_decorations(
     # callees_of. Surfaces same-file references via patterns
     # (asyncio.to_thread, functools.partial, decorator, etc.) that
     # the AST CALLS edge does not capture.
-    if pattern in ("callers_of", "callees_of") and node is not None:
-        hits = _scan_dynamic_dispatch_hints(store, node, node.name)
+    if ctx.pattern in ("callers_of", "callees_of") and ctx.node is not None:
+        hits = _scan_dynamic_dispatch_hints(store, ctx.node, ctx.node.name)
         if hits:
             response["dynamic_dispatch_hints"] = {
-                "target_file": node.file_path,
+                "target_file": ctx.node.file_path,
                 "same_file_references": hits[:50],
                 "note": (
                     "These are likely additional callers the AST "
@@ -1200,17 +1206,17 @@ def _add_query_response_decorations(
 
     # #318: cache callsite-shaped results so `spot_check` can pull a
     # random sample of N source snippets without re-running the query.
-    if pattern in (
+    if ctx.pattern in (
         "callers_of",
         "callees_of",
         "inheritors_of",
         "importers_of",
     ):
         _LAST_CALLERS_RESULT[str(root.resolve())] = {
-            "pattern": pattern,
-            "target": target,
-            "edges": list(edges_out),
-            "results": list(results),
+            "pattern": ctx.pattern,
+            "target": ctx.target,
+            "edges": list(ctx.edges_out),
+            "results": list(ctx.results),
         }
 
 
@@ -1413,9 +1419,14 @@ def query_graph(
             "edges": edges_out,
         }
 
-        _add_query_response_decorations(
-            store, root, response, pattern, target, node, results, edges_out
+        ctx = QueryDecorationContext(
+            pattern=pattern,
+            target=target,
+            node=node,
+            results=results,
+            edges_out=edges_out,
         )
+        _add_query_response_decorations(store, root, response, ctx)
 
         return response
     finally:
