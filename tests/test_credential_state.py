@@ -14,10 +14,12 @@ from better_code_review_graph.credential_state import (
     CLOUD_KEYS,
     SERVER_NAME,
     CredentialState,
+    get_current_sub,
     get_setup_url,
     get_state,
     reset_state,
     resolve_credential_state,
+    set_current_sub,
     set_state,
 )
 
@@ -33,9 +35,11 @@ def _reset_module_state():
 
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
+    set_current_sub(None)
     yield
     cs._state = CredentialState.AWAITING_SETUP
     cs._setup_url = None
+    set_current_sub(None)
 
 
 @pytest.fixture
@@ -378,3 +382,18 @@ class TestPerSubHelpers:
         monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
         store_for_sub("user-y", {"GEMINI_API_KEY": "y-key"})
         assert read_for_sub("user-y") == {"GEMINI_API_KEY": "y-key"}
+
+
+class TestCurrentSub:
+    def test_set_current_sub_roundtrip(self):
+        """Verify that set_current_sub followed by get_current_sub returns the expected value."""
+        assert get_current_sub() is None
+        set_current_sub("user-123")
+        assert get_current_sub() == "user-123"
+
+    def test_set_current_sub_none(self):
+        """Verify that passing None to set_current_sub clears the current sub."""
+        set_current_sub("user-456")
+        assert get_current_sub() == "user-456"
+        set_current_sub(None)
+        assert get_current_sub() is None
