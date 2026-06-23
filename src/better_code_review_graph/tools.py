@@ -2138,6 +2138,72 @@ def _extract_relevant_lines(lines: list[str], nodes: list, file_path: str) -> st
     return "\n".join(parts)
 
 
+def _get_untested_nodes(
+    impact: dict,
+    languages: list[str] | None = None,
+) -> list[Any]:
+    """Identify changed functions that lack test coverage."""
+    tested_funcs = set()
+    for e in impact["edges"]:
+        if e.kind == "TESTED_BY":
+            tested_funcs.add(e.source_qualified)
+
+    untested = []
+    for n in impact["changed_nodes"]:
+        if (
+            n.kind == "Function"
+            and not n.is_test
+            and n.qualified_name not in tested_funcs
+        ):
+            if languages is None or n.language in languages:
+                untested.append(n)
+    return untested
+
+
+def _format_untested_guidance(untested: list[Any]) -> str | None:
+    """Format warning for untested functions."""
+    if not untested:
+        return None
+    return f"- {len(untested)} changed function(s) lack test coverage: " + ", ".join(
+        n.name for n in untested[:5]
+    )
+
+
+def _format_blast_radius_guidance(impacted_nodes: list[Any]) -> str | None:
+    """Format warning for wide blast radius."""
+    count = len(impacted_nodes)
+    if count > 20:
+        return (
+            f"- Wide blast radius: {count} nodes impacted. "
+            "Review callers and dependents carefully."
+        )
+    return None
+
+
+def _format_inheritance_guidance(impact_edges: list[Any]) -> str | None:
+    """Format warning for inheritance changes."""
+    inheritance_edges_count = sum(
+        1 for e in impact_edges if e.kind in ("INHERITS", "IMPLEMENTS")
+    )
+    if inheritance_edges_count > 0:
+        return (
+            f"- {inheritance_edges_count} inheritance/implementation relationship(s) affected. "
+            "Check for Liskov substitution violations."
+        )
+    return None
+
+
+def _format_cross_file_guidance(impacted_files: list[str]) -> str | None:
+    """Format warning for cross-file impact."""
+    impacted_file_count = len(impacted_files)
+    if impacted_file_count > 3:
+        return (
+            f"- Changes impact {impacted_file_count} other files."
+            "Consider splitting into smaller PRs."
+        )
+    return None
+
+
 def _generate_review_guidance(
     impact: dict,
     changed_files: list[str],
@@ -2154,52 +2220,22 @@ def _generate_review_guidance(
     """
     guidance_parts = []
 
-    # Check for test coverage
-    tested_funcs = set()
-    inheritance_edges_count = 0
-    for e in impact["edges"]:
-        if e.kind == "TESTED_BY":
-            tested_funcs.add(e.source_qualified)
-        elif e.kind in ("INHERITS", "IMPLEMENTS"):
-            inheritance_edges_count += 1
+    # Untested functions
+    untested = _get_untested_nodes(impact, languages)
+    if msg := _format_untested_guidance(untested):
+        guidance_parts.append(msg)
 
-    untested = []
-    for n in impact["changed_nodes"]:
-        if (
-            n.kind == "Function"
-            and not n.is_test
-            and n.qualified_name not in tested_funcs
-        ):
-            if languages is None or n.language in languages:
-                untested.append(n)
+    # Wide blast radius
+    if msg := _format_blast_radius_guidance(impact["impacted_nodes"]):
+        guidance_parts.append(msg)
 
-    if untested:
-        guidance_parts.append(
-            f"- {len(untested)} changed function(s) lack test coverage: "
-            + ", ".join(n.name for n in untested[:5])
-        )
+    # Inheritance changes
+    if msg := _format_inheritance_guidance(impact["edges"]):
+        guidance_parts.append(msg)
 
-    # Check for wide blast radius
-    if len(impact["impacted_nodes"]) > 20:
-        guidance_parts.append(
-            f"- Wide blast radius: {len(impact['impacted_nodes'])} nodes impacted. "
-            "Review callers and dependents carefully."
-        )
-
-    # Check for inheritance changes
-    if inheritance_edges_count > 0:
-        guidance_parts.append(
-            f"- {inheritance_edges_count} inheritance/implementation relationship(s) affected. "
-            "Check for Liskov substitution violations."
-        )
-
-    # Check for cross-file impact
-    impacted_file_count = len(impact["impacted_files"])
-    if impacted_file_count > 3:
-        guidance_parts.append(
-            f"- Changes impact {impacted_file_count} other files."
-            " Consider splitting into smaller PRs."
-        )
+    # Cross-file impact
+    if msg := _format_cross_file_guidance(impact["impacted_files"]):
+        guidance_parts.append(msg)
 
     if not guidance_parts:
         guidance_parts.append(
