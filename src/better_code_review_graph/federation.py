@@ -304,7 +304,7 @@ def backfill_commits_for_repo(
     if proc.returncode != 0:
         return 0
 
-    inserted = 0
+    to_insert = []
     for line in proc.stdout.splitlines():
         # Each row is exactly 4 NUL-separated columns; anything else
         # signals a malformed line (e.g. truncated output) and we skip
@@ -323,13 +323,17 @@ def backfill_commits_for_repo(
             # or future git version that emits something else should
             # not blow up the backfill. Skip the row instead.
             continue
-        cursor = store._conn.execute(
-            "INSERT OR IGNORE INTO commits "
-            "(sha, repo_id, parent_sha, timestamp, message) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (sha, repo_id, parent_sha, ts, message),
-        )
-        if cursor.rowcount > 0:
-            inserted += 1
+        to_insert.append((sha, repo_id, parent_sha, ts, message))
+
+    if not to_insert:
+        return 0
+
+    cursor = store._conn.executemany(
+        "INSERT OR IGNORE INTO commits "
+        "(sha, repo_id, parent_sha, timestamp, message) "
+        "VALUES (?, ?, ?, ?, ?)",
+        to_insert,
+    )
+    inserted = cursor.rowcount
     store._conn.commit()
     return inserted
