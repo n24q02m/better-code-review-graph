@@ -1582,6 +1582,49 @@ def review_delta(
     return payload
 
 
+def _fetch_line_shift_rows(
+    store: GraphStore,
+    to_sha: str,
+    repo: str,
+) -> Any:
+    """Execute the SQL query to find line shifts."""
+    if repo:
+        return store._conn.execute(
+            "SELECT old.qualified_name, old.line_start AS before_line, "
+            "new.line_start AS after_line "
+            "FROM nodes old "
+            "JOIN nodes new ON old.qualified_name = new.qualified_name "
+            "WHERE old.valid_to_sha = ? "
+            "  AND new.valid_from_sha = ? "
+            "  AND old.line_start != new.line_start "
+            "  AND old.repo_id = ? "
+            "  AND new.repo_id = ?",
+            (to_sha, to_sha, repo, repo),
+        )
+    return store._conn.execute(
+        "SELECT old.qualified_name, old.line_start AS before_line, "
+        "new.line_start AS after_line "
+        "FROM nodes old "
+        "JOIN nodes new ON old.qualified_name = new.qualified_name "
+        "WHERE old.valid_to_sha = ? "
+        "  AND new.valid_from_sha = ? "
+        "  AND old.line_start != new.line_start",
+        (to_sha, to_sha),
+    )
+
+
+def _format_line_shift_payload(cursor: Any) -> list[dict[str, Any]]:
+    """Transform SQL rows into the expected response format."""
+    return [
+        {
+            "qualified_name": row[0],
+            "before_line": row[1],
+            "after_line": row[2],
+        }
+        for row in cursor
+    ]
+
+
 def _collect_line_shifts(
     repo_root: str | None,
     from_sha: str,
@@ -1603,38 +1646,8 @@ def _collect_line_shifts(
     del from_sha  # reserved for future ancestor-walk scope check
     store, _ = _get_store(repo_root)
     try:
-        if repo:
-            cursor = store._conn.execute(
-                "SELECT old.qualified_name, old.line_start AS before_line, "
-                "new.line_start AS after_line "
-                "FROM nodes old "
-                "JOIN nodes new ON old.qualified_name = new.qualified_name "
-                "WHERE old.valid_to_sha = ? "
-                "  AND new.valid_from_sha = ? "
-                "  AND old.line_start != new.line_start "
-                "  AND old.repo_id = ? "
-                "  AND new.repo_id = ?",
-                (to_sha, to_sha, repo, repo),
-            )
-        else:
-            cursor = store._conn.execute(
-                "SELECT old.qualified_name, old.line_start AS before_line, "
-                "new.line_start AS after_line "
-                "FROM nodes old "
-                "JOIN nodes new ON old.qualified_name = new.qualified_name "
-                "WHERE old.valid_to_sha = ? "
-                "  AND new.valid_from_sha = ? "
-                "  AND old.line_start != new.line_start",
-                (to_sha, to_sha),
-            )
-        return [
-            {
-                "qualified_name": row[0],
-                "before_line": row[1],
-                "after_line": row[2],
-            }
-            for row in cursor
-        ]
+        cursor = _fetch_line_shift_rows(store, to_sha, repo)
+        return _format_line_shift_payload(cursor)
     finally:
         store.close()
 
