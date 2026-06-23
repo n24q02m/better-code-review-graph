@@ -1160,18 +1160,12 @@ def _validate_languages(languages: list[str] | None) -> dict[str, Any] | None:
     return None
 
 
-def _add_query_response_decorations(
+def _apply_promotion_hints(
     store: "GraphStore",
-    root: Path,
     response: dict[str, Any],
-    pattern: str,
     target: str,
-    node: Any,
-    results: list[dict],
-    edges_out: list[dict],
 ) -> None:
-    """Add promotion hints, dynamic dispatch hints, and cache results."""
-    # D15: surface bare-name -> qualified-name promotion (issue #339).
+    """Surface bare-name -> qualified-name promotion (issue #339)."""
     promoted = getattr(store, "_d15_promoted_indexed_under", None)
     if promoted:
         response["resolved_from_unqualified"] = True
@@ -1181,10 +1175,14 @@ def _add_query_response_decorations(
             f"{promoted[0]}. Pass the qualified form to disambiguate."
         )
 
-    # #331: dynamic-dispatch blind-spot warning for callers_of /
-    # callees_of. Surfaces same-file references via patterns
-    # (asyncio.to_thread, functools.partial, decorator, etc.) that
-    # the AST CALLS edge does not capture.
+
+def _apply_dynamic_dispatch_hints(
+    store: "GraphStore",
+    response: dict[str, Any],
+    pattern: str,
+    node: Any,
+) -> None:
+    """#331: dynamic-dispatch blind-spot warning for callers_of / callees_of."""
     if pattern in ("callers_of", "callees_of") and node is not None:
         hits = _scan_dynamic_dispatch_hints(store, node, node.name)
         if hits:
@@ -1198,8 +1196,15 @@ def _add_query_response_decorations(
                 ),
             }
 
-    # #318: cache callsite-shaped results so `spot_check` can pull a
-    # random sample of N source snippets without re-running the query.
+
+def _cache_query_results(
+    root: Path,
+    pattern: str,
+    target: str,
+    results: list[dict],
+    edges_out: list[dict],
+) -> None:
+    """#318: cache callsite-shaped results for `spot_check`."""
     if pattern in (
         "callers_of",
         "callees_of",
@@ -1212,6 +1217,22 @@ def _add_query_response_decorations(
             "edges": list(edges_out),
             "results": list(results),
         }
+
+
+def _add_query_response_decorations(
+    store: "GraphStore",
+    root: Path,
+    response: dict[str, Any],
+    pattern: str,
+    target: str,
+    node: Any,
+    results: list[dict],
+    edges_out: list[dict],
+) -> None:
+    """Add promotion hints, dynamic dispatch hints, and cache results."""
+    _apply_promotion_hints(store, response, target)
+    _apply_dynamic_dispatch_hints(store, response, pattern, node)
+    _cache_query_results(root, pattern, target, results, edges_out)
 
 
 def _filter_results_by_repo(
