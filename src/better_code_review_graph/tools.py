@@ -830,6 +830,60 @@ def _handle_not_found(store: Any, target: str) -> dict[str, Any]:
     }
 
 
+def _apply_direct_lookup(
+    store: Any,
+    root: Any,
+    target: str,
+    repo: str,
+    as_of: str,
+) -> Any | None:
+    """Attempt direct lookup and apply repo filtering."""
+    node = _lookup_node_directly(store, root, target, as_of=as_of)
+    # Phase 2 Task 10: drop direct hits that don't belong to the
+    # requested repo so the search-by-name fallback below can pick a
+    # repo-scoped candidate instead of returning the cross-repo match.
+    if node is not None and repo:
+        row = store._conn.execute(
+            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+            (node.qualified_name,),
+        ).fetchone()
+        if row is None or (row["repo_id"] or "") != repo:
+            node = None
+    return node
+
+
+def _apply_search_fallback(
+    store: Any,
+    target: str,
+    pattern: str,
+    original_target: str,
+    repo: str,
+    as_of: str,
+) -> tuple[Any | None, str, dict[str, Any] | None, list[str]]:
+    """Search by name if not found directly."""
+    node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
+        store, target, pattern, original_target, repo=repo, as_of=as_of
+    )
+    return node, target, error_resp, promoted_indexed_under
+
+
+def _apply_final_fallback(
+    store: Any,
+    root: Any,
+    target: str,
+    pattern: str,
+) -> tuple[Any | None, str, dict[str, Any] | None]:
+    """Final fallbacks if still no node found."""
+    node, path_target, error_resp = _resolve_path_fallback(root, target, pattern)
+    if error_resp:
+        return None, target, error_resp
+    if path_target:
+        return None, path_target, None
+
+    # D15: bare not_found
+    return None, target, _handle_not_found(store, target)
+
+
 def _resolve_query_target(
     store: Any,
     root: Any,
@@ -847,37 +901,20 @@ def _resolve_query_target(
     original_target = target
 
     # 1. Direct lookup (qualified name or absolute path)
-    node = _lookup_node_directly(store, root, target, as_of=as_of)
-    # Phase 2 Task 10: drop direct hits that don't belong to the
-    # requested repo so the search-by-name fallback below can pick a
-    # repo-scoped candidate instead of returning the cross-repo match.
-    if node is not None and repo:
-        row = store._conn.execute(
-            "SELECT repo_id FROM nodes WHERE qualified_name = ?",
-            (node.qualified_name,),
-        ).fetchone()
-        if row is None or (row["repo_id"] or "") != repo:
-            node = None
+    node = _apply_direct_lookup(store, root, target, repo, as_of)
 
     # 2. Search by name if not found directly
     promoted_indexed_under: list[str] = []
     if not node:
-        node, target, error_resp, promoted_indexed_under = _resolve_search_candidates(
-            store, target, pattern, original_target, repo=repo, as_of=as_of
+        node, target, error_resp, promoted_indexed_under = _apply_search_fallback(
+            store, target, pattern, original_target, repo, as_of
         )
         if error_resp:
             return None, target, error_resp
 
     # 3. Final fallbacks if still no node
     if not node:
-        node, path_target, error_resp = _resolve_path_fallback(root, target, pattern)
-        if error_resp:
-            return None, target, error_resp
-        if path_target:
-            return None, path_target, None
-
-        # D15: bare not_found
-        return None, target, _handle_not_found(store, target)
+        return _apply_final_fallback(store, root, target, pattern)
 
     if pattern == "importers_of":
         return node, node.file_path, None
