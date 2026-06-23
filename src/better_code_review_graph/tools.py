@@ -15,6 +15,7 @@ Exposes 9 tools:
 import hashlib
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -676,7 +677,23 @@ _QUERY_PATTERNS = {
     "file_summary": "Get a summary of all nodes in a file",
 }
 
+
 # #318: cache of the last call-graph query response per repo_root so the
+@dataclass
+class QueryContext:
+    """Encapsulates common state for graph queries."""
+
+    store: "GraphStore"
+    pattern: str
+    target: str
+    node: Any
+    resolved_qn_or_path: str
+    results: list[dict]
+    edges_out: list[dict]
+    languages: list[str] | None = None
+    as_of: str = ""
+
+
 # spot_check action can fetch source snippets for N random callsites
 # without re-running the query. Keyed by ``str(root.resolve())``.
 _LAST_CALLERS_RESULT: dict[str, dict[str, Any]] = {}
@@ -971,158 +988,119 @@ def _scan_dynamic_dispatch_hints(
     return hits
 
 
-def _handle_callers_of(
-    store: Any,
-    node: Any,
-    qn: str,
-    results: list[dict],
-    edges_out: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
+def _handle_callers_of(ctx: QueryContext) -> None:
     # Bolt: Use batched search to avoid N+1 queries when resolving callers (issue #342).
     # We look for CALLS edges targeting either the qualified name or the bare name.
-    search_targets = [qn]
-    if node and node.name and node.name != qn:
-        search_targets.append(node.name)
+    search_targets = [ctx.resolved_qn_or_path]
+    if ctx.node and ctx.node.name and ctx.node.name != ctx.resolved_qn_or_path:
+        search_targets.append(ctx.node.name)
 
-    edges = store.search_edges_by_target_names(
-        search_targets, kind="CALLS", as_of=as_of
+    edges = ctx.store.search_edges_by_target_names(
+        search_targets, kind="CALLS", as_of=ctx.as_of
     )
 
     qns = []
     for e in edges:
         qns.append(e.source_qualified)
-        edges_out.append(edge_to_dict(e))
+        ctx.edges_out.append(edge_to_dict(e))
 
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        nodes = ctx.store.get_nodes_by_qualified_names(qns, as_of=ctx.as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
-                results.append(node_to_dict(node_map[qn_src]))
+                ctx.results.append(node_to_dict(node_map[qn_src]))
 
 
-def _handle_callees_of(
-    store: Any,
-    qn: str,
-    results: list[dict],
-    edges_out: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
+def _handle_callees_of(ctx: QueryContext) -> None:
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
-        qns.append(e.target_qualified)
-        edges_out.append(edge_to_dict(e))
-    if qns:
-        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
-        node_map = {n.qualified_name: n for n in nodes}
-        for qn_tgt in qns:
-            if qn_tgt in node_map:
-                results.append(node_to_dict(node_map[qn_tgt]))
-
-
-def _handle_imports_of(
-    store: Any,
-    qn: str,
-    results: list[dict],
-    edges_out: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
-        results.append({"import_target": e.target_qualified})
-        edges_out.append(edge_to_dict(e))
-
-
-def _handle_importers_of(
-    store: Any,
-    abs_target: str,
-    results: list[dict],
-    edges_out: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
+    for e in ctx.store.get_edges_by_source(
+        ctx.resolved_qn_or_path, kind="CALLS", as_of=ctx.as_of
     ):
-        results.append({"importer": e.source_qualified, "file": e.file_path})
-        edges_out.append(edge_to_dict(e))
-
-
-def _handle_children_of(
-    store: Any, qn: str, results: list[dict], *, as_of: str = ""
-) -> None:
-    qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
         qns.append(e.target_qualified)
+        ctx.edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        nodes = ctx.store.get_nodes_by_qualified_names(qns, as_of=ctx.as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_tgt in qns:
             if qn_tgt in node_map:
-                results.append(node_to_dict(node_map[qn_tgt]))
+                ctx.results.append(node_to_dict(node_map[qn_tgt]))
 
 
-def _handle_tests_for(
-    store: Any,
-    node: Any,
-    target: str,
-    qn: str,
-    results: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
+def _handle_imports_of(ctx: QueryContext) -> None:
+    for e in ctx.store.get_edges_by_source(
+        ctx.resolved_qn_or_path, kind="IMPORTS_FROM", as_of=ctx.as_of
+    ):
+        ctx.results.append({"import_target": e.target_qualified})
+        ctx.edges_out.append(edge_to_dict(e))
+
+
+def _handle_importers_of(ctx: QueryContext) -> None:
+    for e in ctx.store.get_edges_by_target(
+        ctx.resolved_qn_or_path, kind="IMPORTS_FROM", as_of=ctx.as_of, fallback=False
+    ):
+        ctx.results.append({"importer": e.source_qualified, "file": e.file_path})
+        ctx.edges_out.append(edge_to_dict(e))
+
+
+def _handle_children_of(ctx: QueryContext) -> None:
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
+    for e in ctx.store.get_edges_by_source(
+        ctx.resolved_qn_or_path, kind="CONTAINS", as_of=ctx.as_of
+    ):
+        qns.append(e.target_qualified)
+    if qns:
+        nodes = ctx.store.get_nodes_by_qualified_names(qns, as_of=ctx.as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                ctx.results.append(node_to_dict(node_map[qn_tgt]))
+
+
+def _handle_tests_for(ctx: QueryContext) -> None:
+    qns = []
+    for e in ctx.store.get_edges_by_target(
+        ctx.resolved_qn_or_path, kind="TESTED_BY", as_of=ctx.as_of, fallback=False
     ):
         qns.append(e.source_qualified)
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        nodes = ctx.store.get_nodes_by_qualified_names(qns, as_of=ctx.as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
-                results.append(node_to_dict(node_map[qn_src]))
+                ctx.results.append(node_to_dict(node_map[qn_src]))
     # Also search by naming convention
-    name = node.name if node else target
-    test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
-    test_nodes += store.search_nodes(f"Test{name}", limit=10, as_of=as_of)
-    seen = {r.get("qualified_name") for r in results}
+    name = ctx.node.name if ctx.node else ctx.target
+    test_nodes = ctx.store.search_nodes(f"test_{name}", limit=10, as_of=ctx.as_of)
+    test_nodes += ctx.store.search_nodes(f"Test{name}", limit=10, as_of=ctx.as_of)
+    seen = {r.get("qualified_name") for r in ctx.results}
     for t in test_nodes:
         if t.qualified_name not in seen and t.is_test:
-            results.append(node_to_dict(t))
+            ctx.results.append(node_to_dict(t))
 
 
-def _handle_inheritors_of(
-    store: Any,
-    qn: str,
-    results: list[dict],
-    edges_out: list[dict],
-    *,
-    as_of: str = "",
-) -> None:
+def _handle_inheritors_of(ctx: QueryContext) -> None:
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
+    for e in ctx.store.get_edges_by_target(
+        ctx.resolved_qn_or_path,
+        kind=("INHERITS", "IMPLEMENTS"),
+        as_of=ctx.as_of,
+        fallback=False,
     ):
         qns.append(e.source_qualified)
-        edges_out.append(edge_to_dict(e))
+        ctx.edges_out.append(edge_to_dict(e))
     if qns:
-        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        nodes = ctx.store.get_nodes_by_qualified_names(qns, as_of=ctx.as_of)
         node_map = {n.qualified_name: n for n in nodes}
         for qn_src in qns:
             if qn_src in node_map:
-                results.append(node_to_dict(node_map[qn_src]))
+                ctx.results.append(node_to_dict(node_map[qn_src]))
 
 
-def _handle_file_summary(
-    store: Any, abs_path: str, results: list[dict], *, as_of: str = ""
-) -> None:
-    file_nodes = store.get_nodes_by_file(abs_path, as_of=as_of)
+def _handle_file_summary(ctx: QueryContext) -> None:
+    file_nodes = ctx.store.get_nodes_by_file(ctx.resolved_qn_or_path, as_of=ctx.as_of)
     for n in file_nodes:
-        results.append(node_to_dict(n))
+        ctx.results.append(node_to_dict(n))
 
 
 # D16: allowed languages for the languages filter parameter.
@@ -1267,48 +1245,30 @@ def _filter_results_by_repo(
     return results, edges_out
 
 
-def _dispatch_query_pattern(
-    store: "GraphStore",
-    pattern: str,
-    target: str,
-    node: Any,
-    resolved_qn_or_path: str,
-    results: list[dict],
-    edges_out: list[dict],
-    languages: list[str] | None = None,
-    as_of: str = "",
-) -> list[dict]:
+def _dispatch_query_pattern(ctx: QueryContext) -> list[dict]:
     """Execute the core logic for the requested query pattern."""
-    if pattern == "callers_of":
-        _handle_callers_of(
-            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
-        )
-    elif pattern == "callees_of":
-        _handle_callees_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
-    elif pattern == "imports_of":
-        _handle_imports_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
-    elif pattern == "importers_of":
-        _handle_importers_of(
-            store, resolved_qn_or_path, results, edges_out, as_of=as_of
-        )
-    elif pattern == "children_of":
-        _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
-    elif pattern == "tests_for":
-        _handle_tests_for(
-            store, node, target, resolved_qn_or_path, results, as_of=as_of
-        )
-    elif pattern == "inheritors_of":
-        _handle_inheritors_of(
-            store, resolved_qn_or_path, results, edges_out, as_of=as_of
-        )
-    elif pattern == "file_summary":
-        _handle_file_summary(store, resolved_qn_or_path, results, as_of=as_of)
+    if ctx.pattern == "callers_of":
+        _handle_callers_of(ctx)
+    elif ctx.pattern == "callees_of":
+        _handle_callees_of(ctx)
+    elif ctx.pattern == "imports_of":
+        _handle_imports_of(ctx)
+    elif ctx.pattern == "importers_of":
+        _handle_importers_of(ctx)
+    elif ctx.pattern == "children_of":
+        _handle_children_of(ctx)
+    elif ctx.pattern == "tests_for":
+        _handle_tests_for(ctx)
+    elif ctx.pattern == "inheritors_of":
+        _handle_inheritors_of(ctx)
+    elif ctx.pattern == "file_summary":
+        _handle_file_summary(ctx)
 
     # D16: filter tests_for results by language if requested.
-    if pattern == "tests_for" and languages is not None:
-        results = [r for r in results if r.get("language") in languages]
+    if ctx.pattern == "tests_for" and ctx.languages is not None:
+        ctx.results = [r for r in ctx.results if r.get("language") in ctx.languages]
 
-    return results
+    return ctx.results
 
 
 def query_graph(
@@ -1388,17 +1348,18 @@ def query_graph(
         if error_resp:
             return error_resp
 
-        results = _dispatch_query_pattern(
-            store,
-            pattern,
-            target,
-            node,
-            resolved_qn_or_path,
-            results,
-            edges_out,
+        ctx = QueryContext(
+            store=store,
+            pattern=pattern,
+            target=target,
+            node=node,
+            resolved_qn_or_path=resolved_qn_or_path,
+            results=results,
+            edges_out=edges_out,
             languages=languages,
             as_of=as_of,
         )
+        results = _dispatch_query_pattern(ctx)
 
         results, edges_out = _filter_results_by_repo(store, repo, results, edges_out)
 

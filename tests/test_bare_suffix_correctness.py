@@ -3,6 +3,7 @@ import pytest
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
 from better_code_review_graph.tools import (
+    QueryContext,
     _handle_importers_of,
     _handle_inheritors_of,
     _handle_tests_for,
@@ -37,7 +38,16 @@ def test_inheritors_of_no_bare_fallback(store):
 
     results = []
     edges_out = []
-    _handle_inheritors_of(store, "a.py::Base", results, edges_out)
+    ctx = QueryContext(
+        store=store,
+        pattern="inheritors_of",
+        target="Base",
+        node=None,
+        resolved_qn_or_path="a.py::Base",
+        results=results,
+        edges_out=edges_out,
+    )
+    _handle_inheritors_of(ctx)
 
     # It should NOT find b.py::Sub because we disabled fallback.
     assert len(results) == 0
@@ -76,7 +86,16 @@ def test_tests_for_no_bare_fallback(store):
     results = []
     # node argument is not used for TESTED_BY if qn is provided, but we pass it anyway
     node = store.get_node("a.py::target")
-    _handle_tests_for(store, node, "target", "a.py::target", results)
+    ctx = QueryContext(
+        store=store,
+        pattern="tests_for",
+        target="target",
+        node=node,
+        resolved_qn_or_path="a.py::target",
+        results=results,
+        edges_out=[],
+    )
+    _handle_tests_for(ctx)
 
     assert len(results) == 0
 
@@ -110,7 +129,16 @@ def test_importers_of_no_bare_fallback(store):
 
     results = []
     edges_out = []
-    _handle_importers_of(store, "app/a.py", results, edges_out)
+    ctx = QueryContext(
+        store=store,
+        pattern="importers_of",
+        target="app/a.py",
+        node=None,
+        resolved_qn_or_path="app/a.py",
+        results=results,
+        edges_out=edges_out,
+    )
+    _handle_importers_of(ctx)
 
     assert len(results) == 0
 
