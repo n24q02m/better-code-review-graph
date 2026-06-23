@@ -446,21 +446,13 @@ class TemporalIndex:
         Returns:
             Number of nodes whose ``valid_to_sha`` was set in this call.
         """
-        rows = self._store._conn.execute(
-            "SELECT id, qualified_name FROM nodes "
-            "WHERE file_path = ? AND valid_to_sha IS NULL",
-            (file_path,),
-        ).fetchall()
-        closed = 0
-        for row in rows:
-            row_id = row[0]
-            qualified = row[1]
-            if qualified not in observed_qualified:
-                self._store._conn.execute(
-                    "UPDATE nodes SET valid_to_sha = ? WHERE id = ?",
-                    (self._current_sha, row_id),
-                )
-                closed += 1
+        cursor = self._store._conn.execute(
+            "UPDATE nodes SET valid_to_sha = ? "
+            "WHERE file_path = ? AND valid_to_sha IS NULL "
+            "AND qualified_name NOT IN (SELECT value FROM json_each(?))",
+            (self._current_sha, file_path, json.dumps(list(observed_qualified))),
+        )
+        closed = cursor.rowcount
         if closed:
             self._store._conn.commit()
         return closed
