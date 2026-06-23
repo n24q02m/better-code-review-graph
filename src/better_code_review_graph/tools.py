@@ -1861,6 +1861,39 @@ def renamed_in_diff(
 
 # ---------------------------------------------------------------------------
 # Tool 4: get_review_context
+def _resolve_secure_path(
+    root: Path,
+    root_resolved: Path,
+    rel_path: str,
+    parent_cache: dict[Path, Path | None],
+) -> Path | None:
+    """Resolve a relative path securely against a root, handling symlinks and scoping."""
+    full_path_raw = root / rel_path
+    try:
+        parent_raw = full_path_raw.parent
+        if parent_raw not in parent_cache:
+            try:
+                parent_cache[parent_raw] = parent_raw.resolve(strict=True)
+            except OSError:
+                parent_cache[parent_raw] = None
+
+        parent_resolved = parent_cache[parent_raw]
+        if parent_resolved:
+            full_path = parent_resolved / full_path_raw.name
+        else:
+            full_path = full_path_raw.resolve()
+
+        if not full_path.is_relative_to(root_resolved):
+            return None
+
+        if full_path_raw.is_symlink() or full_path.is_symlink():
+            return None
+
+        return full_path
+    except (OSError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -1883,37 +1916,13 @@ def _filter_valid_paths(root: Path, changed_files: list[str]) -> list[str]:
                 abs_files.append(res)
             continue
 
-        full_path_raw = root / f
-        try:
-            parent_raw = full_path_raw.parent
-            if parent_raw not in parent_cache:
-                try:
-                    parent_cache[parent_raw] = parent_raw.resolve(strict=True)
-                except OSError:
-                    # Parent directory might not exist yet if it's a deleted file,
-                    # fallback to resolving the full path.
-                    parent_cache[parent_raw] = None
-
-            parent_resolved = parent_cache[parent_raw]
-            if parent_resolved:
-                full_path = parent_resolved / full_path_raw.name
-            else:
-                full_path = full_path_raw.resolve()
-
-            if not full_path.is_relative_to(root_resolved):
-                result_cache[f] = None
-                continue
-
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                result_cache[f] = None
-                continue
-
+        full_path = _resolve_secure_path(root, root_resolved, f, parent_cache)
+        if full_path:
             res_str = str(full_path)
             result_cache[f] = res_str
             abs_files.append(res_str)
-        except (OSError, ValueError):
+        else:
             result_cache[f] = None
-            continue
 
     return abs_files
 
@@ -1933,41 +1942,23 @@ def _get_source_snippets(
     parent_cache: dict[Path, Path | None] = {}
 
     for rel_path in unique_files:
-        full_path_raw = root / rel_path
-        try:
-            parent_raw = full_path_raw.parent
-            if parent_raw not in parent_cache:
-                try:
-                    parent_cache[parent_raw] = parent_raw.resolve(strict=True)
-                except OSError:
-                    parent_cache[parent_raw] = None
-
-            parent_resolved = parent_cache[parent_raw]
-            if parent_resolved:
-                full_path = parent_resolved / full_path_raw.name
-            else:
-                full_path = full_path_raw.resolve()
-
-            if not full_path.is_relative_to(root_resolved):
-                continue
-            if full_path_raw.is_symlink() or full_path.is_symlink():
-                continue
-
-            if full_path.is_file():
-                try:
-                    lines = full_path.read_text(errors="replace").splitlines()
-                    if len(lines) > max_lines_per_file:
-                        snippets[rel_path] = _extract_relevant_lines(
-                            lines, changed_nodes, str(full_path)
-                        )
-                    else:
-                        snippets[rel_path] = "\n".join(
-                            f"{i + 1}: {line}" for i, line in enumerate(lines)
-                        )
-                except (OSError, UnicodeDecodeError):
-                    snippets[rel_path] = "(could not read file)"
-        except (OSError, ValueError):
+        full_path = _resolve_secure_path(root, root_resolved, rel_path, parent_cache)
+        if not full_path:
             continue
+
+        if full_path.is_file():
+            try:
+                lines_content = full_path.read_text(errors="replace").splitlines()
+                if len(lines_content) > max_lines_per_file:
+                    snippets[rel_path] = _extract_relevant_lines(
+                        lines_content, changed_nodes, str(full_path)
+                    )
+                else:
+                    snippets[rel_path] = "\n".join(
+                        f"{i + 1}: {line}" for i, line in enumerate(lines_content)
+                    )
+            except (OSError, UnicodeDecodeError):
+                snippets[rel_path] = "(could not read file)"
     return snippets
 
 
