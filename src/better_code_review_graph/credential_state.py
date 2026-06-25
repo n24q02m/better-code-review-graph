@@ -132,8 +132,11 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Config loaded from encrypted per-plugin store")
                 _state = CredentialState.CONFIGURED
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            # SECURITY: Swallowing exceptions during credential loading masks
+            # misconfigurations and decryption failures, leaving the system
+            # in an unknown state. We explicitly log the error for visibility.
+            logger.debug("Failed to load from per-plugin store: %s", e)
 
         try:
             from mcp_core import get_mode
@@ -143,8 +146,10 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Local mode marker found, skipping relay")
                 _state = CredentialState.LOCAL
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            # SECURITY: Always log marker lookup failures to prevent silently
+            # falling back to unauthenticated relay behavior when local mode was intended.
+            logger.debug("Failed to get local mode marker: %s", e)
 
     logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
@@ -316,8 +321,10 @@ def reset_state() -> None:
 
         clear_mode(SERVER_NAME)
         PerPluginStore(PLUGIN_NAME).clear()
-    except Exception:
-        pass
+    except Exception as e:
+        # SECURITY: Failures to clear credential state risk cross-session leakage.
+        # Log the failure so administrators are aware of dirty state.
+        logger.debug("Failed to clear state: %s", e)
 
 
 # ---------------------------------------------------------------------------

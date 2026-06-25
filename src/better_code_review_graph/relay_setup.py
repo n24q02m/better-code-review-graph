@@ -68,8 +68,10 @@ async def ensure_config() -> dict[str, str] | None:
             for key, value in saved.items():
                 os.environ.setdefault(key, value)
             return saved
-    except Exception:
-        pass
+    except Exception as e:
+        # SECURITY: Log decryption or lookup failures from the per-plugin store
+        # to ensure local fallback states are auditable and not silently triggered.
+        logger.debug("Failed to load from per-plugin store: %s", e)
 
     # 3. No local credentials found -- trigger relay setup.
     # Per mode-matrix 2.5, better-code-review-graph default is `http local relay`;
@@ -126,8 +128,10 @@ async def ensure_config() -> dict[str, str] | None:
                         "text": "CRG config saved. Setup complete!",
                     },
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            # SECURITY: Even for non-critical HTTP callbacks, errors should be logged
+            # rather than swallowed to identify potential availability or routing issues.
+            logger.debug("Failed to notify relay page: %s", e)
 
         # Inject into environment
         for key, value in config.items():

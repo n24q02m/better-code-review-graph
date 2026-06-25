@@ -14,6 +14,7 @@ Exposes 9 tools:
 
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from .security.semgrep_engine import (
     SemgrepScanner,
     _resolve_overlay_rules_dir,
 )
+
+logger = logging.getLogger(__name__)
 
 # Common JS/TS builtin method names filtered from callers_of results.
 # "Who calls .map()?" returns hundreds of hits and is never useful.
@@ -941,8 +944,10 @@ def _scan_dynamic_dispatch_hints(
     try:
         for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
             candidate_files.add(e.file_path)
-    except Exception:
-        pass
+    except Exception as e:
+        # SECURITY: Log database or path resolution failures rather than silently swallowing
+        # them. This ensures file enumeration issues aren't masked.
+        logger.debug("Failed to get target imports: %s", e)
 
     hits: list[dict[str, Any]] = []
     for fp in candidate_files:
@@ -1816,7 +1821,10 @@ def renamed_in_diff(
                 base_nodes, _ = parser.parse_bytes(full_path, base_source)
                 head_source = full_path.read_bytes()
                 head_nodes, _ = parser.parse_bytes(full_path, head_source)
-            except Exception:
+            except Exception as e:
+                # SECURITY: Parsing exceptions (e.g. out-of-memory or corrupt bytes) should
+                # be logged so that incomplete coverage responses are traceable.
+                logger.debug("Failed to parse bytes: %s", e)
                 continue
 
             base_lines = {
