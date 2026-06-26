@@ -92,7 +92,11 @@ async def ensure_config() -> dict[str, str] | None:
         # relay UI keys — see relay_schema.py for details.
         session = await create_session(relay_url, SERVER_NAME, RELAY_SCHEMA)  # ty: ignore[invalid-argument-type]
     except Exception:
-        logger.debug("Cannot reach relay server at %s. Using local mode.", relay_url, exc_info=True)
+        logger.debug(
+            "Cannot reach relay server at %s. Using local mode.",
+            relay_url,
+            exc_info=True,
+        )
         return None
 
     # Log URL to stderr (visible to user in MCP client)
