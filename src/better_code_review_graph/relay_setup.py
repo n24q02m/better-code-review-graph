@@ -68,8 +68,8 @@ async def ensure_config() -> dict[str, str] | None:
             for key, value in saved.items():
                 os.environ.setdefault(key, value)
             return saved
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to load local config: %s", e)
 
     # 3. No local credentials found -- trigger relay setup.
     # Per mode-matrix 2.5, better-code-review-graph default is `http local relay`;
@@ -126,8 +126,8 @@ async def ensure_config() -> dict[str, str] | None:
                         "text": "CRG config saved. Setup complete!",
                     },
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to report success to relay server: %s", e)
 
         # Inject into environment
         for key, value in config.items():

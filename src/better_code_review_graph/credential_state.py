@@ -21,13 +21,15 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import sys
 from enum import Enum
 from pathlib import Path
 
-from loguru import logger
 from mcp_core.storage.per_plugin_store import PerPluginStore
+
+logger = logging.getLogger(__name__)
 
 SERVER_NAME = "better-code-review-graph"
 PLUGIN_NAME = "better-code-review-graph"
@@ -132,8 +134,8 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Config loaded from encrypted per-plugin store")
                 _state = CredentialState.CONFIGURED
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load config from per-plugin store: %s", e)
 
         try:
             from mcp_core import get_mode
@@ -143,8 +145,8 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Local mode marker found, skipping relay")
                 _state = CredentialState.LOCAL
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to check local mode marker: %s", e)
 
     logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
@@ -316,8 +318,8 @@ def reset_state() -> None:
 
         clear_mode(SERVER_NAME)
         PerPluginStore(PLUGIN_NAME).clear()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to clear credential state: %s", e)
 
 
 # ---------------------------------------------------------------------------

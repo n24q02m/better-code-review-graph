@@ -14,6 +14,7 @@ Exposes 9 tools:
 
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,8 @@ from .security.semgrep_engine import (
     SemgrepScanner,
     _resolve_overlay_rules_dir,
 )
+
+logger = logging.getLogger(__name__)
 
 # Common JS/TS builtin method names filtered from callers_of results.
 # "Who calls .map()?" returns hundreds of hits and is never useful.
@@ -248,14 +251,16 @@ def _build_response_header(
                 emb_count = emb_store.count()
             finally:
                 emb_store.close()
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to count embeddings: %s", e)
             emb_count = None
 
     last_updated: str | None = None
     if store is not None:
         try:
             last_updated = store.get_metadata("last_updated")
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to get last_updated metadata: %s", e)
             last_updated = None
 
     if keyword_only is None:
@@ -687,7 +692,8 @@ def _list_kinds_in_graph(store: Any) -> list[str]:
     try:
         cursor = store._conn.execute("SELECT DISTINCT kind FROM nodes ORDER BY kind")
         return [r["kind"] for r in cursor]
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to retrieve valid query kinds: %s", e)
         return []
 
 
@@ -941,8 +947,8 @@ def _scan_dynamic_dispatch_hints(
     try:
         for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
             candidate_files.add(e.file_path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to resolve impact seeds for {}: %s", target_file, e)
 
     hits: list[dict[str, Any]] = []
     for fp in candidate_files:
@@ -1816,7 +1822,12 @@ def renamed_in_diff(
                 base_nodes, _ = parser.parse_bytes(full_path, base_source)
                 head_source = full_path.read_bytes()
                 head_nodes, _ = parser.parse_bytes(full_path, head_source)
-            except Exception:
+            except Exception as e:
+                logger.debug(
+                    "Failed to parse bytes for impact assessment on {}: {}",
+                    full_path,
+                    e,
+                )
                 continue
 
             base_lines = {
