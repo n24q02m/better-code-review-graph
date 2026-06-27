@@ -13,3 +13,7 @@
 ## 2024-06-25 - Use str.translate over generator expressions for fast sanitization
 **Learning:** In hot serialization loops (like returning large JSON responses containing node metadata), using a generator expression with `"".join(...)` to filter string characters is a significant performance bottleneck in Python.
 **Action:** When filtering known character sets (like removing control characters), always define a pre-compiled mapping module constant (e.g., `_MAP = {i: None for i in range(32)}`) and use `str.translate()`, which pushes the iteration into optimized C code, yielding roughly 7.5x performance improvements.
+
+## 2024-06-27 - SQLite initialization bottleneck optimization
+**Learning:** Sequential `_conn.execute()` calls for individual `ALTER TABLE` or schema setups impose a measurable N+1 overhead loop when setting up new database connections.
+**Action:** Bundle these operations into a cohesive SQL string list and apply them using a single `_conn.executescript()` call to eliminate round-trip overhead during instantiation.
