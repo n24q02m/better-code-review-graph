@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -880,3 +881,205 @@ class TestSemanticSearch:
                 emb_store.close()
         finally:
             graph_store.close()
+
+    def test_migration_adds_provider_column(self, tmp_path):
+        """Test that the provider column is added if it's missing (migration path)."""
+        db = tmp_path / "migration.db"
+
+        # 1. Create a DB with the old schema (missing provider column)
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE embeddings (
+                qualified_name TEXT PRIMARY KEY,
+                vector BLOB NOT NULL,
+                text_hash TEXT NOT NULL
+            )
+        """)
+        conn.close()
+
+        # 2. Instantiate EmbeddingStore, which should trigger the migration
+        backend = MagicMock(spec=["name"])
+        backend.name = "test_backend"
+        store = EmbeddingStore(db, backend)
+
+        try:
+            # 3. Verify the provider column exists and has the default value
+            # We'll insert a row to test it
+            vec_blob = _encode_vector([0.1] * _DEFAULT_DIMS)
+            store._conn.execute(
+                "INSERT INTO embeddings (qualified_name, vector, text_hash) "
+                "VALUES (?, ?, ?)",
+                ("test.py::func", vec_blob, "hash1"),
+            )
+            store._conn.commit()
+
+            row = store._conn.execute(
+                "SELECT provider FROM embeddings WHERE qualified_name = ?",
+                ("test.py::func",),
+            ).fetchone()
+            assert row is not None
+            assert row["provider"] == "unknown"
+        finally:
+            store.close()
+
+
+class TestEmbeddingStoreExtra:
+    def test_migration_adds_provider_column(self, tmp_path):
+        """Test that the provider column is added if it's missing (migration path)."""
+        db = tmp_path / "migration.db"
+        import sqlite3
+
+        conn = sqlite3.connect(str(db))
+        # Create table without provider column
+        conn.execute(
+            "CREATE TABLE embeddings (qualified_name TEXT PRIMARY KEY, vector BLOB, text_hash TEXT)"
+        )
+        conn.close()
+
+        backend = MagicMock(spec=["name"])
+        backend.name = "test"
+        store = EmbeddingStore(db, backend)
+        try:
+            # Verify column exists and migration didn't crash
+            store._conn.execute("SELECT provider FROM embeddings LIMIT 1")
+        finally:
+            store.close()
+
+    def test_migration_handles_existing_column(self, tmp_path):
+        """Test that the migration handles the case where the column already exists."""
+        db = tmp_path / "existing.db"
+        import sqlite3
+
+        conn = sqlite3.connect(str(db))
+        # Create table WITH provider column
+        conn.execute(
+            "CREATE TABLE embeddings (qualified_name TEXT PRIMARY KEY, vector BLOB, text_hash TEXT, provider TEXT)"
+        )
+        conn.close()
+
+        backend = MagicMock(spec=["name"])
+        backend.name = "test"
+        store = EmbeddingStore(db, backend)
+        try:
+            # Should not crash
+            store._conn.execute("SELECT provider FROM embeddings LIMIT 1")
+        finally:
+            store.close()
+
+    def test_migration_operational_error_mocked(self):
+        """Specifically test the OperationalError catch using mocks to satisfy rationale."""
+        import sqlite3
+
+        with patch("sqlite3.connect") as mock_connect:
+            mock_conn = MagicMock()
+            mock_connect.return_value = mock_conn
+
+            # Raise OperationalError when trying to ALTER (simulates column already exists)
+            mock_conn.execute.side_effect = sqlite3.OperationalError(
+                "duplicate column name: provider"
+            )
+
+            backend = MagicMock(spec=["name"])
+            backend.name = "test"
+            from better_code_review_graph.embeddings import EmbeddingStore
+
+            # Should not raise exception
+            EmbeddingStore(":memory:", backend)
+
+            # Verify ALTER was attempted
+            calls = [call[0][0] for call in mock_conn.execute.call_args_list]
+            assert any(
+                "ALTER TABLE embeddings ADD COLUMN provider" in c for c in calls
+            )
+            assert mock_conn.commit.called
+
+    def test_embedding_store_no_backend(self, tmp_path):
+        """Coverage for EmbeddingStore methods when no backend is provided."""
+        db = tmp_path / "no_backend.db"
+        store = EmbeddingStore(db, backend=None)
+        try:
+            assert store._get_backend_name() == "none"
+            assert store.embed_nodes([]) == 0
+            assert store.search("query") == []
+            store.clear()
+        finally:
+            store.close()
+
+    def test_embed_all_nodes_no_backend(self, tmp_path):
+        """Coverage for embed_all_nodes when embedding_store is not available."""
+        db = tmp_path / "no_backend_all.db"
+        gs = GraphStore(db)
+        es = EmbeddingStore(db, backend=None)
+        try:
+            assert not es.available
+            assert embed_all_nodes(gs, es) == 0
+        finally:
+            es.close()
+            gs.close()
+
+    def test_node_to_text_full(self):
+        """Coverage for _node_to_text with all fields populated."""
+        from better_code_review_graph.embeddings import _node_to_text
+
+        node = MagicMock(spec=GraphNode)
+        node.name = "func"
+        node.kind = "Function"
+        node.parent_name = "Class"
+        node.params = "(a, b)"
+        node.return_type = "int"
+        node.language = "python"
+        text = _node_to_text(node)
+        assert "func" in text
+        assert "function" in text
+        assert "in Class" in text
+        assert "(a, b)" in text
+        assert "returns int" in text
+        assert "python" in text
+
+    def test_is_retryable(self):
+        """Coverage for _is_retryable utility."""
+        from better_code_review_graph.embeddings import _is_retryable
+
+        assert _is_retryable(Exception("rate limit exceeded"))
+        assert _is_retryable(Exception("503 Service Unavailable"))
+        assert not _is_retryable(Exception("fatal error"))
+
+    def test_semantic_search_stale_embedding(self, tmp_path):
+        """Coverage for semantic_search branch where embedding exists but node is missing from graph."""
+        db = tmp_path / "stale.db"
+        gs = GraphStore(db)
+        # Add one node so semantic_search doesn't just return early due to empty graph
+        from better_code_review_graph.parser import NodeInfo
+
+        gs.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="func1",
+                file_path="test.py",
+                line_start=1,
+                line_end=5,
+            )
+        )
+        gs.commit()
+
+        backend = MagicMock(spec=["name", "embed_single", "embed_texts"])
+        backend.name = "test"
+        backend.embed_single.return_value = [0.1] * _DEFAULT_DIMS
+
+        es = EmbeddingStore(db, backend)
+        try:
+            # Manually insert a stale embedding for a non-existent node
+            vec_blob = _encode_vector([0.1] * _DEFAULT_DIMS)
+            es._conn.execute(
+                "INSERT INTO embeddings (qualified_name, vector, text_hash, provider) "
+                "VALUES (?, ?, ?, ?)",
+                ("non_existent::node", vec_blob, "h", "test"),
+            )
+            es._conn.commit()
+
+            # Search should find the stale embedding but skip it in results as it's not in node_map
+            results = semantic_search("query", gs, es)
+            assert all(r.get("qualified_name") != "non_existent::node" for r in results)
+        finally:
+            es.close()
+            gs.close()

@@ -564,14 +564,14 @@ class EmbeddingStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_EMBEDDINGS_SCHEMA)
 
-        # Migration for existing DBs missing the provider column
+        # Add provider column if it doesn't exist
         try:
-            self._conn.execute("SELECT provider FROM embeddings LIMIT 1")
-        except sqlite3.OperationalError:
             self._conn.execute(
                 "ALTER TABLE embeddings ADD COLUMN provider "
                 "TEXT NOT NULL DEFAULT 'unknown'"
             )
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
         self._conn.commit()
 
