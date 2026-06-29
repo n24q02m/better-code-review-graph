@@ -7,6 +7,7 @@ Run as: better-code-review-graph serve
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from importlib.metadata import PackageNotFoundError
@@ -1046,7 +1047,7 @@ def serve_main(repo_root: str | None = None) -> None:
     # no-op cache hit. Cheap (numpy is already a transitive dependency) and
     # backend-agnostic (both local ONNX and the cloud vector paths touch numpy).
     try:
-        import numpy  # noqa: F401
+        importlib.import_module("numpy")
     except ImportError:
         pass
 
