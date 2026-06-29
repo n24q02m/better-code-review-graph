@@ -386,19 +386,11 @@ def build_or_update_graph(
         store.close()
 
 
-def _full_build_federated(
+def _setup_federated_repos(
     store: GraphStore, primary_root: Path, roots: list[Path]
-) -> dict[str, Any]:
-    """Federated full build over multiple registered roots (Task 10).
-
-    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
-    nodes/edges parsed under it inherit the matching ``repo_id``. The
-    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
-    the DB) is registered too so its files don't fall outside every
-    root and lose their ``repo_id``.
-    """
+) -> tuple[Any, list[Any]]:
+    """Register all roots and backfill commits (Task 10)."""
     from .federation import RepoRegistry, backfill_commits_for_repo
-    from .parser import CodeParser
     from .resolver import TargetRepo
 
     registry = RepoRegistry(store)
@@ -430,6 +422,18 @@ def _full_build_federated(
         TargetRepo(repo_id=entry.repo_id, root=entry.path)
         for entry in registry.entries()
     ]
+    return registry, target_repos
+
+
+def _run_federated_parse_loop(
+    store: GraphStore,
+    primary_root: Path,
+    roots: list[Path],
+    registry: Any,
+    target_repos: list[Any],
+) -> dict[str, Any]:
+    """Walk all roots and parse files (Task 10)."""
+    from .parser import CodeParser
 
     parser = CodeParser()
     total_files = 0
@@ -469,15 +473,38 @@ def _full_build_federated(
                 total_nodes += len(nodes)
                 total_edges += len(edges)
                 total_files += 1
-            except (OSError, PermissionError) as e:
-                errors.append({"file": str(full_path), "error": str(e)})
             except Exception as e:
                 errors.append({"file": str(full_path), "error": str(e)})
+
+    return {
+        "total_files": total_files,
+        "total_nodes": total_nodes,
+        "total_edges": total_edges,
+        "errors": errors,
+    }
+
+
+def _full_build_federated(
+    store: GraphStore, primary_root: Path, roots: list[Path]
+) -> dict[str, Any]:
+    """Federated full build over multiple registered roots (Task 10).
+
+    Each entry in ``roots`` is registered with :class:`RepoRegistry` so
+    nodes/edges parsed under it inherit the matching ``repo_id``. The
+    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
+    the DB) is registered too so its files don't fall outside every
+    root and lose their ``repo_id``.
+    """
+    registry, target_repos = _setup_federated_repos(store, primary_root, roots)
+    stats = _run_federated_parse_loop(store, primary_root, roots, registry, target_repos)
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")
     store.commit()
 
+    total_files = stats["total_files"]
+    total_nodes = stats["total_nodes"]
+    total_edges = stats["total_edges"]
     return {
         "status": "ok",
         "build_type": "full_federated",
@@ -490,15 +517,9 @@ def _full_build_federated(
         "total_nodes": total_nodes,
         "total_edges": total_edges,
         "roots": [str(r) for r in [primary_root, *roots]],
-        "errors": errors,
+        "errors": stats["errors"],
+
     }
-
-
-# ---------------------------------------------------------------------------
-# Tool 2: get_impact_radius
-# ---------------------------------------------------------------------------
-
-
 _DEFAULT_IMPACT_PAYLOAD_BYTES = 500_000  # #315: ~500KB ceiling on impact JSON
 
 
@@ -511,10 +532,13 @@ def _estimate_payload_bytes(*payloads: list[dict] | dict) -> int:
     """
     return sum(len(repr(p)) for p in payloads)
 
+# ---------------------------------------------------------------------------
+# Tool 2: get_impact_radius
+# ---------------------------------------------------------------------------
+
 
 def get_impact_radius(
     changed_files: list[str] | None = None,
-    max_depth: int = 2,
     max_results: int = 500,
     repo_root: str | None = None,
     base: str = "HEAD~1",
