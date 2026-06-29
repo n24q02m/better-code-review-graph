@@ -291,7 +291,7 @@ class CloudEmbeddingBackend:
     def name(self) -> str:
         return f"cloud:{self._provider}:{self.model}"
 
-    def _resolve_api_key(self) -> str:
+    def _resolve_api_key(self) -> str | None:
         """Resolve API key for the current provider (request-scoped).
 
         In HTTP multi-user mode the key comes from the bound JWT sub's
@@ -304,12 +304,12 @@ class CloudEmbeddingBackend:
             return self.api_key
         from .credential_state import config_value_for_current_request
 
-        def _cfg(*keys: str) -> str:
+        def _cfg(*keys: str) -> str | None:
             for key in keys:
                 value = config_value_for_current_request(key)
-                if value:
+                if value is not None:
                     return value
-            return ""
+            return None
 
         if self._provider == "jina":
             return _cfg("JINA_AI_API_KEY")
@@ -346,13 +346,15 @@ class CloudEmbeddingBackend:
         if self._provider == "cohere":
             kwargs["input_type"] = "search_document"
 
-        # Normalise empty string to None: mcp_core.llm forwards a non-None
-        # api_key to litellm, which suppresses provider env-var fallback (401).
+        # Pass api_key as-is: None allows litellm to fall back to the process
+        # environment (desired for stdio/single-user mode), while an empty
+        # string (returned for missing keys in multi-user mode) suppresses
+        # fallback to prevent cross-user credential leaks.
         resp = embedding(
             model=self._litellm_model(),
             input=texts,
             api_base=os.getenv("EMBEDDING_API_BASE") or None,
-            api_key=self._resolve_api_key() or None,
+            api_key=self._resolve_api_key(),
             **kwargs,
         )
 

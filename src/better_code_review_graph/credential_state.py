@@ -241,7 +241,7 @@ def config_value_for_current_request(key: str) -> str | None:
     middleware): reads ``key`` from that user's per-sub bucket
     (``<CRG_DATA_DIR>/subs/<sub>/config.json``) and NOTHING else, so one
     user's API keys / model chain never reach another concurrent user's
-    request. Returns ``None`` if the sub has not configured that key.
+    request. Returns ``""`` (empty string) if the sub has not configured that key, which suppresses fallback to the process environment.
 
     Stdio / single-user HTTP / no-JWT contexts (``_current_sub`` is
     ``None``): falls back to the process environment via ``os.environ.get``,
@@ -256,7 +256,7 @@ def config_value_for_current_request(key: str) -> str | None:
     if sub is None:
         return os.environ.get(key)
     value = read_for_sub(sub).get(key)
-    return value if value else None
+    return value if value is not None else ""
 
 
 def save_credentials(

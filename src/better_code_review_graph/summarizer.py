@@ -205,13 +205,15 @@ def summarize_node(
     from mcp_core.llm import completion
 
     try:
-        # Normalise empty string to None: mcp_core.llm forwards a non-None
-        # api_key to litellm, which suppresses provider env-var fallback (401).
+        # Pass api_key as-is: None allows litellm to fall back to the process
+        # environment (desired for stdio/single-user mode), while an empty
+        # string (returned for missing keys in multi-user mode) suppresses
+        # fallback to prevent cross-user credential leaks.
         response = completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             api_base=os.environ.get("LLM_API_BASE") or None,
-            api_key=api_key or None,
+            api_key=api_key,
         )
     except Exception as exc:
         raise RuntimeError(f"summarize_node failed via {provider}: {exc}") from exc
