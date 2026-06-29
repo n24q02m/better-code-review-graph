@@ -248,6 +248,75 @@ class BatchSummarizeResult:
     errors: int = 0  # nodes where summarize_node raised; counted but logged + skipped
 
 
+def _resolve_auth(model: str) -> str | None:
+    """Resolve the provider key request-scoped."""
+    from mcp_core.llm.providers import key_env_for_model
+
+    from .credential_state import config_value_for_current_request
+
+    key_env = key_env_for_model(model)
+    api_key = config_value_for_current_request(key_env)
+    if not api_key and key_env == "GEMINI_API_KEY":
+        api_key = config_value_for_current_request("GOOGLE_API_KEY")
+    return api_key
+
+
+def _get_candidates(store: Any, max_nodes: int) -> list[Any]:
+    """Fetch Function nodes that lack a current cache entry."""
+    return store._conn.execute(
+        "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
+        "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
+        (max_nodes,),
+    ).fetchall()
+
+
+def _process_node(
+    store: Any,
+    row: Any,
+    model: str,
+    cache_provider: str,
+    api_key: str | None,
+) -> str:
+    """Process a single node: cache check, LLM call, and DB update."""
+    row_id = row[0]
+    src = row[1]
+    stored_hash = row[2]
+    stored_summary = row[3]
+    stored_provider = row[4]
+
+    live_hash = compute_source_hash(src)
+
+    if (
+        stored_summary
+        and stored_hash == live_hash
+        and stored_provider == cache_provider
+    ):
+        return "cached"
+
+    try:
+        summary = summarize_node(
+            NodeNeedingSummary(
+                node_id=str(row_id),
+                source_text=src,
+                source_hash=live_hash,
+            ),
+            provider=cache_provider,
+            api_key=api_key,
+            model=model,
+        )
+    except Exception as exc:
+        logger.warning("summarize_node failed for id=%d: %s", row_id, exc)
+        return "error"
+
+    store.update_summary(
+        row_id,
+        summary=summary,
+        provider=cache_provider,
+        source_hash=live_hash,
+    )
+    return "generated"
+
+
 def batch_summarize(
     store: Any, *, max_nodes: int = DEFAULT_MAX_NODES_PER_RUN
 ) -> BatchSummarizeResult:
@@ -289,78 +358,19 @@ def batch_summarize(
     # model swap invalidates stale summaries.
     model = chain[0]
     cache_provider = provider_of_model(model)
+    api_key = _resolve_auth(model)
 
-    # Resolve the provider key request-scoped: in HTTP multi-user mode it
-    # comes from the bound JWT sub's per-sub bucket; in stdio/single-user mode
-    # ``config_value_for_current_request`` falls back to ``os.environ``. We
-    # pass it explicitly to ``summarize_node`` rather than letting litellm read
-    # the process environment, so one user's key never reaches another
-    # concurrent user's summary call. ``None`` (stdio, no key set) preserves
-    # litellm's env fallback for the single-user path.
-    from mcp_core.llm.providers import key_env_for_model
-
-    from .credential_state import config_value_for_current_request
-
-    key_env = key_env_for_model(model)
-    api_key = config_value_for_current_request(key_env)
-    if not api_key and key_env == "GEMINI_API_KEY":
-        api_key = config_value_for_current_request("GOOGLE_API_KEY")
-
-    rows = store._conn.execute(
-        "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
-        "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
-        (max_nodes,),
-    ).fetchall()
-
-    generated = 0
-    cached = 0
-    errors = 0
+    rows = _get_candidates(store, max_nodes)
+    counts = {"generated": 0, "cached": 0, "error": 0}
 
     for row in rows:
-        row_id = row[0]
-        src = row[1]
-        stored_hash = row[2]
-        stored_summary = row[3]
-        stored_provider = row[4]
-
-        live_hash = compute_source_hash(src)
-
-        if (
-            stored_summary
-            and stored_hash == live_hash
-            and stored_provider == cache_provider
-        ):
-            cached += 1
-            continue
-
-        try:
-            summary = summarize_node(
-                NodeNeedingSummary(
-                    node_id=str(row_id),
-                    source_text=src,
-                    source_hash=live_hash,
-                ),
-                provider=cache_provider,
-                api_key=api_key,
-                model=model,
-            )
-        except Exception as exc:
-            logger.warning("summarize_node failed for id=%d: %s", row_id, exc)
-            errors += 1
-            continue
-
-        store.update_summary(
-            row_id,
-            summary=summary,
-            provider=cache_provider,
-            source_hash=live_hash,
-        )
-        generated += 1
+        status = _process_node(store, row, model, cache_provider, api_key)
+        counts[status] += 1
 
     return BatchSummarizeResult(
-        generated=generated,
-        cached=cached,
+        generated=counts["generated"],
+        cached=counts["cached"],
         skipped_no_provider=False,
         provider=cache_provider,
-        errors=errors,
+        errors=counts["error"],
     )
