@@ -132,8 +132,8 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Config loaded from encrypted per-plugin store")
                 _state = CredentialState.CONFIGURED
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Exception in %s: %s", __name__, e)
 
         try:
             from mcp_core import get_mode
@@ -143,8 +143,8 @@ def resolve_credential_state() -> CredentialState:
                 logger.info("Local mode marker found, skipping relay")
                 _state = CredentialState.LOCAL
                 return _state
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Exception in %s: %s", __name__, e)
 
     logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
@@ -316,8 +316,8 @@ def reset_state() -> None:
 
         clear_mode(SERVER_NAME)
         PerPluginStore(PLUGIN_NAME).clear()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Exception in %s: %s", __name__, e)
 
 
 # ---------------------------------------------------------------------------
