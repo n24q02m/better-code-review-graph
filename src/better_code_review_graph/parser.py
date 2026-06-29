@@ -1403,7 +1403,6 @@ class CodeParser:
 
     def _extract_import_python(self, node) -> list[str]:
         imports = []
-        # import x.y.z  or  from x.y import z
         if node.type == "import_from_statement":
             for child in node.children:
                 if child.type == "dotted_name":
@@ -1417,7 +1416,6 @@ class CodeParser:
 
     def _extract_import_javascript(self, node) -> list[str]:
         imports = []
-        # import ... from 'module'
         for child in node.children:
             if child.type == "string":
                 val = child.text.decode("utf-8", errors="replace").strip("'\"")
@@ -1447,7 +1445,6 @@ class CodeParser:
 
     def _extract_import_c(self, node) -> list[str]:
         imports = []
-        # #include <header> or #include "header"
         for child in node.children:
             if child.type in ("system_lib_string", "string_literal"):
                 val = child.text.decode("utf-8", errors="replace").strip('<>"')
@@ -1456,7 +1453,6 @@ class CodeParser:
 
     def _extract_import_java(self, text: str) -> list[str]:
         imports = []
-        # import/using package.Class
         parts = text.split()
         if len(parts) >= 2:
             imports.append(parts[-1].rstrip(";"))
@@ -1464,7 +1460,6 @@ class CodeParser:
 
     def _extract_import_solidity(self, node) -> list[str]:
         imports = []
-        # import "path/to/file.sol" or import {Symbol} from "path"
         for child in node.children:
             if child.type == "string":
                 val = child.text.decode("utf-8", errors="replace").strip('"')
@@ -1474,7 +1469,6 @@ class CodeParser:
 
     def _extract_import_ruby(self, text: str) -> list[str]:
         imports = []
-        # require 'module' or require_relative 'path'
         if "require" in text:
             match = re.search(r"""['"](.*?)['"]""", text)
             if match:
