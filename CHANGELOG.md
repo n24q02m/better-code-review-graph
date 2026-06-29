@@ -2,6 +2,53 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.11 (2026-06-29)
+
+### Bug Fixes
+
+- Add allowlist/blocklist guards to TemporalIndex schema DDL
+  ([`56e9eeb`](https://github.com/n24q02m/better-code-review-graph/commit/56e9eebb3b0024f21a11a6cb8447bcab6eccf554))
+
+- Batch commit inserts in federation backfill
+  ([#760](https://github.com/n24q02m/better-code-review-graph/pull/760),
+  [`47029b6`](https://github.com/n24q02m/better-code-review-graph/commit/47029b62592ca66d0c40770058379dc0a96faa28))
+
+- Close missing temporal nodes in a single update
+  ([#753](https://github.com/n24q02m/better-code-review-graph/pull/753),
+  [`106e2ff`](https://github.com/n24q02m/better-code-review-graph/commit/106e2ff9fedad1764703b8677d78a51a8a82a25d))
+
+- Cover set_current_sub
+  ([`a131758`](https://github.com/n24q02m/better-code-review-graph/commit/a131758f03f0914cba0f70c345df92376b7c79cb))
+
+- Log swallowed exceptions in security-critical handlers
+  ([`d27ea70`](https://github.com/n24q02m/better-code-review-graph/commit/d27ea70cac8098de1662b897dece1729b3f8581d))
+
+- Optimize _cypher_var with precompiled regex
+  ([`169b375`](https://github.com/n24q02m/better-code-review-graph/commit/169b3759e3a7f590b5ca21a65ba5f956afcd8630))
+
+- **deps**: Update non-major dependencies
+  ([#747](https://github.com/n24q02m/better-code-review-graph/pull/747),
+  [`3a18f74`](https://github.com/n24q02m/better-code-review-graph/commit/3a18f74bbec1ec92f4ea2c2e84453997cd87fe3d))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#748](https://github.com/n24q02m/better-code-review-graph/pull/748),
+  [`98aac77`](https://github.com/n24q02m/better-code-review-graph/commit/98aac779661997e2275e61f0ad7897dedc5f7f33))
+
+- **deps**: Update actions/setup-python digest to ece7cb0
+  ([#770](https://github.com/n24q02m/better-code-review-graph/pull/770),
+  [`b306463`](https://github.com/n24q02m/better-code-review-graph/commit/b306463234b7e120695cbeb39135c3bf24202038))
+
+- **deps**: Update dawidd6/action-send-mail action to v18
+  ([#774](https://github.com/n24q02m/better-code-review-graph/pull/774),
+  [`a7187f5`](https://github.com/n24q02m/better-code-review-graph/commit/a7187f5428b98efdd30cc83c9c798e899ef8fdf5))
+
+- **deps**: Update python:3.13-slim-bookworm docker digest to fcbd8df
+  ([#771](https://github.com/n24q02m/better-code-review-graph/pull/771),
+  [`85beee2`](https://github.com/n24q02m/better-code-review-graph/commit/85beee2425c714d199e6542a458b7195bb472074))
+
+
 ## v3.18.0-beta.10 (2026-06-22)
 
 ### Bug Fixes
