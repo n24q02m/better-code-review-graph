@@ -988,9 +988,7 @@ class TestEmbeddingStoreExtra:
 
             # Verify ALTER was attempted
             calls = [call[0][0] for call in mock_conn.execute.call_args_list]
-            assert any(
-                "ALTER TABLE embeddings ADD COLUMN provider" in c for c in calls
-            )
+            assert any("ALTER TABLE embeddings ADD COLUMN provider" in c for c in calls)
             assert mock_conn.commit.called
 
     def test_embedding_store_no_backend(self, tmp_path):
