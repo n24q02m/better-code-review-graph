@@ -1004,7 +1004,9 @@ def _handle_callers_of(
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
 
-        results.extend(node_to_dict(n) for n in nodes)
+        node_map = {n.qualified_name: n for n in nodes}
+
+        results.extend(node_to_dict(node_map[qn]) for qn in qns if qn in node_map)
 
 
 def _handle_callees_of(
@@ -1022,7 +1024,9 @@ def _handle_callees_of(
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
 
-        results.extend(node_to_dict(n) for n in nodes)
+        node_map = {n.qualified_name: n for n in nodes}
+
+        results.extend(node_to_dict(node_map[qn]) for qn in qns if qn in node_map)
 
 
 def _handle_imports_of(
@@ -1062,7 +1066,9 @@ def _handle_children_of(
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
 
-        results.extend(node_to_dict(n) for n in nodes)
+        node_map = {n.qualified_name: n for n in nodes}
+
+        results.extend(node_to_dict(node_map[qn]) for qn in qns if qn in node_map)
 
 
 def _handle_tests_for(
@@ -1082,7 +1088,9 @@ def _handle_tests_for(
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
 
-        results.extend(node_to_dict(n) for n in nodes)
+        node_map = {n.qualified_name: n for n in nodes}
+
+        results.extend(node_to_dict(node_map[qn]) for qn in qns if qn in node_map)
     # Also search by naming convention
     name = node.name if node else target
     test_nodes = store.search_nodes(f"test_{name}", limit=10, as_of=as_of)
@@ -1110,7 +1118,9 @@ def _handle_inheritors_of(
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
 
-        results.extend(node_to_dict(n) for n in nodes)
+        node_map = {n.qualified_name: n for n in nodes}
+
+        results.extend(node_to_dict(node_map[qn]) for qn in qns if qn in node_map)
 
 
 def _handle_file_summary(
