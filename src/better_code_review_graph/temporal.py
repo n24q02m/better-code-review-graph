@@ -154,6 +154,18 @@ class TemporalIndex:
             conn.commit()
             return
 
+        col_names, column_defs = self._get_nodes_table_columns()
+        self._rebuild_nodes_table(col_names, column_defs)
+        self._recreate_nodes_indexes(col_names)
+        conn.commit()
+
+    def _get_nodes_table_columns(self) -> tuple[list[str], list[str]]:
+        """Fetch and validate columns for the nodes table.
+
+        Returns:
+            A tuple of (col_names, column_defs).
+        """
+        conn = self._store._conn
         # Read existing column list verbatim — we want to mirror whatever
         # alembic last left on the table (Phase 2/3 columns included).
         cols_info = conn.execute("PRAGMA table_info(nodes)").fetchall()
@@ -184,7 +196,18 @@ class TemporalIndex:
             if dflt is not None:
                 parts.append(f"DEFAULT {dflt}")
             column_defs.append(" ".join(parts))
+        return col_names, column_defs
 
+    def _rebuild_nodes_table(
+        self, col_names: list[str], column_defs: list[str]
+    ) -> None:
+        """Rebuild the nodes table to remove the UNIQUE constraint.
+
+        Args:
+            col_names: List of column names to copy.
+            column_defs: List of DDL column definitions for the new table.
+        """
+        conn = self._store._conn
         # Drop conflicting helpers first so the rename succeeds without
         # collisions on a re-run that aborted mid-way.
         conn.execute("DROP TABLE IF EXISTS nodes_temporal_new")
@@ -192,11 +215,18 @@ class TemporalIndex:
 
         col_list = ", ".join(_quote_identifier(c) for c in col_names)
         conn.execute(
-            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608 — quoted names
+            f"INSERT INTO nodes_temporal_new ({col_list}) SELECT {col_list} FROM nodes"  # noqa: S608
         )
         conn.execute("DROP TABLE nodes")
         conn.execute("ALTER TABLE nodes_temporal_new RENAME TO nodes")
 
+    def _recreate_nodes_indexes(self, col_names: list[str]) -> None:
+        """Recreate indexes on the nodes table after rebuild.
+
+        Args:
+            col_names: List of column names to check for presence before indexing.
+        """
+        conn = self._store._conn
         # Recreate the secondary indexes on ``nodes``. We deliberately
         # do NOT recreate the autoindex; the partial unique index below
         # replaces it for the temporal-aware invariant.
@@ -224,9 +254,7 @@ class TemporalIndex:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_nodes_qualified_active "
             "ON nodes(qualified_name) WHERE valid_to_sha IS NULL"
         )
-        conn.commit()
 
-    # ------------------------------------------------------------------
     # Nodes
     # ------------------------------------------------------------------
 
