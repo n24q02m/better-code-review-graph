@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
+
 from better_code_review_graph.temporal import TemporalIndex
+
 
 def test_ensure_temporal_friendly_schema_rejects_malicious_type():
     """Verify that malicious column types are rejected."""
@@ -17,6 +20,7 @@ def test_ensure_temporal_friendly_schema_rejects_malicious_type():
 
     with pytest.raises(RuntimeError, match="Unsafe column type detected"):
         TemporalIndex(mock_store, current_sha="abc")
+
 
 def test_ensure_temporal_friendly_schema_rejects_malicious_default():
     """Verify that malicious default values are rejected."""
@@ -36,6 +40,7 @@ def test_ensure_temporal_friendly_schema_rejects_malicious_default():
     with pytest.raises(RuntimeError, match="Unsafe default value detected"):
         TemporalIndex(mock_store, current_sha="abc")
 
+
 def test_ensure_temporal_friendly_schema_rejects_malicious_name():
     """Verify that malicious column names are rejected."""
     mock_store = MagicMock()
@@ -51,6 +56,7 @@ def test_ensure_temporal_friendly_schema_rejects_malicious_name():
 
     with pytest.raises(RuntimeError, match="Unsafe column name detected"):
         TemporalIndex(mock_store, current_sha="abc")
+
 
 def test_ensure_temporal_friendly_schema_rejects_sneaky_injection_default():
     """Verify that sneaky default values that bypass the blacklist are rejected."""
