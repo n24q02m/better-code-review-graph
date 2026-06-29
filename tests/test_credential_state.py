@@ -14,6 +14,7 @@ from better_code_review_graph.credential_state import (
     CLOUD_KEYS,
     SERVER_NAME,
     CredentialState,
+    config_value_for_current_request,
     get_current_sub,
     get_setup_url,
     get_state,
@@ -21,6 +22,7 @@ from better_code_review_graph.credential_state import (
     resolve_credential_state,
     set_current_sub,
     set_state,
+    store_for_sub,
 )
 
 # ---------------------------------------------------------------------------
@@ -397,3 +399,37 @@ class TestCurrentSub:
         assert get_current_sub() == "user-456"
         set_current_sub(None)
         assert get_current_sub() is None
+
+
+class TestConfigValueForCurrentRequest:
+    def test_config_value_no_sub_reads_environ(self, monkeypatch):
+        """Verify config_value_for_current_request reads from os.environ when no sub is set."""
+        set_current_sub(None)
+        monkeypatch.setenv("TEST_CONFIG_KEY", "env-value")
+        assert config_value_for_current_request("TEST_CONFIG_KEY") == "env-value"
+
+    def test_config_value_with_sub_reads_store(self, monkeypatch, tmp_path):
+        """Verify config_value_for_current_request reads from per-sub store when sub is set."""
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("TEST_CONFIG_KEY", "env-value")
+
+        sub = "user-123"
+        store_for_sub(sub, {"TEST_CONFIG_KEY": "sub-value"})
+        set_current_sub(sub)
+
+        # Should return sub-value even though env-value exists
+        assert config_value_for_current_request("TEST_CONFIG_KEY") == "sub-value"
+
+    def test_config_value_missing_returns_none(self, monkeypatch, tmp_path):
+        """Verify config_value_for_current_request returns None for missing keys."""
+        # Case 1: No sub, key missing from environ
+        set_current_sub(None)
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        assert config_value_for_current_request("MISSING_KEY") is None
+
+        # Case 2: Sub set, key missing from sub store
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        sub = "user-456"
+        store_for_sub(sub, {"OTHER_KEY": "other-value"})
+        set_current_sub(sub)
+        assert config_value_for_current_request("MISSING_KEY") is None
