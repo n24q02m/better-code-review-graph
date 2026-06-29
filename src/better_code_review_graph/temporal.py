@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -167,6 +168,12 @@ class TemporalIndex:
             # alphanumeric characters and underscores as a defense-in-depth.
             if not all(c.isalnum() or c == "_" for c in name):
                 raise RuntimeError(f"Unsafe column name detected in schema: {name}")
+
+            # Security: Validate type and default value (Bandit B608).
+            if typ and not re.match(r"^[A-Za-z0-9\s()]*$", typ):
+                raise RuntimeError(f"Unsafe column type detected in schema: {typ}")
+            if dflt is not None and any(bad in dflt for bad in (";", "--", "/*")):
+                raise RuntimeError(f"Unsafe default value detected in schema: {dflt}")
 
             quoted_name = _quote_identifier(name)
             parts: list[str] = [quoted_name, typ or "TEXT"]
