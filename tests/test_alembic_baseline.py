@@ -539,7 +539,7 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
     """Regression for C1: Path(str(MultiplexedPath(...))) is junk.
 
     Simulates the installed-wheel layout where ``importlib.resources.files``
-    returns an object whose ``__str__`` is the repr (the historical bug).
+    returned an object whose ``__str__`` was the repr (the historical bug).
     The resolver must NOT do ``Path(str(ref))`` and must instead use
     ``ref.joinpath("env.py")`` (which returns a real ``pathlib.Path`` for
     filesystem-backed resources).  Falls through to source-checkout
@@ -576,8 +576,8 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
 
     monkeypatch.setattr(_resources, "files", _files)
     obj = _files("better_code_review_graph_migrations")
-    # Some library versions had an issue where __str__ behavior was altered.
-    # returns an object whose ``__str__`` is the repr (the historical bug).
+    # Some library versions had an issue where ``importlib.resources.files``
+    # returned an object whose ``__str__`` was the repr (the historical bug).
     assert str(obj) == f"MultiplexedPath('{fake_dir}')"
 
     # Falls through installed-wheel branch (joinpath result not a Path)
