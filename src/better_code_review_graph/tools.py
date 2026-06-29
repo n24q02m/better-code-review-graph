@@ -496,7 +496,9 @@ def _full_build_federated(
     root and lose their ``repo_id``.
     """
     registry, target_repos = _setup_federated_repos(store, primary_root, roots)
-    stats = _run_federated_parse_loop(store, primary_root, roots, registry, target_repos)
+    stats = _run_federated_parse_loop(
+        store, primary_root, roots, registry, target_repos
+    )
 
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")
@@ -518,8 +520,9 @@ def _full_build_federated(
         "total_edges": total_edges,
         "roots": [str(r) for r in [primary_root, *roots]],
         "errors": stats["errors"],
-
     }
+
+
 _DEFAULT_IMPACT_PAYLOAD_BYTES = 500_000  # #315: ~500KB ceiling on impact JSON
 
 
@@ -531,6 +534,7 @@ def _estimate_payload_bytes(*payloads: list[dict] | dict) -> int:
     direction for a truncation gate.
     """
     return sum(len(repr(p)) for p in payloads)
+
 
 # ---------------------------------------------------------------------------
 # Tool 2: get_impact_radius
