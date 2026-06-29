@@ -1011,16 +1011,28 @@ def _handle_callers_of(
 
 def _handle_callees_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving callees (issue #342).
+    # We look for CALLS edges originating from either the qualified name or the bare name.
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+
+    edges = store.search_edges_by_source_names(
+        search_targets, kind="CALLS", as_of=as_of
+    )
+
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
+
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1031,13 +1043,23 @@ def _handle_callees_of(
 
 def _handle_imports_of(
     store: Any,
+    node: Any,
     qn: str,
     results: list[dict],
     edges_out: list[dict],
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
+    # Bolt: Use batched search to avoid N+1 queries when resolving imports (issue #342).
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+
+    edges = store.search_edges_by_source_names(
+        search_targets, kind="IMPORTS_FROM", as_of=as_of
+    )
+
+    for e in edges:
         results.append({"import_target": e.target_qualified})
         edges_out.append(edge_to_dict(e))
 
@@ -1050,19 +1072,30 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
-    ):
+    # Bolt: Use batched lookup to prevent N+1 queries.
+    for e in store.get_edges_by_targets([abs_target], kind="IMPORTS_FROM", as_of=as_of):
         results.append({"importer": e.source_qualified, "file": e.file_path})
         edges_out.append(edge_to_dict(e))
 
 
 def _handle_children_of(
-    store: Any, qn: str, results: list[dict], *, as_of: str = ""
+    store: Any,
+    node: Any,
+    qn: str,
+    results: list[dict],
+    *,
+    as_of: str = "",
 ) -> None:
-    qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
-        qns.append(e.target_qualified)
+    # Bolt: Use batched search to avoid N+1 queries when resolving children (issue #342).
+    search_targets = [qn]
+    if node and node.name and node.name != qn:
+        search_targets.append(node.name)
+
+    edges = store.search_edges_by_source_names(
+        search_targets, kind="CONTAINS", as_of=as_of
+    )
+
+    qns = [e.target_qualified for e in edges]
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1080,10 +1113,9 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched lookup to prevent N+1 queries.
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
+    for e in store.get_edges_by_targets([qn], kind="TESTED_BY", as_of=as_of):
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1109,9 +1141,10 @@ def _handle_inheritors_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched lookup to prevent N+1 queries.
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
+    for e in store.get_edges_by_targets(
+        [qn], kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
     ):
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
@@ -1290,15 +1323,19 @@ def _dispatch_query_pattern(
             store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "callees_of":
-        _handle_callees_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
+        _handle_callees_of(
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
     elif pattern == "imports_of":
-        _handle_imports_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
+        _handle_imports_of(
+            store, node, resolved_qn_or_path, results, edges_out, as_of=as_of
+        )
     elif pattern == "importers_of":
         _handle_importers_of(
             store, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "children_of":
-        _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
+        _handle_children_of(store, node, resolved_qn_or_path, results, as_of=as_of)
     elif pattern == "tests_for":
         _handle_tests_for(
             store, node, target, resolved_qn_or_path, results, as_of=as_of
