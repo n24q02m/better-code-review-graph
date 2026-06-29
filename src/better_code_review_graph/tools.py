@@ -1440,7 +1440,7 @@ def diff_graph(
     to_sha: str = "",
     repo: str = "",
 ) -> dict[str, Any]:
-    """Return nodes added / removed / modified between two commit SHAs.
+    """Return nodes and edges added / removed / modified between two commit SHAs.
 
     The diff is computed entirely from the temporal columns set by the
     v2 ingest path (:class:`TemporalIndex`). It does NOT require the
@@ -1457,7 +1457,7 @@ def diff_graph(
     * **modified**: ``qualified_name``s that show up in BOTH sets —
       one row closed at ``to_sha``, another row introduced at
       ``to_sha``. This is the supersede signature emitted when a
-      function's source text changes across commits.
+      function source text changes across commits.
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
@@ -1469,78 +1469,140 @@ def diff_graph(
 
     Returns:
         ``{"from_sha": ..., "to_sha": ..., "added": [...],
-        "removed": [...], "modified": [...]}``. ``added`` /
-        ``removed`` entries are dicts with ``id``, ``qualified_name``,
-        ``kind``; ``modified`` entries are dicts with just
-        ``qualified_name``.
+        "removed": [...], "modified": [...], "edges": {"added": [...], "removed": [...]}}``.
+        ``added`` / ``removed`` entries are dicts with ``id``,
+        ``qualified_name``, ``kind``; ``modified`` entries are dicts
+        with just ``qualified_name``.
     """
     if not from_sha or not to_sha:
         return {"error": "diff requires both from_sha and to_sha"}
 
     store, _ = _get_store(repo_root)
     try:
-        # Build the optional repo filter once. The base SQL stays
-        # static — Bandit B608 is happy because both branches expand
-        # to a fixed string literal at f-string interpolation time.
-        if repo:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_from_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes "
-                "WHERE valid_to_sha = ? AND repo_id = ?",
-                (to_sha, repo),
-            )
-            removed_rows = list(removed_cursor)
-        else:
-            added_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
-                (to_sha,),
-            )
-            added_rows = list(added_cursor)
-            removed_cursor = store._conn.execute(
-                "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
-                (to_sha,),
-            )
-            removed_rows = list(removed_cursor)
-
-        closed_qns = {row["qualified_name"] for row in removed_rows}
-        new_qns = {row["qualified_name"] for row in added_rows}
-        modified_qns = closed_qns & new_qns
-
-        purely_added = [
-            r for r in added_rows if r["qualified_name"] not in modified_qns
-        ]
-        purely_removed = [
-            r for r in removed_rows if r["qualified_name"] not in modified_qns
-        ]
+        node_diff = _diff_nodes(store, to_sha, repo)
+        edge_diff = _diff_edges(store, to_sha, repo)
 
         return {
             "from_sha": from_sha,
             "to_sha": to_sha,
-            "added": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_added
-            ],
-            "removed": [
-                {
-                    "id": r["id"],
-                    "qualified_name": r["qualified_name"],
-                    "kind": r["kind"],
-                }
-                for r in purely_removed
-            ],
-            "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+            "added": node_diff["added"],
+            "removed": node_diff["removed"],
+            "modified": node_diff["modified"],
+            "edges": edge_diff,
         }
     finally:
         store.close()
+
+
+def _diff_nodes(
+    store: Any,
+    to_sha: str,
+    repo: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Extract node-level diffing logic."""
+    if repo:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_from_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes "
+            "WHERE valid_to_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        removed_rows = list(removed_cursor)
+    else:
+        added_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_from_sha = ?",
+            (to_sha,),
+        )
+        added_rows = list(added_cursor)
+        removed_cursor = store._conn.execute(
+            "SELECT id, qualified_name, kind FROM nodes WHERE valid_to_sha = ?",
+            (to_sha,),
+        )
+        removed_rows = list(removed_cursor)
+
+    closed_qns = {row["qualified_name"] for row in removed_rows}
+    new_qns = {row["qualified_name"] for row in added_rows}
+    modified_qns = closed_qns & new_qns
+
+    purely_added = [r for r in added_rows if r["qualified_name"] not in modified_qns]
+    purely_removed = [
+        r for r in removed_rows if r["qualified_name"] not in modified_qns
+    ]
+
+    return {
+        "added": [
+            {
+                "id": r["id"],
+                "qualified_name": r["qualified_name"],
+                "kind": r["kind"],
+            }
+            for r in purely_added
+        ],
+        "removed": [
+            {
+                "id": r["id"],
+                "qualified_name": r["qualified_name"],
+                "kind": r["kind"],
+            }
+            for r in purely_removed
+        ],
+        "modified": [{"qualified_name": qn} for qn in sorted(modified_qns)],
+    }
+
+
+def _diff_edges(
+    store: Any,
+    to_sha: str,
+    repo: str,
+) -> dict[str, list[dict[str, Any]]]:
+    """Extract edge-level diffing logic."""
+    if repo:
+        added_cursor = store._conn.execute(
+            "SELECT kind, source_qualified, target_qualified FROM edges "
+            "WHERE valid_from_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+        removed_cursor = store._conn.execute(
+            "SELECT kind, source_qualified, target_qualified FROM edges "
+            "WHERE valid_to_sha = ? AND repo_id = ?",
+            (to_sha, repo),
+        )
+    else:
+        added_cursor = store._conn.execute(
+            "SELECT kind, source_qualified, target_qualified FROM edges WHERE valid_from_sha = ?",
+            (to_sha,),
+        )
+        removed_cursor = store._conn.execute(
+            "SELECT kind, source_qualified, target_qualified FROM edges WHERE valid_to_sha = ?",
+            (to_sha,),
+        )
+
+    added_rows = list(added_cursor)
+    removed_rows = list(removed_cursor)
+
+    return {
+        "added": [
+            {
+                "kind": r["kind"],
+                "source_qualified": r["source_qualified"],
+                "target_qualified": r["target_qualified"],
+            }
+            for r in added_rows
+        ],
+        "removed": [
+            {
+                "kind": r["kind"],
+                "source_qualified": r["source_qualified"],
+                "target_qualified": r["target_qualified"],
+            }
+            for r in removed_rows
+        ],
+    }
 
 
 def review_delta(

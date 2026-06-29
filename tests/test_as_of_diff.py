@@ -366,3 +366,56 @@ def test_server_query_diff_action_dispatches(
     assert payload["to_sha"] == _SHA_B
     added_qns = [r["qualified_name"] for r in payload["added"]]
     assert "src/m.py::brand_new" in added_qns
+
+
+# ---------------------------------------------------------------------------
+# (11) Edges: added and removed
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# (11) Edges: added and removed
+# ---------------------------------------------------------------------------
+
+
+def test_diff_graph_returns_edge_changes(workspace: Path, store: GraphStore) -> None:
+    """Edges added or closed at to_sha show up in the `edges` key."""
+    from better_code_review_graph.graph import EdgeInfo
+
+    # Edge 1: exists in A, closed in B
+    idx_a = TemporalIndex(store, current_sha=_SHA_A)
+    edge_removed = EdgeInfo(
+        kind="CALLS",
+        source="src/m.py::caller",
+        target="src/m.py::callee_old",
+        file_path="src/m.py",
+        line=10,
+    )
+    idx_a.upsert_edge(edge_removed)
+
+    # Manual close-out for edge_removed at SHA_B
+    store._conn.execute(
+        "UPDATE edges SET valid_to_sha = ? WHERE source_qualified = ?",
+        (_SHA_B, "src/m.py::caller"),
+    )
+
+    # Edge 2: introduced in B
+    idx_b = TemporalIndex(store, current_sha=_SHA_B)
+    edge_added = EdgeInfo(
+        kind="CALLS",
+        source="src/m.py::caller",
+        target="src/m.py::callee_new",
+        file_path="src/m.py",
+        line=12,
+    )
+    idx_b.upsert_edge(edge_added)
+    store._conn.commit()
+    store.close()
+
+    result = diff_graph(repo_root=str(workspace), from_sha=_SHA_A, to_sha=_SHA_B)
+    assert "edges" in result
+    added = result["edges"]["added"]
+    removed = result["edges"]["removed"]
+
+    assert any(e["target_qualified"] == "src/m.py::callee_new" for e in added)
+    assert any(e["target_qualified"] == "src/m.py::callee_old" for e in removed)
