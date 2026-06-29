@@ -52,15 +52,27 @@ DEFAULT_IGNORE_PATTERNS = [
     "*.db-wal",
 ]
 
+_ROOT_INDICATORS = [
+    ".git",
+    "package.json",
+    "pyproject.toml",
+    "tsconfig.json",
+    "go.mod",
+    "Cargo.toml",
+]
+
 
 def find_repo_root(start: Path | None = None) -> Path | None:
-    """Walk up from start to find the nearest .git directory."""
+    """Walk up from start to find the nearest project root indicator.
+
+    Looks for indicators like .git, package.json, pyproject.toml, etc.
+    """
     current = start or Path.cwd()
     while current != current.parent:
-        if (current / ".git").exists():
+        if any((current / ind).exists() for ind in _ROOT_INDICATORS):
             return current
         current = current.parent
-    if (current / ".git").exists():
+    if any((current / ind).exists() for ind in _ROOT_INDICATORS):
         return current
     return None
 
@@ -144,6 +156,33 @@ def _load_ignore_patterns(repo_root: Path) -> list[str]:
 def _should_ignore(path: str, patterns: list[str]) -> bool:
     """Check if a path matches any ignore pattern."""
     return any(fnmatch.fnmatch(path, p) for p in patterns)
+
+
+def _is_parseable_file(
+    rel_path: str, repo_root: Path, parser: CodeParser, ignore_patterns: list[str]
+) -> bool:
+    """Shared logic to determine if a file should be collected/updated."""
+    if _should_ignore(rel_path, ignore_patterns):
+        return False
+
+    full_path_raw = repo_root / rel_path
+    try:
+        full_path = full_path_raw.resolve()
+    except (OSError, RuntimeError):
+        return False
+
+    if not full_path.is_relative_to(repo_root.resolve()):
+        return False
+    if not full_path.is_file():
+        return False
+    if full_path_raw.is_symlink() or full_path.is_symlink():
+        return False
+    if parser.detect_language(full_path) is None:
+        return False
+    if _is_binary(full_path):
+        return False
+
+    return True
 
 
 def _is_binary(path: Path) -> bool:
@@ -305,21 +344,8 @@ def collect_all_files(repo_root: Path) -> list[str]:
         ]
 
     for rel_path in candidates:
-        if _should_ignore(rel_path, ignore_patterns):
-            continue
-        full_path_raw = repo_root / rel_path
-        full_path = full_path_raw.resolve()
-        if not full_path.is_relative_to(repo_root.resolve()):
-            continue
-        if not full_path.is_file():
-            continue
-        if full_path_raw.is_symlink() or full_path.is_symlink():
-            continue
-        if parser.detect_language(full_path) is None:
-            continue
-        if _is_binary(full_path):
-            continue
-        files.append(rel_path)
+        if _is_parseable_file(rel_path, repo_root, parser, ignore_patterns):
+            files.append(rel_path)
 
     return files
 
@@ -477,21 +503,12 @@ def _update_files_in_store(
     actually_updated: set[str] = set()
     errors = []
     repo_resolved = repo_root.resolve()
-
     for rel_path in all_files:
-        if _should_ignore(rel_path, ignore_patterns):
-            continue
-        abs_path_raw = repo_root / rel_path
-        abs_path = abs_path_raw.resolve()
-        if not abs_path.is_relative_to(repo_resolved):
-            continue
-        if not abs_path.is_file():
-            store.remove_file_data(str(abs_path))
-            actually_updated.add(rel_path)
-            continue
-        if abs_path_raw.is_symlink() or abs_path.is_symlink():
-            continue
-        if parser.detect_language(abs_path) is None:
+        abs_path = (repo_root / rel_path).resolve()
+        if not _is_parseable_file(rel_path, repo_root, parser, ignore_patterns):
+            if not abs_path.is_file() and abs_path.is_relative_to(repo_resolved):
+                store.remove_file_data(str(abs_path))
+                actually_updated.add(rel_path)
             continue
 
         try:
@@ -748,17 +765,13 @@ class GraphUpdateHandler(FileSystemEventHandler):
         self._timer: threading.Timer | None = None
 
     def _should_handle(self, path: str) -> bool:
-        if Path(path).is_symlink():
-            return False
         try:
             rel = str(Path(path).relative_to(self.repo_root))
         except ValueError:
             return False
-        if _should_ignore(rel, self.ignore_patterns):
-            return False
-        if self.parser.detect_language(Path(path)) is None:
-            return False
-        return True
+        return _is_parseable_file(
+            rel, self.repo_root, self.parser, self.ignore_patterns
+        )
 
     def on_modified(self, event):
         if event.is_directory:
