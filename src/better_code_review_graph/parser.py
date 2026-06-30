@@ -1261,23 +1261,17 @@ class CodeParser:
 
     def _get_name(self, node, language: str, kind: str) -> str | None:
         """Extract the name from a class/function definition node."""
-        # Solidity: constructor and receive/fallback have no identifier child
         if language == "solidity":
-            if node.type == "constructor_definition":
-                return "constructor"
-            if node.type == "fallback_receive_definition":
-                for child in node.children:
-                    if child.type in ("receive", "fallback"):
-                        return child.text.decode("utf-8", errors="replace")
-        # For C/C++: function names are inside function_declarator/pointer_declarator
-        # Check these first to avoid matching the return type_identifier
+            name = self._get_name_solidity(node)
+            if name:
+                return name
+
         if language in ("c", "cpp") and kind == "function":
-            for child in node.children:
-                if child.type in ("function_declarator", "pointer_declarator"):
-                    result = self._get_name(child, language, kind)
-                    if result:
-                        return result
-        # Most languages use a 'name' child
+            name = self._get_name_cpp(node, language, kind)
+            if name:
+                return name
+
+        # Most languages use a "name" child
         for child in node.children:
             if child.type in (
                 "identifier",
@@ -1288,31 +1282,64 @@ class CodeParser:
                 "constant",
             ):
                 return child.text.decode("utf-8", errors="replace")
-        # For Go type declarations, look for type_spec
+
         if language == "go" and node.type == "type_declaration":
+            return self._get_name_go(node, language, kind)
+
+        return None
+
+    def _get_name_solidity(self, node) -> str | None:
+        """Extract name for Solidity nodes."""
+        if node.type == "constructor_definition":
+            return "constructor"
+        if node.type == "fallback_receive_definition":
             for child in node.children:
-                if child.type == "type_spec":
-                    return self._get_name(child, language, kind)
+                if child.type in ("receive", "fallback"):
+                    return child.text.decode("utf-8", errors="replace")
+        return None
+
+    def _get_name_cpp(self, node, language: str, kind: str) -> str | None:
+        """Extract name for C/C++ nodes."""
+        for child in node.children:
+            if child.type in ("function_declarator", "pointer_declarator"):
+                result = self._get_name(child, language, kind)
+                if result:
+                    return result
+        return None
+
+    def _get_name_go(self, node, language: str, kind: str) -> str | None:
+        """Extract name for Go nodes."""
+        for child in node.children:
+            if child.type == "type_spec":
+                return self._get_name(child, language, kind)
         return None
 
     def _get_params(self, node, language: str, source: bytes) -> str | None:
         """Extract parameter list as a string."""
+        if language == "solidity":
+            return self._get_params_solidity(node)
+
         for child in node.children:
             if child.type in ("parameters", "formal_parameters", "parameter_list"):
                 return child.text.decode("utf-8", errors="replace")
-        # Solidity: parameters are direct children between ( and )
-        if language == "solidity":
-            params = [
-                c.text.decode("utf-8", errors="replace")
-                for c in node.children
-                if c.type == "parameter"
-            ]
-            if params:
-                return f"({', '.join(params)})"
+        return None
+
+    def _get_params_solidity(self, node) -> str | None:
+        """Extract parameters for Solidity nodes."""
+        params = [
+            c.text.decode("utf-8", errors="replace")
+            for c in node.children
+            if c.type == "parameter"
+        ]
+        if params:
+            return f"({', '.join(params)})"
         return None
 
     def _get_return_type(self, node, language: str, source: bytes) -> str | None:
         """Extract return type annotation if present."""
+        if language == "python":
+            return self._get_return_type_python(node)
+
         for child in node.children:
             if child.type in (
                 "type",
@@ -1321,11 +1348,13 @@ class CodeParser:
                 "return_type_definition",
             ):
                 return child.text.decode("utf-8", errors="replace")
-        # Python: look for -> annotation
-        if language == "python":
-            for i, child in enumerate(node.children):
-                if child.type == "->" and i + 1 < len(node.children):
-                    return node.children[i + 1].text.decode("utf-8", errors="replace")
+        return None
+
+    def _get_return_type_python(self, node) -> str | None:
+        """Extract return type for Python nodes."""
+        for i, child in enumerate(node.children):
+            if child.type == "->" and i + 1 < len(node.children):
+                return node.children[i + 1].text.decode("utf-8", errors="replace")
         return None
 
     def _get_bases(self, node, language: str, source: bytes) -> list[str]:
