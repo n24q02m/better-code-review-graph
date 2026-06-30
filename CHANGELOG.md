@@ -2,6 +2,41 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.12 (2026-06-30)
+
+### Bug Fixes
+
+- Add tests for untested function: config_value_for_current_request
+  ([`adf4ee1`](https://github.com/n24q02m/better-code-review-graph/commit/adf4ee135a51669b0d09c7977977c8ed8b2a5230))
+
+- High complexity function: _collect_import_names
+  ([`1e7e260`](https://github.com/n24q02m/better-code-review-graph/commit/1e7e26011b4b650de3c0fae1d4f55a93467dc4ae))
+
+- High complexity function: _get_bases
+  ([`954a46b`](https://github.com/n24q02m/better-code-review-graph/commit/954a46b847a10eace885b68a694b1b312adf22da))
+
+- High complexity function: _get_name
+  ([`acf34e4`](https://github.com/n24q02m/better-code-review-graph/commit/acf34e450e0fac1e199184cb72951f2bd3962f9e))
+
+- Lock file maintenance
+  ([`9927183`](https://github.com/n24q02m/better-code-review-graph/commit/9927183b90df53c87f729e565f77bfa30e232385))
+
+- Missing error path test for typescript resolver package.json loading
+  ([`698a46f`](https://github.com/n24q02m/better-code-review-graph/commit/698a46f1a5da8f967c8874c278d0f3620c921e40))
+
+- N+1 queries in _handle_children_of and related handlers
+  ([`fc64e4b`](https://github.com/n24q02m/better-code-review-graph/commit/fc64e4bbedf3887f4411af33a3294d0d8041806d))
+
+- Overly long function: _full_build_federated
+  ([`7bb087e`](https://github.com/n24q02m/better-code-review-graph/commit/7bb087e3f25a303026e8fd3582ca524faef80628))
+
+- Overly long function: renamed_in_diff
+  ([`73acc5a`](https://github.com/n24q02m/better-code-review-graph/commit/73acc5a739bd75b8de11a1b74cbf2cb0e59e0ac1))
+
+- Whitelist schema default values to harden against SQL injection
+  ([`454849a`](https://github.com/n24q02m/better-code-review-graph/commit/454849a8b797c1311d4e0976b8877b74ff3089e5))
+
+
 ## v3.18.0-beta.11 (2026-06-29)
 
 ### Bug Fixes
