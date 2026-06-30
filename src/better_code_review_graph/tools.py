@@ -1790,6 +1790,65 @@ def spot_check_last_callers(
     }
 
 
+def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
+    """Fetch file content from a specific git ref."""
+    import shutil
+    import subprocess
+
+    try:
+        git_bin = shutil.which("git") or "git"
+        proc = subprocess.run(
+            [git_bin, "show", "--end-of-options", f"{base}:{rel_path}"],
+            cwd=str(root),
+            capture_output=True,
+            timeout=15,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+        if proc.returncode == 0:
+            return proc.stdout
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _get_symbol_lines(parser: Any, full_path: Path, source: bytes) -> dict[str, int]:
+    """Extract symbol names and their start lines from source code bytes."""
+    try:
+        nodes, _ = parser.parse_bytes(full_path, source)
+        return {
+            f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
+            for n in nodes
+            if n.kind == "Function" and n.line_start is not None
+        }
+    except Exception as e:
+        logger.debug("Exception in %s: %s", __name__, e)
+        return {}
+
+
+def _detect_line_shifts(
+    base_lines: dict[str, int], head_lines: dict[str, int], rel_path: str
+) -> list[dict[str, Any]]:
+    """Compare symbol line numbers and return detected shifts."""
+    shifts = []
+    for symbol, base_line in base_lines.items():
+        head_line = head_lines.get(symbol)
+        if head_line is None:
+            continue  # removed -- out of scope for line-drift
+        if head_line == base_line:
+            continue
+        shifts.append(
+            {
+                "symbol": symbol,
+                "file": rel_path,
+                "base_line": base_line,
+                "head_line": head_line,
+                "delta": head_line - base_line,
+            }
+        )
+    return shifts
+
+
 def renamed_in_diff(
     base: str = "HEAD~1",
     changed_files: list[str] | None = None,
@@ -1815,8 +1874,6 @@ def renamed_in_diff(
     Returns:
         ``shifts`` list of ``{symbol, file, base_line, head_line, delta}``.
     """
-    import subprocess
-
     from .parser import CodeParser
 
     store, root = _get_store(repo_root)
@@ -1850,65 +1907,18 @@ def renamed_in_diff(
             if parser.detect_language(full_path) is None:
                 continue
 
-            # Fetch base-ref content via git.
-            try:
-                import shutil
-
-                git_bin = shutil.which("git") or "git"
-                proc = subprocess.run(
-                    [git_bin, "show", "--end-of-options", f"{base}:{rel_path}"],
-                    cwd=str(root),
-                    capture_output=True,
-                    timeout=15,
-                    check=False,
-                    # Detach stdin: an inherited stdio pipe stalls the output
-                    # reader in the MCP server's worker thread on Windows.
-                    # See incremental.py.
-                    stdin=subprocess.DEVNULL,
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-            if proc.returncode != 0:
-                # File didn't exist at base (added file) -- skip.
-                continue
-            base_source = proc.stdout
+            base_source = _get_git_content(root, base, rel_path)
             if not base_source:
                 continue
 
+            base_lines = _get_symbol_lines(parser, full_path, base_source)
             try:
-                base_nodes, _ = parser.parse_bytes(full_path, base_source)
                 head_source = full_path.read_bytes()
-                head_nodes, _ = parser.parse_bytes(full_path, head_source)
-            except Exception as e:
-                logger.debug("Exception in %s: %s", __name__, e)
+            except OSError:
                 continue
+            head_lines = _get_symbol_lines(parser, full_path, head_source)
 
-            base_lines = {
-                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
-                for n in base_nodes
-                if n.kind == "Function" and n.line_start is not None
-            }
-            head_lines = {
-                f"{n.parent_name}.{n.name}" if n.parent_name else n.name: n.line_start
-                for n in head_nodes
-                if n.kind == "Function" and n.line_start is not None
-            }
-
-            for symbol, base_line in base_lines.items():
-                head_line = head_lines.get(symbol)
-                if head_line is None:
-                    continue  # removed -- out of scope for line-drift
-                if head_line == base_line:
-                    continue
-                shifts.append(
-                    {
-                        "symbol": symbol,
-                        "file": rel_path,
-                        "base_line": base_line,
-                        "head_line": head_line,
-                        "delta": head_line - base_line,
-                    }
-                )
+            shifts.extend(_detect_line_shifts(base_lines, head_lines, rel_path))
 
         return {
             "status": "ok",
