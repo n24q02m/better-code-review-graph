@@ -172,8 +172,15 @@ class TemporalIndex:
             # Security: Validate type and default value (Bandit B608).
             if typ and not re.match(r"^[A-Za-z0-9\s()]*$", typ):
                 raise RuntimeError(f"Unsafe column type detected in schema: {typ}")
-            if dflt is not None and any(bad in dflt for bad in (";", "--", "/*")):
-                raise RuntimeError(f"Unsafe default value detected in schema: {dflt}")
+            if dflt is not None:
+                # Security: Stricter whitelist for default values.
+                # Allows numbers, quoted strings, NULL, and simple parenthesized expressions.
+                if not re.match(
+                    r"^(?:-?\d+(?:\.\d+)?|'.*'|NULL|\(.*\))$", dflt, re.IGNORECASE
+                ):
+                    raise RuntimeError(
+                        f"Unsafe default value detected in schema: {dflt}"
+                    )
 
             quoted_name = _quote_identifier(name)
             parts: list[str] = [quoted_name, typ or "TEXT"]
