@@ -1037,9 +1037,22 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
+    qns = []
     for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
-        results.append({"import_target": e.target_qualified})
+        qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_tgt in qns:
+            if qn_tgt in node_map:
+                r = node_to_dict(node_map[qn_tgt])
+                # Legacy key for backward compatibility
+                r["import_target"] = qn_tgt
+                results.append(r)
+            else:
+                # Fallback for external nodes not in the 'nodes' table
+                results.append({"import_target": qn_tgt})
 
 
 def _handle_importers_of(
@@ -1050,19 +1063,34 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
+    qns = []
     for e in store.get_edges_by_target(
         abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
     ):
-        results.append({"importer": e.source_qualified, "file": e.file_path})
+        qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
+    if qns:
+        nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
+        node_map = {n.qualified_name: n for n in nodes}
+        for qn_src in qns:
+            if qn_src in node_map:
+                r = node_to_dict(node_map[qn_src])
+                # Legacy keys for backward compatibility
+                r["importer"] = qn_src
+                r["file"] = r.get("file_path")
+                results.append(r)
+            else:
+                # Fallback for external nodes not in the 'nodes' table
+                results.append({"importer": qn_src})
 
 
 def _handle_children_of(
-    store: Any, qn: str, results: list[dict], *, as_of: str = ""
+    store: Any, qn: str, results: list[dict], edges_out: list[dict], *, as_of: str = ""
 ) -> None:
     qns = []
     for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
         qns.append(e.target_qualified)
+        edges_out.append(edge_to_dict(e))
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
         node_map = {n.qualified_name: n for n in nodes}
@@ -1298,7 +1326,7 @@ def _dispatch_query_pattern(
             store, resolved_qn_or_path, results, edges_out, as_of=as_of
         )
     elif pattern == "children_of":
-        _handle_children_of(store, resolved_qn_or_path, results, as_of=as_of)
+        _handle_children_of(store, resolved_qn_or_path, results, edges_out, as_of=as_of)
     elif pattern == "tests_for":
         _handle_tests_for(
             store, node, target, resolved_qn_or_path, results, as_of=as_of
