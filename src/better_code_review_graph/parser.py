@@ -1092,40 +1092,57 @@ class CodeParser:
     ) -> None:
         """Extract imported names and their source modules into import_map."""
         if language == "python":
-            if node.type == "import_from_statement":
-                # from X.Y import A, B → {A: X.Y, B: X.Y}
-                module = None
-                seen_import_keyword = False
-                for child in node.children:
-                    if child.type == "dotted_name" and not seen_import_keyword:
-                        module = child.text.decode("utf-8", errors="replace")
-                    elif child.type == "import":
-                        seen_import_keyword = True
-                    elif seen_import_keyword and module:
-                        if child.type in ("identifier", "dotted_name"):
-                            name = child.text.decode("utf-8", errors="replace")
-                            import_map[name] = module
-                        elif child.type == "aliased_import":
-                            # from X import A as B → {B: X}
-                            names = [
-                                sub.text.decode("utf-8", errors="replace")
-                                for sub in child.children
-                                if sub.type in ("identifier", "dotted_name")
-                            ]
-                            # Last name is the alias (local name)
-                            if names:
-                                import_map[names[-1]] = module
-
+            self._collect_python_import_names(node, import_map)
         elif language in ("javascript", "typescript", "tsx"):
-            # import { A, B } from './path' → {A: ./path, B: ./path}
-            module = None
+            self._collect_js_ts_import_names(node, import_map)
+
+    def _collect_python_import_names(
+        self,
+        node,
+        import_map: dict[str, str],
+    ) -> None:
+        """Extract Python imported names from an import_from_statement."""
+        if node.type != "import_from_statement":
+            return
+
+        # from X.Y import A, B → {A: X.Y, B: X.Y}
+        module = None
+        seen_import_keyword = False
+        for child in node.children:
+            if child.type == "dotted_name" and not seen_import_keyword:
+                module = child.text.decode("utf-8", errors="replace")
+            elif child.type == "import":
+                seen_import_keyword = True
+            elif seen_import_keyword and module:
+                if child.type in ("identifier", "dotted_name"):
+                    name = child.text.decode("utf-8", errors="replace")
+                    import_map[name] = module
+                elif child.type == "aliased_import":
+                    # from X import A as B → {B: X}
+                    names = [
+                        sub.text.decode("utf-8", errors="replace")
+                        for sub in child.children
+                        if sub.type in ("identifier", "dotted_name")
+                    ]
+                    # Last name is the alias (local name)
+                    if names:
+                        import_map[names[-1]] = module
+
+    def _collect_js_ts_import_names(
+        self,
+        node,
+        import_map: dict[str, str],
+    ) -> None:
+        """Extract JS/TS imported names from an import_statement."""
+        # import { A, B } from './path' → {A: ./path, B: ./path}
+        module = None
+        for child in node.children:
+            if child.type == "string":
+                module = child.text.decode("utf-8", errors="replace").strip("'\"")
+        if module:
             for child in node.children:
-                if child.type == "string":
-                    module = child.text.decode("utf-8", errors="replace").strip("'\"")
-            if module:
-                for child in node.children:
-                    if child.type == "import_clause":
-                        self._collect_js_import_names(child, module, import_map)
+                if child.type == "import_clause":
+                    self._collect_js_import_names(child, module, import_map)
 
     def _collect_js_import_names(
         self,
