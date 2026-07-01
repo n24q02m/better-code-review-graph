@@ -32,6 +32,7 @@ CLOUD_KEYS = [
     "OPENAI_API_KEY",
     "COHERE_API_KEY",
     "CO_API_KEY",
+    "GOOGLE_VERTEX_EXPRESS_API_KEY",
 ]
 
 # Shorter timeout for optional-credential servers (user can skip)
