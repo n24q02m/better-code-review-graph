@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v3.18.0-beta.13 (2026-07-01)
+
+### Bug Fixes
+
+- Document all 7 query-tool actions in AGENTS and CLAUDE
+  ([#814](https://github.com/n24q02m/better-code-review-graph/pull/814),
+  [`857c5f5`](https://github.com/n24q02m/better-code-review-graph/commit/857c5f5bd9054bfa0d8b9bf7c6560a8f9dad5e34))
+
+- **deps**: Update non-major dependencies
+  ([#811](https://github.com/n24q02m/better-code-review-graph/pull/811),
+  [`67c5999`](https://github.com/n24q02m/better-code-review-graph/commit/67c599956a37250770d7447cc98267289b3fa83d))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#812](https://github.com/n24q02m/better-code-review-graph/pull/812),
+  [`c199641`](https://github.com/n24q02m/better-code-review-graph/commit/c19964160c6cb4c48c9232b1a00cff5a0f22c73d))
+
+
 ## v3.18.0-beta.12 (2026-06-30)
 
 ### Bug Fixes
