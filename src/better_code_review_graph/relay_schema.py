@@ -87,6 +87,12 @@ RELAY_SCHEMA: dict[str, Any] = {
             "co-...",
             "https://dashboard.cohere.com/api-keys",
         ),
+        _key_field(
+            "GOOGLE_VERTEX_EXPRESS_API_KEY",
+            "Vertex AI (Express) API Key",
+            "AQ...",
+            "https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview",
+        ),
     ],
     "capabilityInfo": [
         {

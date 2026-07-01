@@ -44,6 +44,12 @@ class TestRelaySchema:
             assert key in fields
             assert fields[key]["derived"] is True
 
+    def test_vertex_express_key_field_present_and_derived(self):
+        fields = _fields_by_key()
+        assert "GOOGLE_VERTEX_EXPRESS_API_KEY" in fields
+        assert fields["GOOGLE_VERTEX_EXPRESS_API_KEY"]["derived"] is True
+        assert "VERTEX_AI_API_KEY" not in fields  # no dead-end field
+
     def test_no_priority_arrows_in_capability_info(self):
         for cap in RELAY_SCHEMA["capabilityInfo"]:
             assert ">" not in cap["priority"], cap
