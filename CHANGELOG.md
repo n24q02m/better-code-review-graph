@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.18.2-beta.1 (2026-07-01)
+
+### Bug Fixes
+
+- Add Vertex AI (Express) support to relay form and credential state
+  ([#818](https://github.com/n24q02m/better-code-review-graph/pull/818),
+  [`be745d3`](https://github.com/n24q02m/better-code-review-graph/commit/be745d395086072d80e33d35709a77e85397cbab))
+
+- Bump mcp-core to 1.18.1b1 for the vertex relay dropdown fix
+  ([#819](https://github.com/n24q02m/better-code-review-graph/pull/819),
+  [`616f293`](https://github.com/n24q02m/better-code-review-graph/commit/616f29390e79d2eb4eb13c5c6704372883bd9e32))
+
+
 ## v3.18.1 (2026-07-01)
 
 ### Bug Fixes
