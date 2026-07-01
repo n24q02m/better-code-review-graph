@@ -197,7 +197,8 @@ def graph(
 
 
 # ---------------------------------------------------------------------------
-# Tool 2: query -- read operations (query, search, impact, large_functions)
+# Tool 2: query -- read operations (query, search, impact, large_functions,
+#         spot_check, renamed_in_diff, diff)
 # ---------------------------------------------------------------------------
 
 
