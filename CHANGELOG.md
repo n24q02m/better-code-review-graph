@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.18.1 (2026-07-01)
+
+### Bug Fixes
+
+- Shorten server.json description to satisfy MCP Registry 100-char limit
+  ([#816](https://github.com/n24q02m/better-code-review-graph/pull/816),
+  [`c0c4b0c`](https://github.com/n24q02m/better-code-review-graph/commit/c0c4b0cbc75918ff5cdc4cdd35e16db5a3ff0d88))
+
+
 ## v3.18.0 (2026-07-01)
 
 
