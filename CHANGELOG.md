@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v3.19.0 (2026-07-02)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.18.1 ([#825](https://github.com/n24q02m/better-code-review-graph/pull/825),
+  [`f93b5d1`](https://github.com/n24q02m/better-code-review-graph/commit/f93b5d14a57d9dea78e57fbf96a1b9d0bfb4dfb6))
+
+### Features
+
+- Document vertex_express provider option
+  ([#823](https://github.com/n24q02m/better-code-review-graph/pull/823),
+  [`4e76aa2`](https://github.com/n24q02m/better-code-review-graph/commit/4e76aa2517d13c3d9817193459929876fe196b5b))
+
+
 ## v3.18.2-beta.1 (2026-07-01)
 
 ### Bug Fixes
