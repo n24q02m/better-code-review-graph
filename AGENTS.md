@@ -71,7 +71,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
 - `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX (qwen3-embed).
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- API key follows the litellm convention `<PROVIDER>_API_KEY`. The 6 providers the server suggests:
+- API key follows the litellm convention `<PROVIDER>_API_KEY`. The 7 providers the server suggests:
 
   | model prefix | key env var | get it at |
   |---|---|---|
@@ -81,6 +81,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
   | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
   | `xai/` | `XAI_API_KEY` | console.x.ai |
   | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
+  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name.
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
