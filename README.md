@@ -145,6 +145,7 @@ chat-completion API (so Jina and Cohere are embedding-only).
 | `gemini/` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | <https://aistudio.google.com/apikey> |
 | `openai/` (or bare `text-embedding-*`) | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> |
 | `cohere/` | `COHERE_API_KEY` | <https://dashboard.cohere.com/api-keys> |
+| `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | <https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview> |
 
 Any other [litellm provider](https://docs.litellm.ai/docs/providers) works via
 its standard `<PROVIDER>_API_KEY`.

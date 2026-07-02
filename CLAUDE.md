@@ -74,7 +74,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 - `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX (qwen3-embed).
 - `SUMMARY_MODELS` -- chain summarizer (graph `summarize` action). Empty = summaries disabled.
 - **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- API key theo convention litellm `<PROVIDER>_API_KEY`. 6 provider servers goi y:
+- API key theo convention litellm `<PROVIDER>_API_KEY`. 7 provider servers goi y:
 
   | model prefix | key env var | get it at |
   |---|---|---|
@@ -84,6 +84,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
   | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
   | `xai/` | `XAI_API_KEY` | console.x.ai |
   | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
+  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
 
   For any other litellm provider (used via env passthrough), see https://docs.litellm.ai/docs/providers/<provider> for its `<PROVIDER>_API_KEY` name. Summarizer providers must expose a chat-completion API (Jina/Cohere do not).
 - Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` (embedding), `LLM_API_BASE` (summarizer)
