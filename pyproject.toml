@@ -24,7 +24,7 @@ dependencies = [
     "tree-sitter-language-pack>=0.13.0,<1",
     "networkx>=3.6.1,<4",
     "watchdog>=4.0.2,<6",
-    "qwen3-embed>=1.12.0b3",
+    "qwen3-embed>=1.12.0",
     "httpx",
     "pydantic-settings",
     "n24q02m-mcp-core[llm]>=1.18.1,<2",
@@ -36,7 +36,7 @@ dependencies = [
     # but Dependency Review flags the package version. 1.88.0+ clears all four.
     # crg's optional semgrep extra otherwise pins the resolver to litellm 1.83.0; this
     # floor lifts it (semgrep resolves to 1.79.x, fine for a dev-only SAST tool).
-    "litellm>=1.90.2",
+    "litellm>=1.91.0",
     "Pygments>=2.20.0",
     "alembic>=1.18.5,<2",
     "defusedxml>=0.7.1",
@@ -63,7 +63,7 @@ dev = [
     "pytest-timeout",
     "ruff>=0.15.20",
     "syrupy",
-    "ty>=0.0.55",
+    "ty>=0.0.56",
 ]
 
 [tool.hatch.build.targets.wheel]
