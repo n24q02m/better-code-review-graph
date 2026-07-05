@@ -2,6 +2,37 @@
 
 <!-- version list -->
 
+## v3.19.1-beta.1 (2026-07-05)
+
+### Bug Fixes
+
+- Combine get_stats count queries into a single query
+  ([`cc619d9`](https://github.com/n24q02m/better-code-review-graph/commit/cc619d9f45f4912594b58527434e21a9e6996d96))
+
+- Tighten default-value regex to prevent SQL injection in schema parsing
+  ([`bfa1a87`](https://github.com/n24q02m/better-code-review-graph/commit/bfa1a87a46556b4c937dba2be45dd6d17b346b58))
+
+- **deps**: Lock file maintenance
+  ([`800a791`](https://github.com/n24q02m/better-code-review-graph/commit/800a791e5e0ba4cc3f938ad4fc8f89d2e3f3540c))
+
+- **deps**: Update docker/login-action digest to af1e73f
+  ([`cffaa8f`](https://github.com/n24q02m/better-code-review-graph/commit/cffaa8fa4653e106ecd2d74361b0e6169f9a8f1b))
+
+- **deps**: Update non-major dependencies
+  ([#821](https://github.com/n24q02m/better-code-review-graph/pull/821),
+  [`6d34a4e`](https://github.com/n24q02m/better-code-review-graph/commit/6d34a4e85082e8ab8791977d7190bc5d05bc9e04))
+
+### Chores
+
+- **deps**: Update docker/build-push-action digest to 53b7df9
+  ([#820](https://github.com/n24q02m/better-code-review-graph/pull/820),
+  [`75c1bee`](https://github.com/n24q02m/better-code-review-graph/commit/75c1bee57445cc4407ce38f49d77736ba759a46c))
+
+- **deps**: Update docker/setup-buildx-action digest to bb05f3f
+  ([#827](https://github.com/n24q02m/better-code-review-graph/pull/827),
+  [`6ff69f7`](https://github.com/n24q02m/better-code-review-graph/commit/6ff69f7e01553fd58b7c476faf40ee2a43326fb0))
+
+
 ## v3.19.0 (2026-07-02)
 
 ### Bug Fixes
