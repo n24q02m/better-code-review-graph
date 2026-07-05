@@ -1275,8 +1275,17 @@ class GraphStore:
 
     def get_stats(self) -> GraphStats:
         """Return aggregate statistics about the graph."""
-        total_nodes = self._conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-        total_edges = self._conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+        # Optimize by combining simple COUNT queries to eliminate N+1 roundtrips
+        counts = self._conn.execute(
+            "SELECT "
+            "(SELECT COUNT(*) FROM nodes), "
+            "(SELECT COUNT(*) FROM edges), "
+            "(SELECT COUNT(*) FROM nodes WHERE kind = 'File')"
+        ).fetchone()
+
+        total_nodes = counts[0]
+        total_edges = counts[1]
+        files_count = counts[2]
 
         nodes_by_kind: dict[str, int] = {}
         for row in self._conn.execute(
@@ -1296,10 +1305,6 @@ class GraphStore:
                 "SELECT DISTINCT language FROM nodes WHERE language IS NOT NULL AND language != ''"
             )
         ]
-
-        files_count = self._conn.execute(
-            "SELECT COUNT(*) FROM nodes WHERE kind = 'File'"
-        ).fetchone()[0]
 
         last_updated = self.get_metadata("last_updated")
 
