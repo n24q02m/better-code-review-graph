@@ -176,7 +176,9 @@ class TemporalIndex:
                 # Security: Stricter whitelist for default values.
                 # Allows numbers, quoted strings, NULL, and simple parenthesized expressions.
                 if not re.match(
-                    r"^(?:-?\d+(?:\.\d+)?|'.*'|NULL|\(.*\))$", dflt, re.IGNORECASE
+                    r"^(?:-?\d+(?:\.\d+)?|'(?:[^']|'')*'|NULL|\([^()]*\))$",
+                    dflt,
+                    re.IGNORECASE,
                 ):
                     raise RuntimeError(
                         f"Unsafe default value detected in schema: {dflt}"
