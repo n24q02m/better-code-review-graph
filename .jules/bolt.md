@@ -19,3 +19,7 @@
 **Learning:** Direct SQL execution within a loop structure causes N+1 query patterns, leading to significant performance degradation as the data set grows. In SQLite, this is especially impactful during write-heavy operations like temporal closing.
 
 **Action:** Refactor row-by-row updates into batch operations using `UPDATE ... WHERE ... IN (SELECT value FROM json_each(?))`. This pushes the filtering logic into the database engine and reduces the overhead of multiple `execute()` calls and potential transaction management. Always use `cursor.rowcount` to track affected rows when removing the manual loop counter.
+
+## 2024-07-07 - SQLite LIKE Case-Insensitivity
+**Learning:** SQLite's `LIKE` operator is naturally case-insensitive for ASCII characters. Using `LOWER()` function calls on the operands in a `LIKE` clause adds unnecessary per-row function evaluation overhead during table scans with no change to the query behavior for ASCII text.
+**Action:** When filtering case-insensitively using `LIKE` in SQLite, avoid redundant `LOWER()` calls on the column and the value to improve table scan performance.
