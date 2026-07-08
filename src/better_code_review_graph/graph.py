@@ -1106,8 +1106,9 @@ class GraphStore:
             WHERE (
                 SELECT COUNT(*)
                 FROM json_each(?)
-                WHERE LOWER(nodes.name) LIKE '%' || LOWER(value) || '%'
-                   OR LOWER(nodes.qualified_name) LIKE '%' || LOWER(value) || '%'
+                -- ⚡ Bolt: removed LOWER() because SQLite LIKE is case-insensitive for ASCII strings.
+                WHERE nodes.name LIKE '%' || value || '%'
+                   OR nodes.qualified_name LIKE '%' || value || '%'
             ) = (SELECT COUNT(*) FROM json_each(?))
               AND (? IS NULL OR kind = ?)
               AND (? = '' OR repo_id = ?){frag}
