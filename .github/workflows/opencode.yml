@@ -4,8 +4,16 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  issues:
+    types: [opened]
+  # Fork PRs get no secrets on `pull_request`; `pull_request_target` runs in the base
+  # context. Checkout stays on the base ref, so untrusted PR code is never executed.
+  pull_request_target:
+    types: [opened]
+
 jobs:
-  opencode:
+  # Anyone (including the owner) can summon the agent with /oc on an issue or PR.
+  mention:
     if: ${{ github.event.comment != null && (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')) }}
     runs-on: [self-hosted, oc-github]
     permissions:
@@ -21,3 +29,39 @@ jobs:
           model: ${{ secrets.OC_MODEL }}
           use_github_token: true
           share: "false"
+
+  # Auto-answer issues opened by real outside people (not the owner, not a bot).
+  auto-issue:
+    if: ${{ github.event_name == 'issues' && github.event.issue.user.login != github.repository_owner && github.event.issue.user.type != 'Bot' }}
+    runs-on: [self-hosted, oc-github]
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anomalyco/opencode/github@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ${{ secrets.OC_MODEL }}
+          use_github_token: true
+          share: "false"
+          prompt: "A person outside this project just opened this issue. Reply once, concisely and helpfully: acknowledge them, restate the core ask in one line, then either answer it or list the exact repro details still missing (version, OS, MCP client, minimal steps, logs). End with a clear next action. Never invent behavior you cannot verify from the issue text."
+
+  # Auto-review pull requests opened by real outside people.
+  auto-pr:
+    if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.user.login != github.repository_owner && github.event.pull_request.user.type != 'Bot' }}
+    runs-on: [self-hosted, oc-github]
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anomalyco/opencode/github@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ${{ secrets.OC_MODEL }}
+          use_github_token: true
+          share: "false"
+          prompt: "An outside contributor just opened this pull request. Thank them, then review the diff and post one concise review: a 1-2 sentence summary of what the PR does; only real, high-confidence findings (bugs, security, correctness, perf regressions) each as path:line + problem + fix, or exactly 'No blocking issues found.'; and a verdict of APPROVE / REQUEST_CHANGES / COMMENT with a one-line reason. Skip style nitpicks. Never restate the diff."
