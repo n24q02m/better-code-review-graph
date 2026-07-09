@@ -1,0 +1,23 @@
+name: opencode
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+jobs:
+  opencode:
+    if: ${{ github.event.comment != null && (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')) }}
+    runs-on: [self-hosted, oc-github]
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anomalyco/opencode/github@latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: ${{ secrets.OC_MODEL }}
+          use_github_token: true
+          share: "false"
