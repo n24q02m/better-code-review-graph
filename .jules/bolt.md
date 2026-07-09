@@ -19,3 +19,8 @@
 **Learning:** Direct SQL execution within a loop structure causes N+1 query patterns, leading to significant performance degradation as the data set grows. In SQLite, this is especially impactful during write-heavy operations like temporal closing.
 
 **Action:** Refactor row-by-row updates into batch operations using `UPDATE ... WHERE ... IN (SELECT value FROM json_each(?))`. This pushes the filtering logic into the database engine and reduces the overhead of multiple `execute()` calls and potential transaction management. Always use `cursor.rowcount` to track affected rows when removing the manual loop counter.
+
+## $(date +%Y-%m-%d) - Eliminate Redundant LOWER() calls in SQLite LIKE queries
+
+**Learning:** By default, SQLite's `LIKE` operator is already case-insensitive for ASCII characters. Furthermore, SQLite's built-in `LOWER()` function also only operates on ASCII characters. Therefore, applying `LOWER()` to both sides of a `LIKE` operator is strictly redundant and causes unnecessary per-row function evaluation overhead during table scans.
+**Action:** When writing `LIKE` queries in SQLite where case-insensitive ASCII comparison is sufficient, do not wrap the operands in `LOWER()`. This eliminates per-row evaluation overhead and optimizes the table scan speed.
