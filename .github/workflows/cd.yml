@@ -52,6 +52,54 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
+      # Dry-run PSR (no_operation_mode => --noop: no commit/tag/push/release) purely to
+      # learn the version it WOULD publish, so the PyPI-collision guard below can fire
+      # BEFORE the real run creates a git tag or GitHub Release. Same action + SHA and
+      # same prerelease inputs as the real step, run against the same untouched checkout.
+      - uses: python-semantic-release/python-semantic-release@350c48fcb3ffcdfd2e0a235206bc2ecea6b69df0 # v10
+        id: dryrun
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          prerelease: ${{ inputs.release_type == 'beta' }}
+          prerelease_token: beta
+          no_operation_mode: true
+
+      # PyPI never allows reusing a version number. Fail early and loudly if the version
+      # PSR intends to publish already exists, before any tag or Release is created --
+      # this turns a silent release freeze (PSR sees a matching tag, sets released=false,
+      # every publish job is skipped) or an opaque upload failure deep in `uv publish`
+      # into one explicit, actionable error.
+      - name: Guard against re-publishing an already-published PyPI version
+        if: steps.dryrun.outputs.released == 'true'
+        env:
+          COMPUTED_VERSION: ${{ steps.dryrun.outputs.version }}
+        run: |
+          set -uo pipefail
+          PKG='better-code-review-graph'
+          URL="https://pypi.org/pypi/${PKG}/${COMPUTED_VERSION}/json"
+          echo "Checking PyPI for ${PKG} ${COMPUTED_VERSION} before semantic-release tags anything..."
+
+          # PyPI normalizes the version in the URL path (e.g. 1.2.3-beta.1 and 1.2.3b1
+          # both resolve to the same release), so PSR's raw version output can be used
+          # directly in the URL.
+          #   200            -> exists         -> COLLISION
+          #   404             -> not found      -> FREE
+          #   anything else  -> network/registry error -> UNKNOWN, never treated as free
+          http_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$URL")
+
+          if [ "$http_code" = "200" ]; then
+            echo "::error::Computed release version ${COMPUTED_VERSION} already exists on PyPI as ${PKG}==${COMPUTED_VERSION}. PyPI NEVER allows re-publishing a version number, even one later yanked. This almost always means the git history diverged from what was actually published to PyPI. Do NOT retry the same version: bump PAST the already-published range (higher than any version ever published) and dispatch the release again."
+            exit 1
+          fi
+
+          if [ "$http_code" = "404" ]; then
+            echo "OK: ${PKG}==${COMPUTED_VERSION} is not on PyPI (404) -- safe to publish."
+            exit 0
+          fi
+
+          echo "::error::Could not verify whether ${PKG}==${COMPUTED_VERSION} exists on PyPI: unexpected HTTP status ${http_code} from ${URL} (likely a transient network/registry error, rate limit, or outage). Refusing to proceed so a genuine collision cannot slip through as a false 'free'. Re-run the release once the registry is reachable."
+          exit 1
+
       - uses: python-semantic-release/python-semantic-release@350c48fcb3ffcdfd2e0a235206bc2ecea6b69df0 # v10
         id: release
         with:
