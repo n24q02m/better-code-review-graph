@@ -123,7 +123,7 @@ async def ensure_config() -> dict[str, str] | None:
         try:
             import httpx
 
-            async with httpx.AsyncClient() as http:
+            async with httpx.AsyncClient(timeout=10.0) as http:
                 await http.post(
                     f"{relay_url}/api/sessions/{session.session_id}/messages",
                     json={
