@@ -895,6 +895,36 @@ class GraphStore:
         )
         return [self._row_to_node(r) for r in cursor]
 
+    def get_file_hash(self, file_path: str, *, as_of: str = "") -> str | None:
+        """Fetch just the file_hash for a given file to avoid materializing all nodes."""
+        frag, frag_params = self._temporal_filter(as_of)
+        # We limit to 1 because file_hash is identical for all nodes in the same file at the same point in time
+        cursor = self._conn.execute(
+            f"SELECT file_hash FROM nodes WHERE file_path = ?{frag} LIMIT 1",  # noqa: S608
+            (file_path, *frag_params),
+        )
+        row = cursor.fetchone()
+        return row["file_hash"] if row else None
+
+    def get_function_hashes_by_files(
+        self, file_paths: list[str], *, as_of: str = ""
+    ) -> list[dict[str, Any]]:
+        """Batch fetch only qualified_name and file_hash for Function nodes in given files.
+        Returns a list of dicts with 'file_path', 'qualified_name', and 'file_hash'.
+        """
+        if not file_paths:
+            return []
+
+        unique_files = list(set(file_paths))
+        frag, frag_params = self._temporal_filter(as_of)
+        cursor = self._conn.execute(
+            "SELECT file_path, qualified_name, file_hash FROM nodes "
+            "WHERE kind = 'Function' AND file_path IN "  # noqa: S608
+            f"(SELECT value FROM json_each(?)){frag}",
+            (json.dumps(unique_files), *frag_params),
+        )
+        return [{"file_path": r["file_path"], "qualified_name": r["qualified_name"], "file_hash": r["file_hash"]} for r in cursor]
+
     def get_nodes_by_files(
         self, file_paths: list[str], *, as_of: str = ""
     ) -> list[GraphNode]:
