@@ -2,6 +2,67 @@
 
 <!-- version list -->
 
+## v3.20.0-beta.1 (2026-07-11)
+
+### Bug Fixes
+
+- Add timeout to relay setup HTTP client
+  ([`dace83a`](https://github.com/n24q02m/better-code-review-graph/commit/dace83a9733e52ec8175b4e8cec68011b41b72ac))
+
+- Bump mcp-core floor to 1.19.0b4
+  ([#851](https://github.com/n24q02m/better-code-review-graph/pull/851),
+  [`b118df3`](https://github.com/n24q02m/better-code-review-graph/commit/b118df30e69f7901efbdb7fc46971cd8d564c722))
+
+- Bump n24q02m-mcp-core, qwen3-embed to tracked versions
+  ([#846](https://github.com/n24q02m/better-code-review-graph/pull/846),
+  [`b05c190`](https://github.com/n24q02m/better-code-review-graph/commit/b05c19083057ebdcebf08c11720aa320d37450e8))
+
+- Enforce fix(deps) semantic commit prefix in renovate config
+  ([`4886c58`](https://github.com/n24q02m/better-code-review-graph/commit/4886c5857a3390dfac361a1caa3714261685d884))
+
+- Fail the release when the computed version already exists on the registry
+  ([#844](https://github.com/n24q02m/better-code-review-graph/pull/844),
+  [`32e98f9`](https://github.com/n24q02m/better-code-review-graph/commit/32e98f9efac0919e241a02ce15c3ee9b65231bb7))
+
+- Make renovate automerge effective (isolated groups, digest+lockfile automerge, 7-day cooldown)
+  ([`aaa953c`](https://github.com/n24q02m/better-code-review-graph/commit/aaa953c89016feb51c094f9dbb14dcce9dbea180))
+
+- Optimize search_nodes SQL by dropping redundant LOWER calls
+  ([`fa23634`](https://github.com/n24q02m/better-code-review-graph/commit/fa2363493b5d5dd77e41acd472fb2cee1da9a010))
+
+### Chores
+
+- **deps**: Lock file maintenance
+  ([#837](https://github.com/n24q02m/better-code-review-graph/pull/837),
+  [`fef8cb6`](https://github.com/n24q02m/better-code-review-graph/commit/fef8cb6e776184bfd5210a28bdcf15e6488cff71))
+
+- **deps**: Update actions/checkout action to v7
+  ([#849](https://github.com/n24q02m/better-code-review-graph/pull/849),
+  [`d254579`](https://github.com/n24q02m/better-code-review-graph/commit/d25457939def5f1f6b3096b355df2cf5f376b5fd))
+
+- **deps**: Update minor dependencies
+  ([#848](https://github.com/n24q02m/better-code-review-graph/pull/848),
+  [`4c76903`](https://github.com/n24q02m/better-code-review-graph/commit/4c76903358f78e8147030d326867e1e0c79ed67c))
+
+### Features
+
+- Add opencode github agent (responds to /oc)
+  ([`61d60be`](https://github.com/n24q02m/better-code-review-graph/commit/61d60bed0d20aa20114e4f7e6178b775514a6f2e))
+
+- Add review-learnings store the automated reviewer must obey
+  ([`12722e7`](https://github.com/n24q02m/better-code-review-graph/commit/12722e7b6d9cffe37d7fbde20e6de62df16f68dc))
+
+- Auto-respond only to issues and PRs opened by outside people
+  ([`338408a`](https://github.com/n24q02m/better-code-review-graph/commit/338408a42adbf400fc22d65481924dd517428b76))
+
+- Mount shared cli builder with graph build/embed subcommands
+  ([#851](https://github.com/n24q02m/better-code-review-graph/pull/851),
+  [`b118df3`](https://github.com/n24q02m/better-code-review-graph/commit/b118df30e69f7901efbdb7fc46971cd8d564c722))
+
+- Reviewer must obey .github/review-learnings.md
+  ([`16ec00c`](https://github.com/n24q02m/better-code-review-graph/commit/16ec00ca47b9c23a9e6d90f687978c73e65c4621))
+
+
 ## v3.19.1 (2026-07-05)
 
 
