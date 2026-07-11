@@ -923,7 +923,14 @@ class GraphStore:
             f"(SELECT value FROM json_each(?)){frag}",
             (json.dumps(unique_files), *frag_params),
         )
-        return [{"file_path": r["file_path"], "qualified_name": r["qualified_name"], "file_hash": r["file_hash"]} for r in cursor]
+        return [
+            {
+                "file_path": r["file_path"],
+                "qualified_name": r["qualified_name"],
+                "file_hash": r["file_hash"],
+            }
+            for r in cursor
+        ]
 
     def get_nodes_by_files(
         self, file_paths: list[str], *, as_of: str = ""

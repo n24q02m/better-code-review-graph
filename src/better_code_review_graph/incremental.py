@@ -443,8 +443,6 @@ def _get_dependent_files(
     return dependent_files
 
 
-
-
 def _snapshot_pre_functions(
     repo_root: Path,
     store: GraphStore,
