@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.20.0-beta.2 (2026-07-12)
+
+### Features
+
+- Return structured content from domain tools
+  ([#856](https://github.com/n24q02m/better-code-review-graph/pull/856),
+  [`236f55d`](https://github.com/n24q02m/better-code-review-graph/commit/236f55de8477c72e8b3beb60c8531491f9434ef5))
+
+
 ## v3.20.0-beta.1 (2026-07-11)
 
 ### Bug Fixes
