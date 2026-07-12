@@ -371,8 +371,7 @@ def test_server_security_tool_dispatches_scan(tmp_path: Path) -> None:
     from better_code_review_graph.server import security as security_tool
 
     root, _ = _make_repo_with_node(tmp_path)
-    raw = security_tool(action="scan", repo_root=str(root))
-    payload = json.loads(raw)
+    payload = security_tool(action="scan", repo_root=str(root))
     assert payload["engine"] == "heuristic"
     assert payload["total"] >= 1
 
@@ -382,8 +381,7 @@ def test_server_security_tool_dispatches_report(tmp_path: Path) -> None:
 
     root, _ = _make_repo_with_node(tmp_path)
     security_scan(repo_root=str(root))
-    sarif_raw = security_tool(action="report", repo_root=str(root), format="sarif")
-    sarif = json.loads(sarif_raw)
+    sarif = security_tool(action="report", repo_root=str(root), format="sarif")
     assert sarif["version"] == "2.1.0"
 
 
@@ -391,8 +389,7 @@ def test_server_security_tool_dispatches_suppress(tmp_path: Path) -> None:
     from better_code_review_graph.server import security as security_tool
 
     root, _ = _make_repo_with_node(tmp_path)
-    raw = security_tool(action="suppress", repo_root=str(root), rule_id="cwe-89")
-    payload = json.loads(raw)
+    payload = security_tool(action="suppress", repo_root=str(root), rule_id="cwe-89")
     assert payload["rule_id"] == "cwe-89"
     assert payload["suppressed"] is True
 
@@ -400,8 +397,7 @@ def test_server_security_tool_dispatches_suppress(tmp_path: Path) -> None:
 def test_server_security_tool_dispatches_rule_list(tmp_path: Path) -> None:
     from better_code_review_graph.server import security as security_tool
 
-    raw = security_tool(action="rule_list", engine="heuristic")
-    payload = json.loads(raw)
+    payload = security_tool(action="rule_list", engine="heuristic")
     assert payload["engine"] == "heuristic"
     assert payload["rules"]
 
@@ -409,7 +405,6 @@ def test_server_security_tool_dispatches_rule_list(tmp_path: Path) -> None:
 def test_server_security_tool_invalid_action_returns_error() -> None:
     from better_code_review_graph.server import security as security_tool
 
-    raw = security_tool(action="bogus")
-    payload = json.loads(raw)
+    payload = security_tool(action="bogus")
     assert "error" in payload
     assert "bogus" in payload["error"]

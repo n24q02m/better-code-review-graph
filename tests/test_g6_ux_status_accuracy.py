@@ -9,7 +9,6 @@ and always includes providers_configured in the response.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from unittest.mock import patch
 
@@ -22,8 +21,7 @@ def _call_config_setup_status_sync() -> dict[str, Any]:
 
     from better_code_review_graph.server import config
 
-    raw = asyncio.run(config(action="setup_status"))
-    return json.loads(raw)
+    return asyncio.run(config(action="setup_status"))
 
 
 class TestSetupStatusLiveDerivedState:

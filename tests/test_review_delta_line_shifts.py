@@ -28,7 +28,6 @@ so the tests do not depend on the parser end-to-end.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -362,14 +361,13 @@ def test_server_review_tool_dispatches_show_line_shifts(
     )
     store.close()
 
-    raw = review_tool(
+    payload = review_tool(
         action="delta",
         repo_root=str(workspace),
         from_sha=_SHA_A,
         to_sha=_SHA_B,
         show_line_shifts=True,
     )
-    payload = json.loads(raw)
     assert "diff" in payload
     assert "line_shifts" in payload
     qns = [s["qualified_name"] for s in payload["line_shifts"]]
