@@ -6,7 +6,6 @@ unknown action variants, and _maybe_include_setup_hint helper.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import patch
 
 import pytest
@@ -123,7 +122,7 @@ class TestSetupStatus:
             "mcp_core.storage.per_plugin_store.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
-            result = json.loads(await config(action="setup_status"))
+            result = await config(action="setup_status")
         assert result["state"] == "configured"
         assert "cloud_keys_in_env" in result
         assert "GEMINI_API_KEY" in result["cloud_keys_in_env"]
@@ -149,7 +148,7 @@ class TestSetupStatus:
             "mcp_core.storage.per_plugin_store.PerPluginStore"
         ) as mock_store_cls:
             mock_store_cls.return_value.load.return_value = None
-            result = json.loads(await config(action="setup_status"))
+            result = await config(action="setup_status")
         assert result["state"] == "awaiting_setup"
         assert result["setup_url"] == "https://relay.example.com/setup"
 
@@ -167,7 +166,7 @@ class TestSetupStart:
 
         cs._state = CredentialState.CONFIGURED
 
-        result = json.loads(await config(action="setup_start"))
+        result = await config(action="setup_start")
         assert result["status"] == "already_configured"
         assert "force=true" in result["message"]
 
@@ -179,7 +178,7 @@ class TestSetupStart:
         cs._state = CredentialState.AWAITING_SETUP
         monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
-        result = json.loads(await config(action="setup_start"))
+        result = await config(action="setup_start")
         assert result["status"] == "setup_started"
         assert result["setup_url"] == "https://relay.example.com/authorize"
 
@@ -193,7 +192,7 @@ class TestSetupStart:
         cs._state = CredentialState.AWAITING_SETUP
         monkeypatch.delenv("PUBLIC_URL", raising=False)
 
-        result = json.loads(await config(action="setup_start"))
+        result = await config(action="setup_start")
         assert result["status"] == "stdio_mode"
         assert "GEMINI_API_KEY" in result["message"]
 
@@ -205,7 +204,7 @@ class TestSetupStart:
         cs._state = CredentialState.CONFIGURED
         monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
-        result = json.loads(await config(action="setup_start", force=True))
+        result = await config(action="setup_start", force=True)
         assert result["status"] == "setup_started"
         assert result["setup_url"] == "https://relay.example.com/authorize"
 
@@ -221,7 +220,7 @@ class TestSetupSkip:
         from better_code_review_graph.server import config
 
         with patch("mcp_core.set_local_mode") as mock_local:
-            result = json.loads(await config(action="setup_skip"))
+            result = await config(action="setup_skip")
             assert result["status"] == "ok"
             assert "Local mode" in result["message"]
             mock_local.assert_called_once()
@@ -244,7 +243,7 @@ class TestSetupReset:
             patch("mcp_core.clear_mode"),
             patch("better_code_review_graph.credential_state.PerPluginStore"),
         ):
-            result = json.loads(await config(action="setup_reset"))
+            result = await config(action="setup_reset")
             assert result["status"] == "ok"
             assert cs._state == CredentialState.AWAITING_SETUP
 
@@ -263,7 +262,7 @@ class TestSetupComplete:
         cs._state = CredentialState.AWAITING_SETUP
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
-        result = json.loads(await config(action="setup_complete"))
+        result = await config(action="setup_complete")
         assert result["status"] == "ok"
         assert result["state"] == "configured"
 
@@ -278,7 +277,7 @@ class TestSetupUnknownAction:
         """Unknown action returns error with valid actions."""
         from better_code_review_graph.server import config
 
-        result = json.loads(await config(action="nonexistent_setup_action"))
+        result = await config(action="nonexistent_setup_action")
         assert "error" in result
         assert "valid_actions" in result
 
@@ -286,6 +285,6 @@ class TestSetupUnknownAction:
         """Typo in setup_ action returns a suggestion."""
         from better_code_review_graph.server import config
 
-        result = json.loads(await config(action="setup_statu"))
+        result = await config(action="setup_statu")
         assert "error" in result
         assert "setup_status" in result["error"]

@@ -55,7 +55,7 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.build_or_update_graph")
     def test_build_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "full"}
-        result = json.loads(graph(action="build", full_rebuild=True, repo_root="/test"))
+        result = graph(action="build", full_rebuild=True, repo_root="/test")
         mock_fn.assert_called_once_with(
             full_rebuild=True, repo_root="/test", base="HEAD~1", roots=None
         )
@@ -64,7 +64,7 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.build_or_update_graph")
     def test_update_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "incremental"}
-        result = json.loads(graph(action="update", repo_root="/test"))
+        result = graph(action="update", repo_root="/test")
         mock_fn.assert_called_once_with(
             full_rebuild=False, repo_root="/test", base="HEAD~1"
         )
@@ -73,19 +73,19 @@ class TestGraphTool:
     @patch("better_code_review_graph.server.list_graph_stats")
     def test_stats_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "total_nodes": 42}
-        result = json.loads(graph(action="stats", repo_root="/test"))
+        result = graph(action="stats", repo_root="/test")
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result["status"] == "ok"
 
     @patch("better_code_review_graph.server.embed_graph")
     def test_embed_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "newly_embedded": 10}
-        result = json.loads(graph(action="embed", repo_root="/test"))
+        result = graph(action="embed", repo_root="/test")
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result["status"] == "ok"
 
     def test_unknown_action(self):
-        result = json.loads(graph(action="nonexistent"))
+        result = graph(action="nonexistent")
         assert "error" in result
         assert "valid_actions" in result
 
@@ -99,8 +99,8 @@ class TestQueryTool:
     @patch("better_code_review_graph.server.query_graph")
     def test_query_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
-        result = json.loads(
-            query(action="query", pattern="callers_of", target="foo", repo_root="/test")
+        result = query(
+            action="query", pattern="callers_of", target="foo", repo_root="/test"
         )
         mock_fn.assert_called_once_with(
             pattern="callers_of",
@@ -113,26 +113,24 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_query_missing_pattern(self):
-        result = json.loads(query(action="query", target="foo"))
+        result = query(action="query", target="foo")
         assert "error" in result
         assert "pattern" in result["error"]
 
     def test_query_missing_target(self):
-        result = json.loads(query(action="query", pattern="callers_of"))
+        result = query(action="query", pattern="callers_of")
         assert "error" in result
         assert "target" in result["error"]
 
     @patch("better_code_review_graph.server.semantic_search_nodes")
     def test_search_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
-        result = json.loads(
-            query(
-                action="search",
-                search_query="auth",
-                kind="Class",
-                limit=5,
-                repo_root="/test",
-            )
+        result = query(
+            action="search",
+            search_query="auth",
+            kind="Class",
+            limit=5,
+            repo_root="/test",
         )
         mock_fn.assert_called_once_with(
             query="auth",
@@ -145,22 +143,20 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_search_missing_query(self):
-        result = json.loads(query(action="search"))
+        result = query(action="search")
         assert "error" in result
         assert "search_query" in result["error"]
 
     @patch("better_code_review_graph.server.get_impact_radius")
     def test_impact_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = json.loads(
-            query(
-                action="impact",
-                changed_files=["a.py"],
-                max_depth=3,
-                max_results=100,
-                repo_root="/test",
-                base="HEAD~3",
-            )
+        result = query(
+            action="impact",
+            changed_files=["a.py"],
+            max_depth=3,
+            max_results=100,
+            repo_root="/test",
+            base="HEAD~3",
         )
         mock_fn.assert_called_once_with(
             changed_files=["a.py"],
@@ -177,15 +173,13 @@ class TestQueryTool:
     @patch("better_code_review_graph.server.find_large_functions")
     def test_large_functions_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
-        result = json.loads(
-            query(
-                action="large_functions",
-                min_lines=100,
-                kind="Function",
-                file_path_pattern="src/",
-                limit=10,
-                repo_root="/test",
-            )
+        result = query(
+            action="large_functions",
+            min_lines=100,
+            kind="Function",
+            file_path_pattern="src/",
+            limit=10,
+            repo_root="/test",
         )
         mock_fn.assert_called_once_with(
             min_lines=100,
@@ -198,7 +192,7 @@ class TestQueryTool:
         assert result["status"] == "ok"
 
     def test_unknown_action(self):
-        result = json.loads(query(action="nonexistent"))
+        result = query(action="nonexistent")
         assert "error" in result
         assert "valid_actions" in result
 
@@ -212,15 +206,13 @@ class TestReviewTool:
     @patch("better_code_review_graph.server.get_review_context")
     def test_review(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = json.loads(
-            review(
-                changed_files=["b.py"],
-                max_depth=1,
-                include_source=False,
-                max_lines_per_file=50,
-                repo_root="/test",
-                base="main",
-            )
+        result = review(
+            changed_files=["b.py"],
+            max_depth=1,
+            include_source=False,
+            max_lines_per_file=50,
+            repo_root="/test",
+            base="main",
         )
         mock_fn.assert_called_once_with(
             changed_files=["b.py"],
@@ -237,7 +229,7 @@ class TestReviewTool:
     @patch("better_code_review_graph.server.get_review_context")
     def test_review_defaults(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
-        result = json.loads(review())
+        result = review()
         mock_fn.assert_called_once_with(
             changed_files=None,
             max_depth=2,
@@ -294,14 +286,14 @@ def _make_mini_repo(tmp_path):
 
 class TestConfigTool:
     async def test_unknown_action(self):
-        result = json.loads(await config(action="nonexistent"))
+        result = await config(action="nonexistent")
         assert "error" in result
         assert "valid_actions" in result
         assert "models" not in result["valid_actions"]
 
     async def test_models_action_removed(self):
         """The models catalog-listing action no longer exists."""
-        result = json.loads(await config(action="models"))
+        result = await config(action="models")
         assert "Unknown action 'models'" in result["error"]
         assert "models" not in result["valid_actions"]
 
@@ -318,7 +310,7 @@ class TestConfigTool:
             "better_code_review_graph.embeddings.init_backend",
             side_effect=AssertionError("status must not init the embedding backend"),
         ):
-            result = json.loads(await config(action="status", repo_root=str(repo)))
+            result = await config(action="status", repo_root=str(repo))
         assert result["status"] == "ok"
         assert "embeddings_count" in result
         assert result["embedding_backend"] in ("local", "cloud")
@@ -332,45 +324,43 @@ class TestConfigTool:
                 "cache_clear must not init the embedding backend"
             ),
         ):
-            result = json.loads(await config(action="cache_clear", repo_root=str(repo)))
+            result = await config(action="cache_clear", repo_root=str(repo))
         assert result["status"] == "cache cleared"
         assert "embeddings_removed" in result
 
     async def test_set_missing_key(self):
-        result = json.loads(await config(action="set"))
+        result = await config(action="set")
         assert result["error"] == "key is required for set action"
         assert result["valid_keys"] == ["log_level"]
         assert "error" in result
 
     async def test_set_missing_value(self):
-        result = json.loads(await config(action="set", key="log_level"))
+        result = await config(action="set", key="log_level")
         assert result["error"] == "value is required for set action"
         assert "error" in result
 
     async def test_set_invalid_key(self):
-        result = json.loads(await config(action="set", key="invalid_key", value="x"))
+        result = await config(action="set", key="invalid_key", value="x")
         assert "error" in result
         assert "valid_keys" in result
 
     async def test_set_log_level(self):
-        result = json.loads(await config(action="set", key="log_level", value="DEBUG"))
+        result = await config(action="set", key="log_level", value="DEBUG")
         assert result["status"] == "updated"
         assert result["value"] == "DEBUG"
 
     async def test_set_invalid_log_level(self):
-        result = json.loads(
-            await config(action="set", key="log_level", value="INVALID")
-        )
+        result = await config(action="set", key="log_level", value="INVALID")
         assert "error" in result
 
     async def test_status_no_graph(self):
-        result = json.loads(await config(action="status"))
+        result = await config(action="status")
         assert result["status"] == "ok"
         assert "version" in result
 
     async def test_status_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(await config(action="status", repo_root=str(repo)))
+        result = await config(action="status", repo_root=str(repo))
         assert result["status"] == "ok"
         assert result["total_nodes"] > 0
         assert "embedding_backend" in result
@@ -380,13 +370,13 @@ class TestConfigTool:
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No graph found"),
         ):
-            result = json.loads(await config(action="status"))
+            result = await config(action="status")
             assert result["status"] == "ok"
             assert result["graph_path"] is None
             assert "No graph found" in result["message"]
 
     async def test_cache_clear_no_graph(self):
-        result = json.loads(await config(action="cache_clear"))
+        result = await config(action="cache_clear")
         assert result["status"] == "cache cleared"
 
     async def test_cache_clear_error_handling(self):
@@ -394,18 +384,18 @@ class TestConfigTool:
             "better_code_review_graph.tools._get_store",
             side_effect=ValueError("No repo found"),
         ):
-            result = json.loads(await config(action="cache_clear"))
+            result = await config(action="cache_clear")
             assert result["status"] == "cache cleared"
             assert result["embeddings_removed"] == 0
 
     async def test_cache_clear_with_repo(self, tmp_path):
         repo = _make_mini_repo(tmp_path)
-        result = json.loads(await config(action="cache_clear", repo_root=str(repo)))
+        result = await config(action="cache_clear", repo_root=str(repo))
         assert result["status"] == "cache cleared"
 
     async def test_setup_status_action(self):
         """config setup_status dispatches to credential state status."""
-        result = json.loads(await config(action="setup_status"))
+        result = await config(action="setup_status")
         assert "unknown action" not in str(result).lower()
         assert "state" in result
 
@@ -421,7 +411,7 @@ class TestConfigTool:
         cs._state = cs.CredentialState.AWAITING_SETUP
         monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
-        result = json.loads(await config(action="setup_start"))
+        result = await config(action="setup_start")
         assert "unknown action" not in str(result).lower()
         assert result.get("status") == "setup_started"
         assert result.get("setup_url") == "https://relay.example.com/authorize"

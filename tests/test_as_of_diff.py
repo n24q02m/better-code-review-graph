@@ -23,7 +23,6 @@ suitable for these tests — it loses history by design.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -355,13 +354,12 @@ def test_server_query_diff_action_dispatches(
     idx_b.upsert_node(_make_function_node(name="brand_new"))
     store.close()
 
-    raw = query_tool(
+    payload = query_tool(
         action="diff",
         from_sha=_SHA_A,
         to_sha=_SHA_B,
         repo_root=str(workspace),
     )
-    payload = json.loads(raw)
     assert payload["from_sha"] == _SHA_A
     assert payload["to_sha"] == _SHA_B
     added_qns = [r["qualified_name"] for r in payload["added"]]
