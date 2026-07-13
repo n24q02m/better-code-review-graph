@@ -8,6 +8,8 @@ Formats:
     - json-ld: JSON, supported by JSON-LD consumers + arbitrary JSON tooling
     - dot: Graphviz DOT, supported by Graphviz + dot2tex + xdot
     - cypher: Neo4j Cypher CREATE statements, replay-able into a Neo4j database
+    - crg: JSON, the only format that round-trips back into a GraphStore via
+      ``better_code_review_graph.importer.import_graph`` (see Task 6)
 
 Streaming uses iter helpers on the GraphStore. Output is a single string
 return value; callers wanting file output write the string to disk.
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -218,6 +221,44 @@ def export_cypher(store: GraphStore) -> str:
     return "\n".join(parts)
 
 
+def export_crg(store: GraphStore, root: Path | None = None) -> str:
+    """Emit the full graph as round-trippable JSON (Task 6).
+
+    Unlike the other formats (one-way interop with external tools), ``crg``
+    dumps every column of the ``nodes`` / ``edges`` tables verbatim --
+    including ``source_text``, the summarizer columns, and the temporal
+    ``valid_from_sha``/``valid_to_sha`` columns -- so
+    :func:`better_code_review_graph.importer.import_graph` can reconstruct
+    an equivalent subgraph in a different store (e.g. built on a CI runner,
+    imported on a laptop; the crg format is not used by the CF-hosted
+    deployment).
+
+    ``repo_id`` identifies the exporting graph and becomes the namespace
+    prefix an importer uses to keep re-imported ids from colliding with
+    locally-parsed nodes. It is derived via
+    :func:`better_code_review_graph.federation.derive_repo_id` from ``root``
+    when the caller supplies it (``export_graph_dispatch`` always does,
+    since it already resolves the repo root) -- this is the same id a
+    federated ``graph(action='build', roots=[...])`` would register for
+    that same root, so repo-scoped queries agree after either path. When
+    ``root`` is omitted (e.g. calling this function directly against a
+    store that isn't backed by a real repo checkout), falls back to the
+    store's own db directory so the id stays deterministic per store; note
+    that fallback is *not* guaranteed to match a federated id for a real
+    root, since ``store.db_path`` normally lives at
+    ``<root>/.code-review-graph/graph.db`` -- one directory below ``root``.
+    """
+    from .federation import derive_repo_id
+
+    repo_id = derive_repo_id(root if root is not None else store.db_path.parent)
+    nodes = [dict(row) for row in store._conn.execute("SELECT * FROM nodes")]
+    edges = [dict(row) for row in store._conn.execute("SELECT * FROM edges")]
+    return json.dumps(
+        {"schema_version": 1, "repo_id": repo_id, "nodes": nodes, "edges": edges},
+        indent=2,
+    )
+
+
 _FORMATTERS = {
     "graphml": export_graphml,
     "json-ld": export_jsonld,
@@ -227,10 +268,18 @@ _FORMATTERS = {
 }
 
 
-def export_graph(store: GraphStore, format: str = "graphml") -> str:
-    """Dispatch to the per-format formatter. Raises ValueError on unknown format."""
+def export_graph(
+    store: GraphStore, format: str = "graphml", root: Path | None = None
+) -> str:
+    """Dispatch to the per-format formatter. Raises ValueError on unknown format.
+
+    ``root`` is only consumed by the ``crg`` format (see :func:`export_crg`);
+    the other formatters ignore it.
+    """
     fmt = format.lower()
+    if fmt == "crg":
+        return export_crg(store, root=root)
     if fmt not in _FORMATTERS:
-        valid = sorted({"graphml", "json-ld", "dot", "cypher"})
+        valid = sorted({"graphml", "json-ld", "dot", "cypher", "crg"})
         raise ValueError(f"Unknown export format '{format}'. Valid: {valid}")
     return _FORMATTERS[fmt](store)
