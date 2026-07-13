@@ -15,7 +15,7 @@ jobs:
   # Anyone (including the owner) can summon the agent with /oc on an issue or PR.
   # It may also record a new rule into .github/review-learnings.md on request.
   mention:
-    if: ${{ github.event.comment != null && (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')) }}
+    if: ${{ github.event.comment != null && (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')) && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
