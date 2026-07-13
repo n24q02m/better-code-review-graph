@@ -200,6 +200,42 @@ def test_import_preserves_summary_metadata(tmp_path, seeded_store):
         fresh.close()
 
 
+def test_import_rolls_back_fully_when_a_later_node_is_malformed(tmp_path, seeded_store):
+    """A malformed node AFTER a summary-carrying node must roll back to 0/0.
+
+    Regression guard: GraphStore.update_summary() commits on its own, which
+    used to end import_graph's `with store._conn:` transaction early --
+    the summary-carrying node (and its `repos` row) stayed committed even
+    when a later node in the same payload was malformed. Summary columns
+    are now folded into the same INSERT as everything else, so nothing
+    should survive a mid-loop failure.
+    """
+    node = seeded_store.get_node("src/x.py::foo")
+    seeded_store.update_summary(
+        node.id, summary="Returns bar().", provider="gemini", source_hash="abc123"
+    )
+
+    payload = json.loads(export_graph(seeded_store, format="crg"))
+    # Guarantee processing order regardless of SQL row order: the
+    # summary-carrying node ("foo") first, the corrupted one ("bar") second.
+    nodes_by_name = {n["name"]: n for n in payload["nodes"]}
+    payload["nodes"] = [nodes_by_name["foo"], nodes_by_name["bar"]]
+    del payload["nodes"][1]["qualified_name"]
+
+    fresh = GraphStore(tmp_path / "fresh.db")
+    try:
+        reg = RepoRegistry(fresh)
+        with pytest.raises(KeyError):
+            import_graph(fresh, reg, payload)
+
+        node_count = fresh._conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        repo_count = fresh._conn.execute("SELECT COUNT(*) FROM repos").fetchone()[0]
+        assert node_count == 0
+        assert repo_count == 0
+    finally:
+        fresh.close()
+
+
 def test_import_idempotent_with_fresh_registry_each_call(tmp_path, seeded_store):
     """import_graph_dispatch builds a new RepoRegistry per call in practice --
 

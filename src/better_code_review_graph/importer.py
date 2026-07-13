@@ -55,7 +55,7 @@ def _register_repo_if_absent(
 
 def _upsert_imported_node(
     store: GraphStore, qualified_name: str, node: dict[str, Any], repo_id: str
-) -> tuple[int, bool]:
+) -> bool:
     """Insert/update a ``nodes`` row with an explicit, already-namespaced id.
 
     ``GraphStore.upsert_node`` always derives ``qualified_name`` from
@@ -72,7 +72,19 @@ def _upsert_imported_node(
     files (via the separate ``repo_id`` column + naturally-distinct
     filesystem paths), not by mangling ``file_path``.
 
-    Returns ``(node_id, pre_existing)``.
+    ``summary``/``summary_provider``/``source_hash`` are folded into the
+    same statement rather than calling ``GraphStore.update_summary``
+    afterward -- that method does its own ``commit()``, which would end
+    the transaction ``import_graph`` wraps the whole merge in, making a
+    partial-import rollback silently not roll back whenever a node carries
+    a summary. The ``COALESCE(excluded.x, x)`` pattern keeps a locally
+    generated summary intact when the imported payload doesn't carry one
+    (e.g. the source repo was never summarized) instead of clobbering it
+    with NULL on every re-import -- the same behavior the previous
+    ``if node.get("summary") is not None`` guard produced.
+
+    Returns ``True`` if ``qualified_name`` already existed (row updated),
+    ``False`` if it was newly inserted.
     """
     now = time.time()
     pre_existing = (
@@ -86,8 +98,8 @@ def _upsert_imported_node(
            (kind, name, qualified_name, file_path, line_start, line_end,
             language, parent_name, params, return_type, modifiers, is_test,
             file_hash, extra, updated_at, source_text, repo_id,
-            valid_from_sha, valid_to_sha)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            valid_from_sha, valid_to_sha, summary, summary_provider, source_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(qualified_name) DO UPDATE SET
              kind=excluded.kind, name=excluded.name,
              file_path=excluded.file_path, line_start=excluded.line_start,
@@ -98,7 +110,10 @@ def _upsert_imported_node(
              extra=excluded.extra, updated_at=excluded.updated_at,
              source_text=excluded.source_text, repo_id=excluded.repo_id,
              valid_from_sha=excluded.valid_from_sha,
-             valid_to_sha=excluded.valid_to_sha
+             valid_to_sha=excluded.valid_to_sha,
+             summary=COALESCE(excluded.summary, summary),
+             summary_provider=COALESCE(excluded.summary_provider, summary_provider),
+             source_hash=COALESCE(excluded.source_hash, source_hash)
         """,
         (
             node["kind"],
@@ -120,12 +135,12 @@ def _upsert_imported_node(
             repo_id,
             node.get("valid_from_sha") or _ZERO_SHA,
             node.get("valid_to_sha"),
+            node.get("summary"),
+            node.get("summary_provider"),
+            node.get("source_hash"),
         ),
     )
-    row = store._conn.execute(
-        "SELECT id FROM nodes WHERE qualified_name = ?", (qualified_name,)
-    ).fetchone()
-    return row["id"], pre_existing
+    return pre_existing
 
 
 def _upsert_imported_edge(
@@ -220,7 +235,10 @@ def import_graph(
 
     # Single transaction for the whole merge: a failure partway through
     # (e.g. a malformed node dict) rolls back rather than leaving a
-    # partially-imported graph committed.
+    # partially-imported graph committed. (Summary columns are written by
+    # _upsert_imported_node itself rather than a separate
+    # store.update_summary() call, since that method commits on its own
+    # and would end this transaction early.)
     with store._conn:
         _register_repo_if_absent(store, registry, repo_id)
 
@@ -228,21 +246,13 @@ def import_graph(
         nodes_updated = 0
         for node in payload["nodes"]:
             new_qualified_name = _namespace(node["qualified_name"], prefix)
-            node_id, pre_existing = _upsert_imported_node(
+            pre_existing = _upsert_imported_node(
                 store, new_qualified_name, node, repo_id
             )
             if pre_existing:
                 nodes_updated += 1
             else:
                 nodes_added += 1
-
-            if node.get("summary") is not None:
-                store.update_summary(
-                    node_id,
-                    summary=node["summary"],
-                    provider=node.get("summary_provider") or "",
-                    source_hash=node.get("source_hash") or "",
-                )
 
         edges_added = 0
         for edge in payload["edges"]:
