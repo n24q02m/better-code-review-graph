@@ -26,7 +26,7 @@ from .embeddings import (
     resolve_backend,
     semantic_search,
 )
-from .graph import GraphStore, edge_to_dict, node_to_dict
+from .graph import GraphStore, _sanitize_name, edge_to_dict, node_to_dict
 from .incremental import (
     collect_all_files,
     find_project_root,
@@ -2602,13 +2602,15 @@ def export_graph_dispatch(
 ) -> dict[str, Any]:
     """Export the code knowledge graph in an interoperable format.
 
-    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher.
-    GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into Neo4j;
-    JSON-LD drives JSON-aware tooling; DOT renders via Graphviz.
+    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher,
+    crg. GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into
+    Neo4j; JSON-LD drives JSON-aware tooling; DOT renders via Graphviz; crg
+    (Task 6) is the only format that round-trips back into a GraphStore via
+    `graph(action='import')`.
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
-        format: One of graphml | json-ld | dot | cypher (case-insensitive).
+        format: One of graphml | json-ld | dot | cypher | crg (case-insensitive).
         output_path: When provided, payload is written to this path and only
             metadata is returned. When None, payload is returned inline.
 
@@ -2649,6 +2651,75 @@ def export_graph_dispatch(
         "bytes": byte_count,
         "payload": payload,
     }
+
+
+def import_graph_dispatch(
+    repo_root: str | None = None,
+    import_path: str | None = None,
+) -> dict[str, Any]:
+    """Import a `crg`-format export produced by `graph(action='export', format='crg')`.
+
+    Task 6 feature: merges a graph built and exported elsewhere (e.g. a CI
+    runner) into the current repo's graph store. Every imported node/edge id
+    is namespaced with the exporting repo_id so it never collides with
+    locally-parsed nodes; re-importing the same file is idempotent.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        import_path: Path to a JSON file previously written via
+            `graph(action='export', format='crg', output_path=...)`. Must
+            resolve inside repo_root. Required.
+
+    Returns:
+        Dict with status='ok' + nodes_added/nodes_updated/edges_added +
+        repo_id + summary on success, or status='error' + error message.
+    """
+    from .federation import RepoRegistry
+    from .importer import import_graph
+
+    if not import_path:
+        return {
+            "status": "error",
+            "error": "import_path is required for action='import'.",
+        }
+
+    store, root = _get_store(repo_root)
+    try:
+        in_p = Path(import_path).resolve()
+        if not in_p.is_relative_to(root.resolve()):
+            return {
+                "status": "error",
+                "error": f"Import path {import_path} must be relative to repo root {root}",
+            }
+        try:
+            payload = json.loads(in_p.read_text(encoding="utf-8"))
+        except OSError as e:
+            return {"status": "error", "error": f"Failed to read import payload: {e}"}
+        except json.JSONDecodeError as e:
+            return {"status": "error", "error": f"Malformed import payload: {e}"}
+
+        registry = RepoRegistry(store)
+        try:
+            result = import_graph(store, registry, payload)
+        except (ValueError, KeyError) as e:
+            return {"status": "error", "error": str(e)}
+
+        # repo_id came from an on-disk JSON file that may originate anywhere
+        # (a downloaded CI artifact, a colleague's export); sanitize before
+        # it flows into a free-text summary, mirroring node_to_dict's
+        # control-character stripping for names surfaced in tool responses.
+        safe_repo_id = _sanitize_name(result["repo_id"])
+        return {
+            "status": "ok",
+            **result,
+            "summary": (
+                f"Imported {result['nodes_added']} new node(s) "
+                f"({result['nodes_updated']} updated) and "
+                f"{result['edges_added']} new edge(s) from repo '{safe_repo_id}'."
+            ),
+        }
+    finally:
+        store.close()
 
 
 def summarize_graph_dispatch(

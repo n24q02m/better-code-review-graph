@@ -8,6 +8,8 @@ Formats:
     - json-ld: JSON, supported by JSON-LD consumers + arbitrary JSON tooling
     - dot: Graphviz DOT, supported by Graphviz + dot2tex + xdot
     - cypher: Neo4j Cypher CREATE statements, replay-able into a Neo4j database
+    - crg: JSON, the only format that round-trips back into a GraphStore via
+      ``better_code_review_graph.importer.import_graph`` (see Task 6)
 
 Streaming uses iter helpers on the GraphStore. Output is a single string
 return value; callers wanting file output write the string to disk.
@@ -218,12 +220,42 @@ def export_cypher(store: GraphStore) -> str:
     return "\n".join(parts)
 
 
+def export_crg(store: GraphStore) -> str:
+    """Emit the full graph as round-trippable JSON (Task 6).
+
+    Unlike the other formats (one-way interop with external tools), ``crg``
+    dumps every column of the ``nodes`` / ``edges`` tables verbatim --
+    including ``source_text`` and the summarizer columns -- so
+    :func:`better_code_review_graph.importer.import_graph` can reconstruct
+    an equivalent subgraph in a different store (e.g. built on a CI runner,
+    imported on a laptop; the crg format is not used by the CF-hosted
+    deployment).
+
+    ``repo_id`` identifies the exporting graph and becomes the namespace
+    prefix an importer uses to keep re-imported ids from colliding with
+    locally-parsed nodes. It is derived from the store's db path the same
+    way :func:`better_code_review_graph.federation.derive_repo_id` derives
+    ids for federated repo roots, so it stays stable across repeated
+    exports of the same store.
+    """
+    from .federation import derive_repo_id
+
+    repo_id = derive_repo_id(store.db_path.parent)
+    nodes = [dict(row) for row in store._conn.execute("SELECT * FROM nodes")]
+    edges = [dict(row) for row in store._conn.execute("SELECT * FROM edges")]
+    return json.dumps(
+        {"schema_version": 1, "repo_id": repo_id, "nodes": nodes, "edges": edges},
+        indent=2,
+    )
+
+
 _FORMATTERS = {
     "graphml": export_graphml,
     "json-ld": export_jsonld,
     "jsonld": export_jsonld,
     "dot": export_dot,
     "cypher": export_cypher,
+    "crg": export_crg,
 }
 
 
@@ -231,6 +263,6 @@ def export_graph(store: GraphStore, format: str = "graphml") -> str:
     """Dispatch to the per-format formatter. Raises ValueError on unknown format."""
     fmt = format.lower()
     if fmt not in _FORMATTERS:
-        valid = sorted({"graphml", "json-ld", "dot", "cypher"})
+        valid = sorted({"graphml", "json-ld", "dot", "cypher", "crg"})
         raise ValueError(f"Unknown export format '{format}'. Valid: {valid}")
     return _FORMATTERS[fmt](store)

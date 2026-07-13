@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from better_code_review_graph.exporter import (
+    export_crg,
     export_cypher,
     export_dot,
     export_graph,
@@ -120,6 +121,51 @@ def test_export_graph_dispatch_routes_to_formatter(populated_store):
     assert json.loads(out)["nodes"]
     out = export_graph(populated_store, format="JSONLD")  # case-insensitive alias
     assert json.loads(out)["nodes"]
+    out = export_graph(populated_store, format="crg")
+    assert json.loads(out)["schema_version"] == 1
+
+
+def test_export_crg_emits_schema_version_and_repo_id(populated_store):
+    payload = json.loads(export_crg(populated_store))
+    assert payload["schema_version"] == 1
+    assert isinstance(payload["repo_id"], str)
+    assert payload["repo_id"] != ""
+    assert {n["qualified_name"] for n in payload["nodes"]} == {
+        "src/x.py::foo",
+        "src/x.py::bar",
+    }
+    assert len(payload["edges"]) == 1
+    assert payload["edges"][0]["source_qualified"] == "src/x.py::foo"
+    assert payload["edges"][0]["target_qualified"] == "src/x.py::bar"
+
+
+def test_export_crg_is_stable_across_repeated_exports(populated_store):
+    """Same store -> same repo_id every time (importer relies on this)."""
+    first = json.loads(export_crg(populated_store))
+    second = json.loads(export_crg(populated_store))
+    assert first["repo_id"] == second["repo_id"]
+
+
+def test_export_crg_includes_source_text(tmp_path):
+    db_path = tmp_path / "with_source.db"
+    store = GraphStore(str(db_path))
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+                source_text="def f():\n    pass\n",
+            ),
+            file_hash="h",
+        )
+        payload = json.loads(export_crg(store))
+        assert payload["nodes"][0]["source_text"] == "def f():\n    pass\n"
+    finally:
+        store.close()
 
 
 def test_export_graph_unknown_format_raises(populated_store):

@@ -29,6 +29,7 @@ from .tools import (
     get_docs_section,
     get_impact_radius,
     get_review_context,
+    import_graph_dispatch,
     list_graph_stats,
     query_graph,
     renamed_in_diff,
@@ -102,6 +103,7 @@ mcp = FastMCP(
         "Actions: build (full_rebuild, base, repo_root), update (base, repo_root), "
         "stats (repo_root), embed (repo_root), "
         "export (format, output_path, repo_root), "
+        "import (import_path, repo_root), "
         "summarize (max_nodes, repo_root). "
         "Use `help` tool for full docs."
     ),
@@ -120,6 +122,7 @@ def graph(
     repo_root: str | None = None,
     format: str = "graphml",
     output_path: str | None = None,
+    import_path: str | None = None,
     max_nodes: int = 500,
     roots: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -136,8 +139,15 @@ def graph(
     - stats (-> repo_root): Node/edge counts, languages, embedding status
     - embed (-> repo_root): Compute vector embeddings for semantic search
     - export (-> format='graphml', output_path=None, repo_root): Export graph
-        in graphml | json-ld | dot | cypher format. Writes to output_path when
-        provided, otherwise returns payload inline.
+        in graphml | json-ld | dot | cypher | crg format. Writes to output_path
+        when provided, otherwise returns payload inline. ``crg`` (Task 6) is
+        the only format that round-trips back into a store via ``import``.
+    - import (-> import_path, repo_root): Merge a `crg`-format export (from
+        ``export`` action, ``format='crg'``) into the current repo's graph.
+        Imported node/edge ids are namespaced by the exporting repo_id so
+        they never collide with locally-parsed nodes; re-importing the same
+        file is idempotent. Built for artifact portability (build+export on
+        a CI runner, import on a laptop).
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
         Function nodes. Models come from the SUMMARY_MODELS chain (provider
         inferred from the model prefix); when unset a key-gated default
@@ -165,6 +175,8 @@ def graph(
             return export_graph_dispatch(
                 repo_root=repo_root, format=format, output_path=output_path
             )
+        case "import":
+            return import_graph_dispatch(repo_root=repo_root, import_path=import_path)
         case "summarize":
             return summarize_graph_dispatch(repo_root=repo_root, max_nodes=max_nodes)
         case _:
@@ -174,6 +186,7 @@ def graph(
                 "build",
                 "embed",
                 "export",
+                "import",
                 "stats",
                 "summarize",
                 "update",
