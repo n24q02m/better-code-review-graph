@@ -16,7 +16,7 @@ jobs:
   # It may also record a new rule into .github/review-learnings.md on request.
   mention:
     if: ${{ github.event.comment != null && (contains(github.event.comment.body, '/oc') || contains(github.event.comment.body, '/opencode')) }}
-    runs-on: [self-hosted, oc-github]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
@@ -26,6 +26,7 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_CONFIG_CONTENT: ${{ secrets.OC_PROXY_CONFIG }}
         with:
           model: ${{ secrets.OC_MODEL }}
           use_github_token: true
@@ -34,7 +35,7 @@ jobs:
   # Auto-answer issues opened by real outside people (not the owner, not a bot).
   auto-issue:
     if: ${{ github.event_name == 'issues' && github.event.issue.user.login != github.repository_owner && github.event.issue.user.type != 'Bot' }}
-    runs-on: [self-hosted, oc-github]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
@@ -43,6 +44,7 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_CONFIG_CONTENT: ${{ secrets.OC_PROXY_CONFIG }}
         with:
           model: ${{ secrets.OC_MODEL }}
           use_github_token: true
@@ -52,7 +54,7 @@ jobs:
   # Auto-review pull requests opened by real outside people.
   auto-pr:
     if: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.user.login != github.repository_owner && github.event.pull_request.user.type != 'Bot' }}
-    runs-on: [self-hosted, oc-github]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
@@ -61,6 +63,7 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_CONFIG_CONTENT: ${{ secrets.OC_PROXY_CONFIG }}
         with:
           model: ${{ secrets.OC_MODEL }}
           use_github_token: true
