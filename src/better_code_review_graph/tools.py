@@ -2622,7 +2622,7 @@ def export_graph_dispatch(
 
     store, root = _get_store(repo_root)
     try:
-        payload = export_graph(store, format=format)
+        payload = export_graph(store, format=format, root=root)
     except ValueError as e:
         return {"status": "error", "error": str(e)}
 

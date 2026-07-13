@@ -239,3 +239,97 @@ def test_import_registers_repo_in_registry(tmp_path, seeded_store):
         assert row is not None
     finally:
         fresh.close()
+
+
+def test_import_preserves_temporal_columns(tmp_path, seeded_store):
+    """valid_from_sha/valid_to_sha must round-trip, not reset to defaults."""
+    seeded_store._conn.execute(
+        "UPDATE nodes SET valid_from_sha=?, valid_to_sha=? WHERE qualified_name=?",
+        ("a" * 40, "b" * 40, "src/x.py::foo"),
+    )
+    seeded_store._conn.execute(
+        "UPDATE edges SET valid_from_sha=?, valid_to_sha=? WHERE source_qualified=?",
+        ("a" * 40, "b" * 40, "src/x.py::foo"),
+    )
+    seeded_store._conn.commit()
+
+    payload = json.loads(export_graph(seeded_store, format="crg"))
+    repo_id = payload["repo_id"]
+
+    fresh = GraphStore(tmp_path / "fresh.db")
+    try:
+        reg = RepoRegistry(fresh)
+        import_graph(fresh, reg, payload)
+
+        node_row = fresh._conn.execute(
+            "SELECT valid_from_sha, valid_to_sha FROM nodes WHERE qualified_name=?",
+            (f"{repo_id}::src/x.py::foo",),
+        ).fetchone()
+        assert node_row["valid_from_sha"] == "a" * 40
+        assert node_row["valid_to_sha"] == "b" * 40
+
+        edge_row = fresh._conn.execute(
+            "SELECT valid_from_sha, valid_to_sha FROM edges WHERE source_qualified=?",
+            (f"{repo_id}::src/x.py::foo",),
+        ).fetchone()
+        assert edge_row["valid_from_sha"] == "a" * 40
+        assert edge_row["valid_to_sha"] == "b" * 40
+    finally:
+        fresh.close()
+
+
+def test_import_does_not_resurrect_tombstoned_node(tmp_path, seeded_store):
+    """A node marked no-longer-live (valid_to_sha set) must NOT come back live."""
+    seeded_store._conn.execute(
+        "UPDATE nodes SET valid_to_sha=? WHERE qualified_name=?",
+        ("deadbeef" * 5, "src/x.py::foo"),
+    )
+    seeded_store._conn.commit()
+
+    payload = json.loads(export_graph(seeded_store, format="crg"))
+    repo_id = payload["repo_id"]
+
+    fresh = GraphStore(tmp_path / "fresh.db")
+    try:
+        reg = RepoRegistry(fresh)
+        import_graph(fresh, reg, payload)
+
+        qn = f"{repo_id}::src/x.py::foo"
+        # get_node() defaults to as_of="" (currently-valid only) -- a
+        # resurrected node would wrongly show up here.
+        assert fresh.get_node(qn) is None
+
+        row = fresh._conn.execute(
+            "SELECT valid_to_sha FROM nodes WHERE qualified_name=?", (qn,)
+        ).fetchone()
+        assert row is not None
+        assert row["valid_to_sha"] == "deadbeef" * 5
+    finally:
+        fresh.close()
+
+
+def test_import_preserves_file_path_for_nodes_and_edges(tmp_path, seeded_store):
+    """file_path stays the real source path (not namespaced) for nodes AND
+    edges, so get_nodes_by_file still finds imported nodes and node/edge
+    file_path still match for the same originating file."""
+    payload = json.loads(export_graph(seeded_store, format="crg"))
+    repo_id = payload["repo_id"]
+
+    fresh = GraphStore(tmp_path / "fresh.db")
+    try:
+        reg = RepoRegistry(fresh)
+        import_graph(fresh, reg, payload)
+
+        nodes = fresh.get_nodes_by_file("src/x.py")
+        assert {n.qualified_name for n in nodes} == {
+            f"{repo_id}::src/x.py::foo",
+            f"{repo_id}::src/x.py::bar",
+        }
+        for n in nodes:
+            assert n.file_path == "src/x.py"
+
+        edges = fresh.get_all_edges()
+        assert len(edges) == 1
+        assert edges[0].file_path == "src/x.py"
+    finally:
+        fresh.close()

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -220,12 +221,13 @@ def export_cypher(store: GraphStore) -> str:
     return "\n".join(parts)
 
 
-def export_crg(store: GraphStore) -> str:
+def export_crg(store: GraphStore, root: Path | None = None) -> str:
     """Emit the full graph as round-trippable JSON (Task 6).
 
     Unlike the other formats (one-way interop with external tools), ``crg``
     dumps every column of the ``nodes`` / ``edges`` tables verbatim --
-    including ``source_text`` and the summarizer columns -- so
+    including ``source_text``, the summarizer columns, and the temporal
+    ``valid_from_sha``/``valid_to_sha`` columns -- so
     :func:`better_code_review_graph.importer.import_graph` can reconstruct
     an equivalent subgraph in a different store (e.g. built on a CI runner,
     imported on a laptop; the crg format is not used by the CF-hosted
@@ -233,14 +235,22 @@ def export_crg(store: GraphStore) -> str:
 
     ``repo_id`` identifies the exporting graph and becomes the namespace
     prefix an importer uses to keep re-imported ids from colliding with
-    locally-parsed nodes. It is derived from the store's db path the same
-    way :func:`better_code_review_graph.federation.derive_repo_id` derives
-    ids for federated repo roots, so it stays stable across repeated
-    exports of the same store.
+    locally-parsed nodes. It is derived via
+    :func:`better_code_review_graph.federation.derive_repo_id` from ``root``
+    when the caller supplies it (``export_graph_dispatch`` always does,
+    since it already resolves the repo root) -- this is the same id a
+    federated ``graph(action='build', roots=[...])`` would register for
+    that same root, so repo-scoped queries agree after either path. When
+    ``root`` is omitted (e.g. calling this function directly against a
+    store that isn't backed by a real repo checkout), falls back to the
+    store's own db directory so the id stays deterministic per store; note
+    that fallback is *not* guaranteed to match a federated id for a real
+    root, since ``store.db_path`` normally lives at
+    ``<root>/.code-review-graph/graph.db`` -- one directory below ``root``.
     """
     from .federation import derive_repo_id
 
-    repo_id = derive_repo_id(store.db_path.parent)
+    repo_id = derive_repo_id(root if root is not None else store.db_path.parent)
     nodes = [dict(row) for row in store._conn.execute("SELECT * FROM nodes")]
     edges = [dict(row) for row in store._conn.execute("SELECT * FROM edges")]
     return json.dumps(
@@ -255,13 +265,20 @@ _FORMATTERS = {
     "jsonld": export_jsonld,
     "dot": export_dot,
     "cypher": export_cypher,
-    "crg": export_crg,
 }
 
 
-def export_graph(store: GraphStore, format: str = "graphml") -> str:
-    """Dispatch to the per-format formatter. Raises ValueError on unknown format."""
+def export_graph(
+    store: GraphStore, format: str = "graphml", root: Path | None = None
+) -> str:
+    """Dispatch to the per-format formatter. Raises ValueError on unknown format.
+
+    ``root`` is only consumed by the ``crg`` format (see :func:`export_crg`);
+    the other formatters ignore it.
+    """
     fmt = format.lower()
+    if fmt == "crg":
+        return export_crg(store, root=root)
     if fmt not in _FORMATTERS:
         valid = sorted({"graphml", "json-ld", "dot", "cypher", "crg"})
         raise ValueError(f"Unknown export format '{format}'. Valid: {valid}")

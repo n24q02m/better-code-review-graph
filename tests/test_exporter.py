@@ -168,6 +168,68 @@ def test_export_crg_includes_source_text(tmp_path):
         store.close()
 
 
+def test_export_crg_repo_id_matches_federation_for_same_root(tmp_path):
+    """repo_id must be derived from the repo root, not the .code-review-graph
+    subdir the db file happens to live in (they hash to different ids)."""
+    from better_code_review_graph.federation import RepoRegistry, derive_repo_id
+
+    root = tmp_path / "myrepo"
+    (root / ".code-review-graph").mkdir(parents=True)
+    db_path = root / ".code-review-graph" / "graph.db"
+
+    store = GraphStore(str(db_path))
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="f",
+                file_path="x.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+            ),
+            file_hash="h",
+        )
+
+        payload_with_root = json.loads(export_crg(store, root=root))
+        expected_repo_id = derive_repo_id(root)
+        assert payload_with_root["repo_id"] == expected_repo_id
+
+        # Must match what a federated `graph build --roots` would register
+        # for this exact root -- the whole point of a stable namespace.
+        registry = RepoRegistry(store)
+        federated_id = registry.add(root)
+        assert payload_with_root["repo_id"] == federated_id
+
+        # Sanity: proves the bug this test guards against -- deriving from
+        # the .code-review-graph subdir gives a DIFFERENT id.
+        wrong_id = derive_repo_id(db_path.parent)
+        assert wrong_id != expected_repo_id
+    finally:
+        store.close()
+
+
+def test_export_graph_dispatch_passes_root_for_crg_repo_id(tmp_path):
+    """export_graph(format='crg') without root falls back to the db dir --
+    export_graph_dispatch always supplies root so production callers get
+    the correct (root-derived) repo_id."""
+    from better_code_review_graph.federation import derive_repo_id
+
+    root = tmp_path / "myrepo"
+    (root / ".code-review-graph").mkdir(parents=True)
+    db_path = root / ".code-review-graph" / "graph.db"
+    store = GraphStore(str(db_path))
+    try:
+        with_root = json.loads(export_graph(store, format="crg", root=root))
+        without_root = json.loads(export_graph(store, format="crg"))
+
+        assert with_root["repo_id"] == derive_repo_id(root)
+        assert without_root["repo_id"] == derive_repo_id(store.db_path.parent)
+        assert with_root["repo_id"] != without_root["repo_id"]
+    finally:
+        store.close()
+
+
 def test_export_graph_unknown_format_raises(populated_store):
     with pytest.raises(ValueError, match="Unknown export format"):
         export_graph(populated_store, format="rdf-xml")

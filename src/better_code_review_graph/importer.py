@@ -9,17 +9,15 @@ that store already has, by namespacing every id with the exporting
 
 from __future__ import annotations
 
-import json
 import time
 from typing import TYPE_CHECKING, Any
-
-from .parser import EdgeInfo, NodeInfo
 
 if TYPE_CHECKING:
     from .federation import RepoRegistry
     from .graph import GraphStore
 
 _SUPPORTED_SCHEMA_VERSION = 1
+_ZERO_SHA = "0" * 40
 
 
 def _namespace(value: str, prefix: str) -> str:
@@ -41,7 +39,8 @@ def _register_repo_if_absent(
     no meaningful local path to derive from in the first place. This writes
     the ``repos`` row directly (same shape ``RepoRegistry`` itself reads),
     guarded by ``INSERT OR IGNORE`` so re-importing the same payload is a
-    no-op here regardless of whether ``registry``'s in-memory cache is stale.
+    no-op here regardless of whether ``registry``'s in-memory cache is
+    stale. Left uncommitted -- ``import_graph`` commits everything together.
     """
     if repo_id in {entry.repo_id for entry in registry.entries()}:
         return
@@ -52,7 +51,140 @@ def _register_repo_if_absent(
         "VALUES (?, ?, ?, ?, ?, ?)",
         (repo_id, f"<imported:{repo_id}>", None, None, now, now),
     )
-    store._conn.commit()
+
+
+def _upsert_imported_node(
+    store: GraphStore, qualified_name: str, node: dict[str, Any], repo_id: str
+) -> tuple[int, bool]:
+    """Insert/update a ``nodes`` row with an explicit, already-namespaced id.
+
+    ``GraphStore.upsert_node`` always derives ``qualified_name`` from
+    ``file_path`` via ``_make_qualified`` -- it has no way to accept an
+    explicit qualified_name, so the only way to produce a namespaced id
+    through it is to namespace ``file_path`` itself. That corrupts
+    ``file_path`` into a non-path (`get_nodes_by_file` can no longer find
+    the node by its real path, and it stops matching the corresponding
+    edges' un-namespaced ``file_path``). This mirrors ``upsert_node``'s own
+    ``INSERT ... ON CONFLICT(qualified_name) DO UPDATE`` shape (graph.py is
+    out of scope for this task) but takes ``qualified_name`` and the
+    temporal columns explicitly, leaving ``file_path`` as the real source
+    path -- matching how federated multi-root builds already disambiguate
+    files (via the separate ``repo_id`` column + naturally-distinct
+    filesystem paths), not by mangling ``file_path``.
+
+    Returns ``(node_id, pre_existing)``.
+    """
+    now = time.time()
+    pre_existing = (
+        store._conn.execute(
+            "SELECT 1 FROM nodes WHERE qualified_name = ?", (qualified_name,)
+        ).fetchone()
+        is not None
+    )
+    store._conn.execute(
+        """INSERT INTO nodes
+           (kind, name, qualified_name, file_path, line_start, line_end,
+            language, parent_name, params, return_type, modifiers, is_test,
+            file_hash, extra, updated_at, source_text, repo_id,
+            valid_from_sha, valid_to_sha)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(qualified_name) DO UPDATE SET
+             kind=excluded.kind, name=excluded.name,
+             file_path=excluded.file_path, line_start=excluded.line_start,
+             line_end=excluded.line_end, language=excluded.language,
+             parent_name=excluded.parent_name, params=excluded.params,
+             return_type=excluded.return_type, modifiers=excluded.modifiers,
+             is_test=excluded.is_test, file_hash=excluded.file_hash,
+             extra=excluded.extra, updated_at=excluded.updated_at,
+             source_text=excluded.source_text, repo_id=excluded.repo_id,
+             valid_from_sha=excluded.valid_from_sha,
+             valid_to_sha=excluded.valid_to_sha
+        """,
+        (
+            node["kind"],
+            node["name"],
+            qualified_name,
+            node["file_path"],
+            node["line_start"],
+            node["line_end"],
+            node["language"] or "",
+            node["parent_name"],
+            node["params"],
+            node["return_type"],
+            node["modifiers"],
+            node["is_test"],
+            node["file_hash"] or "",
+            node["extra"] if node["extra"] else "{}",
+            now,
+            node["source_text"],
+            repo_id,
+            node.get("valid_from_sha") or _ZERO_SHA,
+            node.get("valid_to_sha"),
+        ),
+    )
+    row = store._conn.execute(
+        "SELECT id FROM nodes WHERE qualified_name = ?", (qualified_name,)
+    ).fetchone()
+    return row["id"], pre_existing
+
+
+def _upsert_imported_edge(
+    store: GraphStore,
+    new_source: str,
+    new_target: str,
+    edge: dict[str, Any],
+    repo_id: str,
+) -> bool:
+    """Insert/update an ``edges`` row, carrying the temporal columns through.
+
+    Mirrors ``GraphStore.upsert_edge``'s natural-key match (kind + source +
+    target + file_path + line) and insert/update shape, extended with the
+    ``valid_from_sha``/``valid_to_sha`` columns ``upsert_edge`` doesn't set
+    (same graph.py-out-of-scope reasoning as :func:`_upsert_imported_node`).
+    ``edge["file_path"]`` is passed through untouched -- consistent with
+    leaving node ``file_path`` real (see :func:`_upsert_imported_node`).
+
+    Returns ``True`` if a new row was inserted, ``False`` if an existing
+    one was updated.
+    """
+    now = time.time()
+    extra_str = edge["extra"] if edge["extra"] else "{}"
+    valid_from_sha = edge.get("valid_from_sha") or _ZERO_SHA
+    valid_to_sha = edge.get("valid_to_sha")
+
+    existing = store._conn.execute(
+        "SELECT id FROM edges WHERE kind=? AND source_qualified=? "
+        "AND target_qualified=? AND file_path=? AND line=?",
+        (edge["kind"], new_source, new_target, edge["file_path"], edge["line"]),
+    ).fetchone()
+
+    if existing:
+        store._conn.execute(
+            "UPDATE edges SET extra=?, updated_at=?, repo_id=?, "
+            "valid_from_sha=?, valid_to_sha=? WHERE id=?",
+            (extra_str, now, repo_id, valid_from_sha, valid_to_sha, existing["id"]),
+        )
+        return False
+
+    store._conn.execute(
+        """INSERT INTO edges
+           (kind, source_qualified, target_qualified, file_path, line,
+            extra, updated_at, repo_id, valid_from_sha, valid_to_sha)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            edge["kind"],
+            new_source,
+            new_target,
+            edge["file_path"],
+            edge["line"],
+            extra_str,
+            now,
+            repo_id,
+            valid_from_sha,
+            valid_to_sha,
+        ),
+    )
+    return True
 
 
 def import_graph(
@@ -85,80 +217,40 @@ def import_graph(
 
     repo_id = payload["repo_id"]
     prefix = f"{repo_id}::"
-    _register_repo_if_absent(store, registry, repo_id)
 
-    nodes_added = 0
-    nodes_updated = 0
-    for node in payload["nodes"]:
-        new_qualified_name = _namespace(node["qualified_name"], prefix)
-        pre_existing = store.get_node(new_qualified_name) is not None
+    # Single transaction for the whole merge: a failure partway through
+    # (e.g. a malformed node dict) rolls back rather than leaving a
+    # partially-imported graph committed.
+    with store._conn:
+        _register_repo_if_absent(store, registry, repo_id)
 
-        node_id = store.upsert_node(
-            NodeInfo(
-                kind=node["kind"],
-                name=node["name"],
-                # _make_qualified() derives qualified_name from file_path, so
-                # namespacing file_path here reproduces new_qualified_name
-                # exactly (file_path is always a prefix of qualified_name).
-                file_path=_namespace(node["file_path"], prefix),
-                line_start=node["line_start"],
-                line_end=node["line_end"],
-                language=node["language"] or "",
-                parent_name=node["parent_name"],
-                params=node["params"],
-                return_type=node["return_type"],
-                modifiers=node["modifiers"],
-                is_test=bool(node["is_test"]),
-                extra=json.loads(node["extra"]) if node["extra"] else {},
-                source_text=node["source_text"],
-                repo_id=repo_id,
-            ),
-            file_hash=node["file_hash"] or "",
-        )
-        if pre_existing:
-            nodes_updated += 1
-        else:
-            nodes_added += 1
-
-        if node.get("summary") is not None:
-            store.update_summary(
-                node_id,
-                summary=node["summary"],
-                provider=node.get("summary_provider") or "",
-                source_hash=node.get("source_hash") or "",
+        nodes_added = 0
+        nodes_updated = 0
+        for node in payload["nodes"]:
+            new_qualified_name = _namespace(node["qualified_name"], prefix)
+            node_id, pre_existing = _upsert_imported_node(
+                store, new_qualified_name, node, repo_id
             )
+            if pre_existing:
+                nodes_updated += 1
+            else:
+                nodes_added += 1
 
-    edges_added = 0
-    for edge in payload["edges"]:
-        new_source = _namespace(edge["source_qualified"], prefix)
-        new_target = _namespace(edge["target_qualified"], prefix)
-        # Mirrors GraphStore.upsert_edge's own natural-key match so we can
-        # tell insert from update here -- upsert_edge only returns the row
-        # id either way, and graph.py is out of scope for this task.
-        pre_existing = (
-            store._conn.execute(
-                "SELECT 1 FROM edges WHERE kind=? AND source_qualified=? "
-                "AND target_qualified=? AND file_path=? AND line=?",
-                (edge["kind"], new_source, new_target, edge["file_path"], edge["line"]),
-            ).fetchone()
-            is not None
-        )
+            if node.get("summary") is not None:
+                store.update_summary(
+                    node_id,
+                    summary=node["summary"],
+                    provider=node.get("summary_provider") or "",
+                    source_hash=node.get("source_hash") or "",
+                )
 
-        store.upsert_edge(
-            EdgeInfo(
-                kind=edge["kind"],
-                source=new_source,
-                target=new_target,
-                file_path=edge["file_path"],
-                line=edge["line"],
-                extra=json.loads(edge["extra"]) if edge["extra"] else {},
-                repo_id=repo_id,
-            )
-        )
-        if not pre_existing:
-            edges_added += 1
+        edges_added = 0
+        for edge in payload["edges"]:
+            new_source = _namespace(edge["source_qualified"], prefix)
+            new_target = _namespace(edge["target_qualified"], prefix)
+            if _upsert_imported_edge(store, new_source, new_target, edge, repo_id):
+                edges_added += 1
 
-    store.commit()
     store._invalidate_cache()
 
     return {
