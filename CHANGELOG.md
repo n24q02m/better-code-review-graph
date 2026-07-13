@@ -2,6 +2,37 @@
 
 <!-- version list -->
 
+## v3.20.0-beta.3 (2026-07-13)
+
+### Bug Fixes
+
+- Correct mention gate expression (balanced parens + precedence)
+  ([#860](https://github.com/n24q02m/better-code-review-graph/pull/860),
+  [`61772c9`](https://github.com/n24q02m/better-code-review-graph/commit/61772c9712230138942e8b13ba3a2800d3b31fb6))
+
+- Fold summary columns into import's raw insert for true atomicity
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+- Gate oc mention job on comment author write access
+  ([#860](https://github.com/n24q02m/better-code-review-graph/pull/860),
+  [`61772c9`](https://github.com/n24q02m/better-code-review-graph/commit/61772c9712230138942e8b13ba3a2800d3b31fb6))
+
+- Round-trip temporal columns, derive crg repo_id from repo root
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+- Run opencode bot on hosted runners
+  ([#859](https://github.com/n24q02m/better-code-review-graph/pull/859),
+  [`ed82c71`](https://github.com/n24q02m/better-code-review-graph/commit/ed82c71c7163959a52e3a0cec11b95aeb006b549))
+
+### Features
+
+- Add graph import with a round-trip export format
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+
 ## v3.20.0-beta.2 (2026-07-12)
 
 ### Features
