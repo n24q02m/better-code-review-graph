@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v3.20.0 (2026-07-14)
+
+### Features
+
+- Add mcp-server, model-context-protocol, cursor, codex, claude keywords
+  ([#863](https://github.com/n24q02m/better-code-review-graph/pull/863),
+  [`66ced57`](https://github.com/n24q02m/better-code-review-graph/commit/66ced5782eb7cca106f3a4a70ceb444a01b89100))
+
+- Add smithery.yaml for stdio deployment
+  ([#864](https://github.com/n24q02m/better-code-review-graph/pull/864),
+  [`3acb70a`](https://github.com/n24q02m/better-code-review-graph/commit/3acb70a45858e6faa9ab3fa279d322d8a60d823f))
+
+
 ## v3.20.0-beta.3 (2026-07-13)
 
 ### Bug Fixes
