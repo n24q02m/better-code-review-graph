@@ -10,7 +10,7 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 requires-python = "==3.13.*"
 authors = [{ name = "n24q02m" }]
-keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp"]
+keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp", "mcp-server", "model-context-protocol", "cursor", "codex", "claude"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
