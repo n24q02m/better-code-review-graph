@@ -158,7 +158,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.19.1"
+version = "3.20.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -202,7 +202,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "litellm", specifier = ">=1.91.0" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.19.0b4,<2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.19.0,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
@@ -1145,7 +1145,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.19.0b4"
+version = "1.19.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -1160,9 +1160,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/94/4a0f9d5407080cf82cc96d666ea9ec60fc4f34e2db9421181cc71cf39eee/n24q02m_mcp_core-1.19.0b4.tar.gz", hash = "sha256:37a9895b2dad090b1299642d812b5ebf31a3fcb884bf825355edfa1f142d6c58", size = 317619, upload-time = "2026-07-11T07:13:12.814Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/82/5cf9177a7188dbf074a30ad057b9f7aeca8c546d34587311315215f92a9c/n24q02m_mcp_core-1.19.0.tar.gz", hash = "sha256:2109af5f1bd8a9387c135d7477b3deadfdcc3adbcfce354c7d4e3d49068d757a", size = 320002, upload-time = "2026-07-14T12:27:39.314Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/f5/c979129112a73c433559be78d613c6ec989f5e11423e9257b51bcbdc7c47/n24q02m_mcp_core-1.19.0b4-py3-none-any.whl", hash = "sha256:65cb2060b37d3d726ff573509b6ff443812dc71d44654475b38c1c0840e6752f", size = 176888, upload-time = "2026-07-11T07:13:11.319Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/c6/d755370d27c6963dfa14e924b35c5ccfb2830361ed4d989813fbb4bc94ec/n24q02m_mcp_core-1.19.0-py3-none-any.whl", hash = "sha256:b91bae678620470f084ba91d9d4767ef05843d42316a3c9d5c4fb25325210be8", size = 178192, upload-time = "2026-07-14T12:27:38.065Z" },
 ]
 
 [package.optional-dependencies]
