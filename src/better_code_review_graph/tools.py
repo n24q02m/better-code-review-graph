@@ -42,6 +42,7 @@ from .security.semgrep_engine import (
     SemgrepScanner,
     _resolve_overlay_rules_dir,
 )
+from .xpia import build_external_tool_result, wrap_external_content
 
 logger = logging.getLogger(__name__)
 
@@ -1772,22 +1773,33 @@ def spot_check_last_callers(
             {
                 "file": file_path,
                 "line": line_no,
-                "snippet": snippet,
+                # XPIA: snippet is raw text read from a file in the
+                # reviewed repo -- untrusted third-party content. The
+                # "(could not read file)" fallback is server-synthesized
+                # status text, not third-party content, so it stays
+                # unwrapped (mirrors wet-mcp's asymmetric error handling).
+                "snippet": (
+                    snippet
+                    if snippet == "(could not read file)"
+                    else wrap_external_content(snippet)
+                ),
                 "source_qualified": edge.get("source_qualified"),
                 "target_qualified": edge.get("target_qualified"),
             }
         )
 
-    return {
-        "status": "ok",
-        "summary": (
-            f"Sampled {len(samples)} of {len(edges)} callsites from last "
-            f"{cached['pattern']}('{cached['target']}')."
-        ),
-        "pattern": cached["pattern"],
-        "target": cached["target"],
-        "samples": samples,
-    }
+    return build_external_tool_result(
+        {
+            "status": "ok",
+            "summary": (
+                f"Sampled {len(samples)} of {len(edges)} callsites from last "
+                f"{cached['pattern']}('{cached['target']}')."
+            ),
+            "pattern": cached["pattern"],
+            "target": cached["target"],
+            "samples": samples,
+        }
+    )
 
 
 def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
@@ -2164,18 +2176,34 @@ def get_review_context(
             context["languages_filter"] = list(languages)
 
         if include_source:
-            context["source_snippets"] = _get_source_snippets(
-                root, changed_files, impact["changed_nodes"], max_lines_per_file
-            )
+            # XPIA: source_snippets is raw text read from files in the
+            # reviewed repo -- untrusted third-party content -- wrap each
+            # snippet in envelope markers before it reaches the caller.
+            # The "(could not read file)" fallback is server-synthesized
+            # status text, not third-party content, so it stays unwrapped
+            # (mirrors wet-mcp's asymmetric error handling).
+            context["source_snippets"] = {
+                path: (
+                    text
+                    if text == "(could not read file)"
+                    else wrap_external_content(text)
+                )
+                for path, text in _get_source_snippets(
+                    root, changed_files, impact["changed_nodes"], max_lines_per_file
+                ).items()
+            }
 
         guidance = _generate_review_guidance(impact, changed_files, languages=languages)
         context["review_guidance"] = guidance
 
-        return {
+        result = {
             "status": "ok",
             "summary": _build_review_summary_text(len(changed_files), impact, guidance),
             "context": context,
         }
+        if include_source:
+            result = build_external_tool_result(result)
+        return result
     finally:
         store.close()
 
