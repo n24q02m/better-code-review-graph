@@ -1150,9 +1150,7 @@ def _handle_tests_for(
     as_of: str = "",
 ) -> None:
     # Bolt: Use batched search to avoid N+1 queries when resolving tests
-    edges = store.search_edges_by_target_names(
-        [qn], kind="TESTED_BY", as_of=as_of
-    )
+    edges = store.search_edges_by_target_names([qn], kind="TESTED_BY", as_of=as_of)
     # Filter out fallback bare name matches since the original call used fallback=False
     edges = [e for e in edges if e.target_qualified == qn]
 

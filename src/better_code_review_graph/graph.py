@@ -1038,7 +1038,6 @@ class GraphStore:
         """
         return self.search_edges_by_target_names([name], kind=kind, as_of=as_of)
 
-
     def search_edges_by_source_names(
         self,
         names: list[str],
