@@ -79,6 +79,28 @@ jobs:
           prerelease_token: beta
           no_operation_mode: true
 
+      # PSR silently no-ops when it can't find a fix:/feat: commit since the last
+      # tag -- e.g. a bot PR squash-merged with a non-conventional subject (the
+      # commit-title no-bump trap the pr-title CI check guards at merge time; this
+      # step is the release-time backstop for anything that slipped past it, or a
+      # repo predating that check). released=false alone is not an error (it is
+      # the normal outcome of a docs-only/chore-only window), so this only warns.
+      - name: Warn if commits exist since last tag but PSR computed no release
+        if: steps.dryrun.outputs.released != 'true'
+        run: |
+          set -uo pipefail
+          highest_tag="$(git tag -l 'v*' | sort -V | tail -1)"
+          if [ -z "$highest_tag" ]; then
+            echo "No existing tags -- nothing to compare."
+            exit 0
+          fi
+          commit_count="$(git rev-list "${highest_tag}..HEAD" --count)"
+          if [ "$commit_count" -gt 0 ]; then
+            echo "::warning::PSR computed no release (released=false) but ${commit_count} commit(s) exist since ${highest_tag}. This is expected if they are all chore/docs-only, but if one of them should have bumped the version (e.g. a bot-authored fix squashed with a non-conventional subject), inspect 'git log ${highest_tag}..HEAD --oneline' before assuming there is nothing to release."
+          else
+            echo "OK: no commits since ${highest_tag} -- released=false is expected."
+          fi
+
       # PyPI never allows reusing a version number. Fail early and loudly if the version
       # PSR intends to publish already exists, before any tag or Release is created --
       # this turns a silent release freeze (PSR sees a matching tag, sets released=false,
