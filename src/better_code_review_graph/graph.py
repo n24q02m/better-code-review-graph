@@ -1038,6 +1038,32 @@ class GraphStore:
         """
         return self.search_edges_by_target_names([name], kind=kind, as_of=as_of)
 
+
+    def search_edges_by_source_names(
+        self,
+        names: list[str],
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
+    ) -> list[GraphEdge]:
+        """Batch search for edges where source_qualified matches any of the given names.
+
+        Bolt: Optimized to prevent N+1 queries when resolving multiple sources
+        to their targets.
+        """
+        if not names:
+            return []
+
+        unique_names = list(set(names))
+        frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
+        cursor = self._conn.execute(
+            "SELECT * FROM edges WHERE source_qualified IN "  # noqa: S608
+            f"(SELECT value FROM json_each(?)){kind_frag}{frag}",
+            (json.dumps(unique_names), *kind_params, *frag_params),
+        )
+        return [self._row_to_edge(r) for r in cursor]
+
     def search_edges_by_target_names(
         self,
         names: list[str],

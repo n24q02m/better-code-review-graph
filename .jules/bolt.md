@@ -19,3 +19,7 @@
 **Learning:** Direct SQL execution within a loop structure causes N+1 query patterns, leading to significant performance degradation as the data set grows. In SQLite, this is especially impactful during write-heavy operations like temporal closing.
 
 **Action:** Refactor row-by-row updates into batch operations using `UPDATE ... WHERE ... IN (SELECT value FROM json_each(?))`. This pushes the filtering logic into the database engine and reduces the overhead of multiple `execute()` calls and potential transaction management. Always use `cursor.rowcount` to track affected rows when removing the manual loop counter.
+
+## 2024-07-17 - Prevent N+1 queries when traversing graphs from multiple source nodes
+**Learning:** Resolving targets (e.g. callees, imports, children, inheritors) for graph visualization/traversal previously resulted in N+1 database roundtrips. When expanding multiple edges, executing `get_edges_by_source` or `get_edges_by_target` per original node generated excessive SQLite overhead, especially for dense repositories.
+**Action:** Replace looped individual lookups with batched SQLite queries utilizing `search_edges_by_source_names` or `search_edges_by_target_names` which process multiple node identifiers in a single roundtrip via `json_each`.
