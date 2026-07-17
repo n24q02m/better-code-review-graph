@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -204,13 +203,20 @@ def summarize_node(
     # Lazy import: litellm costs ~1-2s on first import.
     from mcp_core.llm import completion
 
+    from .credential_state import config_value_for_current_request
+
     try:
+        # Resolve the custom endpoint request-scoped (per-sub bucket in HTTP
+        # multi-user, os.environ in stdio/single-user) via the same accessor
+        # the caller uses for the key, so one sub's gateway URL never serves
+        # another. Reading os.environ here would make the per-sub endpoint a
+        # silent no-op in multi-user mode. SSRF-vetted downstream in dispatch.
         # Normalise empty string to None: mcp_core.llm forwards a non-None
         # api_key to litellm, which suppresses provider env-var fallback (401).
         response = completion(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            api_base=os.environ.get("LLM_API_BASE") or None,
+            api_base=config_value_for_current_request("LLM_API_BASE") or None,
             api_key=api_key or None,
         )
     except Exception as exc:

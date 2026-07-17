@@ -40,6 +40,11 @@ CLOUD_KEYS = [
     "COHERE_API_KEY",
     "CO_API_KEY",
     "GOOGLE_VERTEX_EXPRESS_API_KEY",
+    # Per-sub custom endpoints (SSRF-vetted in mcp_core.llm dispatch). Listed
+    # here so the per-sub bucket carries them and the os.environ filter in
+    # credentials_for_current_request keeps them, same as the provider keys.
+    "EMBEDDING_API_BASE",
+    "LLM_API_BASE",
 ]
 
 

@@ -340,18 +340,25 @@ class CloudEmbeddingBackend:
         # Lazy import: litellm costs ~1-2s on first import.
         from mcp_core.llm import embedding
 
+        from .credential_state import config_value_for_current_request
+
         kwargs: dict[str, Any] = {}
         if dimensions:
             kwargs["dimensions"] = dimensions
         if self._provider == "cohere":
             kwargs["input_type"] = "search_document"
 
+        # Resolve the custom endpoint request-scoped (per-sub bucket in HTTP
+        # multi-user, os.environ in stdio/single-user) via the same accessor
+        # as the key, so one sub's gateway URL never serves another. Reading
+        # os.getenv here would make the per-sub endpoint a silent no-op in
+        # multi-user mode. SSRF-vetted downstream in mcp_core.llm dispatch.
         # Normalise empty string to None: mcp_core.llm forwards a non-None
         # api_key to litellm, which suppresses provider env-var fallback (401).
         resp = embedding(
             model=self._litellm_model(),
             input=texts,
-            api_base=os.getenv("EMBEDDING_API_BASE") or None,
+            api_base=config_value_for_current_request("EMBEDDING_API_BASE") or None,
             api_key=self._resolve_api_key() or None,
             **kwargs,
         )
