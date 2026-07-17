@@ -19,6 +19,45 @@ permissions:
   pull-requests: write
 
 jobs:
+  # ============================================================================
+  # PR Title Lint (Conventional Commits subset)
+  # ============================================================================
+  # Squash-merge uses the PR title as the commit subject and bypasses the
+  # local enforce-commit pre-commit commit-msg hook (bot PRs never run local
+  # git hooks). Without a server-side check, a bot title like
+  # "Sentinel: [HIGH] Fix ..." squash-merges with a non-conventional subject
+  # -> PSR's commit parser silently ignores it -> no version bump, even for a
+  # security fix. This job only surfaces a red check; it does not block
+  # merge (no required-status-check rule), so the person merging still must
+  # retype the squash-commit subject to start with fix:/feat: when this is red.
+  pr-title:
+    name: Validate PR title (Conventional Commits subset)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        with:
+          egress-policy: audit
+
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Repo rule: only feat: and fix: (feedback_commit_prefix.md). This is
+          # narrower than PSR's own default allowed_tags (which also treats
+          # perf: as patch-worthy) -- we enforce the project convention here,
+          # not just what PSR itself would accept.
+          types: |
+            fix
+            feat
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject must not start with an uppercase character.
+
   lint-and-test:
     name: Lint & Test (${{ matrix.os }})
     if: github.event_name == 'pull_request' || github.event_name == 'push'
