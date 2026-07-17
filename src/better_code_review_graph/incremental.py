@@ -203,6 +203,9 @@ def is_valid_commit(repo_root: Path, sha: str) -> bool:
     """Return True if sha identifies a reachable commit object."""
     if not sha:
         return False
+    # SECURITY: Prevent argument injection to git cat-file
+    if sha.startswith("-"):
+        return False
     result = _run_git(repo_root, ["cat-file", "-e", f"{sha}^{{commit}}"])
     return result is not None and result.returncode == 0
 
