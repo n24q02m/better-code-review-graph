@@ -36,7 +36,7 @@ jobs:
       is_prerelease: ${{ steps.release.outputs.is_prerelease }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
@@ -71,7 +71,7 @@ jobs:
       # learn the version it WOULD publish, so the PyPI-collision guard below can fire
       # BEFORE the real run creates a git tag or GitHub Release. Same action + SHA and
       # same prerelease inputs as the real step, run against the same untouched checkout.
-      - uses: python-semantic-release/python-semantic-release@350c48fcb3ffcdfd2e0a235206bc2ecea6b69df0 # v10
+      - uses: python-semantic-release/python-semantic-release@39dd2052f2ce8282a5d932c31d58a2ca06d2550e # v10
         id: dryrun
         with:
           github_token: ${{ steps.app-token.outputs.token }}
@@ -115,14 +115,14 @@ jobs:
           echo "::error::Could not verify whether ${PKG}==${COMPUTED_VERSION} exists on PyPI: unexpected HTTP status ${http_code} from ${URL} (likely a transient network/registry error, rate limit, or outage). Refusing to proceed so a genuine collision cannot slip through as a false 'free'. Re-run the release once the registry is reachable."
           exit 1
 
-      - uses: python-semantic-release/python-semantic-release@350c48fcb3ffcdfd2e0a235206bc2ecea6b69df0 # v10
+      - uses: python-semantic-release/python-semantic-release@39dd2052f2ce8282a5d932c31d58a2ca06d2550e # v10
         id: release
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           prerelease: ${{ inputs.release_type == 'beta' }}
           prerelease_token: beta
 
-      - uses: python-semantic-release/publish-action@310a9983a0ae878b29f3aac778d7c77c1db27378 # v10
+      - uses: python-semantic-release/publish-action@5a5718ce47b892ef699f2972dae122297771d641 # v10
         if: steps.release.outputs.released == 'true'
         with:
           github_token: ${{ steps.app-token.outputs.token }}
@@ -136,7 +136,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
@@ -166,7 +166,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
@@ -207,7 +207,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
@@ -269,7 +269,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
@@ -309,7 +309,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2
         with:
           egress-policy: audit
 
