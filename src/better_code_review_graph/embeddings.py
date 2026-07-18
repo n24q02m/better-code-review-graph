@@ -69,9 +69,47 @@ _RETRYABLE_PATTERNS = (
 )
 
 
+# Patterns marking a PERMANENT provider error (invalid request, unsupported
+# capability, auth, not-found). litellm frequently re-wraps these as
+# APIConnectionError -- whose class name contains "connection" and whose
+# status_code is a hardcoded 500 -- so classification MUST look at the message
+# semantics, not the exception class or status code. Retrying a permanent error
+# just re-sends the same doomed request and burns the whole retry budget before
+# failing.
+_PERMANENT_PATTERNS = (
+    "not a valid",
+    "not support",
+    "unsupported",
+    "invalid request",
+    "invalid_request",
+    "invalid api key",
+    "output_dimension",
+    "unauthorized",
+    "forbidden",
+    "authentication",
+    "no such model",
+    "model not found",
+    "does not exist",
+    "401",
+    "403",
+    "404",
+    "422",
+)
+
+
 def _is_retryable(exc: Exception) -> bool:
-    """Check if an exception is transient and worth retrying."""
+    """Return True only for TRANSIENT errors worth retrying.
+
+    Classifies on error semantics, NOT the exception class name or a synthetic
+    status_code: litellm wraps a provider's permanent 4xx (e.g. a 422
+    "unsupported output_dimension", a 401 bad key, a 404 unknown model) as
+    ``APIConnectionError`` whose repr contains "connection" and whose
+    ``status_code`` is a hardcoded 500 -- matching either would retry a request
+    that can never succeed, burning the full retry budget before failing loudly.
+    """
     msg = str(exc).lower()
+    if any(p in msg for p in _PERMANENT_PATTERNS):
+        return False
     return any(p in msg for p in _RETRYABLE_PATTERNS)
 
 
