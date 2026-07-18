@@ -451,19 +451,36 @@ def _snapshot_pre_functions(
     store: GraphStore,
     all_files: set[str],
 ) -> dict[str, dict[str, str]]:
-    """Create per-file snapshot of pre-update Function qualified_names."""
+    """Create per-file snapshot of pre-update Function qualified_names.
+
+    Bolt: Optimized to use a single batched query to fetch only the needed columns,
+    avoiding the overhead of N+1 database calls and materializing full GraphNode
+    objects (including large source_text fields) just to read hashes.
+    """
     pre_functions: dict[str, dict[str, str]] = {}
     repo_resolved = repo_root.resolve()
+    valid_abs_paths = []
+    abs_to_rel = {}
+
     for rel_path in all_files:
+        pre_functions[rel_path] = {}
         abs_pre = (repo_root / rel_path).resolve()
         if not abs_pre.is_relative_to(repo_resolved):
             continue
-        existing = store.get_nodes_by_file(str(abs_pre))
-        pre_functions[rel_path] = {
-            n.qualified_name: (n.file_hash or "")
-            for n in existing
-            if n.kind == "Function"
-        }
+        abs_str = str(abs_pre)
+        valid_abs_paths.append(abs_str)
+        abs_to_rel[abs_str] = rel_path
+
+    if not valid_abs_paths:
+        return pre_functions
+
+    # Batch query for all needed files, fetching only the required columns
+    results = store.get_function_hashes_by_files(valid_abs_paths)
+
+    for row in results:
+        rel_path = abs_to_rel[row["file_path"]]
+        pre_functions[rel_path][row["qualified_name"]] = row["file_hash"] or ""
+
     return pre_functions
 
 
@@ -500,8 +517,11 @@ def _update_files_in_store(
         try:
             source_preview = abs_path.read_bytes()
             fhash = hashlib.sha256(source_preview).hexdigest()
-            existing_nodes = store.get_nodes_by_file(str(abs_path))
-            if existing_nodes and existing_nodes[0].file_hash == fhash:
+
+            # Bolt: Check file_hash directly via SQL to avoid materializing all
+            # GraphNode objects for unchanged files.
+            existing_hash = store.get_file_hash(str(abs_path))
+            if existing_hash == fhash:
                 continue
 
             n_nodes, n_edges = _update_single_file(
