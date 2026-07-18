@@ -19,7 +19,7 @@ from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
 
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_global_git_config() -> None:
-    """Strip global git config so test-created repos commit deterministically.
+    """Isolate test-created git repos from the ambient git environment.
 
     Without this, tests that ``git init`` a throwaway repo and run
     ``git commit`` inherit the developer/CI ``commit.gpgsign``,
@@ -28,8 +28,26 @@ def _isolate_global_git_config() -> None:
     sandboxed test environment (e.g. inside a CI runner image that
     pre-configures SSH signing), the commit aborts with a confusing
     "signing failed" error unrelated to the test logic.
+
+    We also strip the per-invocation ``GIT_*`` location vars that ``git``
+    injects into hook processes (``GIT_DIR`` / ``GIT_INDEX_FILE`` /
+    ``GIT_WORK_TREE`` / ``GIT_PREFIX`` / ``GIT_OBJECT_DIRECTORY`` /
+    ``GIT_COMMON_DIR``). Otherwise, when the suite runs as the ``pytest``
+    pre-commit hook, those vars point every ``git`` subprocess in
+    ``test_temporal_migration`` back at the parent repo's (locked) index
+    instead of the tmp repo it just created -> ``git commit`` exits 1 and
+    the tests error. Popping them makes the git-subprocess tests hermetic.
     """
     os.environ.setdefault("GIT_CONFIG_GLOBAL", "/dev/null")
+    for var in (
+        "GIT_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_WORK_TREE",
+        "GIT_PREFIX",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_COMMON_DIR",
+    ):
+        os.environ.pop(var, None)
 
 
 @pytest.fixture(scope="session", autouse=True)

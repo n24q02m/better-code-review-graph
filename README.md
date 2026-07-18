@@ -57,8 +57,10 @@ v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + ed
 
 - [v2.0 migration (BREAKING)](#v20-migration-breaking)
 - [Install](#install)
+- [Smithery](#smithery)
 - [Configuration](#configuration)
 - [Tools](#tools)
+- [CLI](#cli)
 - [Features](#features)
 - [Comparison](#comparison)
 - [Security](#security)
@@ -107,6 +109,22 @@ pip install 'better-code-review-graph[security]'
 Full per-client setup (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, raw
 `mcp.json`) is at
 **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**.
+
+## Smithery
+
+The repo ships a [`smithery.yaml`](smithery.yaml) so the server can be built and
+run through [Smithery](https://smithery.ai). It deploys over **stdio** and needs
+no startup configuration -- the config schema is empty, and any optional cloud
+embedding/summary keys are supplied at runtime through the server's own config
+flow (see [Configuration](#configuration) below). The launch command is the same
+`uvx` invocation as a local install:
+
+```yaml
+startCommand:
+  type: stdio
+  commandFunction: |-
+    (config) => ({ command: 'uvx', args: ['--python', '3.13', 'better-code-review-graph'] })
+```
 
 ## Configuration
 
@@ -270,6 +288,40 @@ Registered automatically from [mcp-core](https://github.com/n24q02m/mcp-core).
 In HTTP mode it returns `<PUBLIC_URL>/authorize` so the agent can re-open the
 browser setup form (e.g. after credential expiry); in stdio mode it returns
 `status: 'stdio_unsupported'`.
+
+## CLI
+
+Running `better-code-review-graph` with **no arguments** starts the MCP server
+over stdio (this is what an MCP client launches). A leading positional argument
+routes to a subcommand instead -- handy for building or embedding the graph
+directly from a shell or CI step, before any MCP client connects. Run these with
+`uvx` (or `uv run` from a source checkout):
+
+```bash
+# Start the MCP server over stdio (default -- no subcommand)
+uvx better-code-review-graph
+
+# Build (or incrementally update) the graph for the current repo
+uvx better-code-review-graph graph build
+
+# Full re-parse of every file instead of a git-diff incremental
+uvx better-code-review-graph graph build --full-rebuild
+
+# Compute embeddings for semantic search (local ONNX by default)
+uvx better-code-review-graph graph embed
+```
+
+| Command | Description |
+|:--------|:------------|
+| `graph build` | Full or incremental graph build. `--full-rebuild` re-parses every file; `--base <ref>` sets the git ref for the incremental diff (default `HEAD~1`); `--repo-root <path>` overrides the auto-detected repo root. |
+| `graph embed` | Compute vector embeddings for the current graph (local ONNX or the configured cloud chain). Accepts `--repo-root`. |
+| `config status` / `config delete` | Show or remove the stored credential config (`--yes` skips the delete confirmation). |
+| `doctor` | Environment self-check: Python version, credential backend, store-dir writability, config and relay state. |
+| `relay status` / `relay open` / `relay reset` | Inspect, open, or clear the browser relay setup session (HTTP mode). |
+
+The `graph build` and `graph embed` subcommands print a JSON result and exit
+non-zero on error. The `config`, `doctor`, and `relay` subcommands come from the
+shared [mcp-core](https://github.com/n24q02m/mcp-core) CLI.
 
 ## Features
 

@@ -229,8 +229,8 @@ class TestConfigStatusVersionFallback:
         from better_code_review_graph.server import config
 
         with patch("better_code_review_graph.server._config_status") as mock_status:
-            mock_status.return_value = json.dumps({"status": "ok", "version": "dev"})
-            result = json.loads(await config(action="status"))
+            mock_status.return_value = {"status": "ok", "version": "dev"}
+            result = await config(action="status")
             assert result["version"] == "dev"
 
     def test_version_fallback_direct(self):
@@ -238,7 +238,7 @@ class TestConfigStatusVersionFallback:
         from better_code_review_graph.server import _config_status
 
         with patch("better_code_review_graph.server._pkg_version", "dev"):
-            result = json.loads(_config_status(repo_root=None))
+            result = _config_status(repo_root=None)
             assert result["version"] == "dev"
 
 
@@ -564,9 +564,7 @@ class TestConfigCacheClearFallback:
         from better_code_review_graph.server import config
 
         # Use a nonexistent path that will trigger RuntimeError
-        result = json.loads(
-            await config(action="cache_clear", repo_root="/nonexistent/path/xyz")
-        )
+        result = await config(action="cache_clear", repo_root="/nonexistent/path/xyz")
         assert result["status"] == "cache cleared"
         assert result["embeddings_removed"] == 0
 
@@ -581,9 +579,7 @@ class TestConfigStatusFallback:
         """Cover lines 381-382: _config_status handles RuntimeError."""
         from better_code_review_graph.server import config
 
-        result = json.loads(
-            await config(action="status", repo_root="/nonexistent/path/xyz")
-        )
+        result = await config(action="status", repo_root="/nonexistent/path/xyz")
         # Should return ok with 0 nodes (no graph found)
         assert result["status"] == "ok"
         assert result.get("total_nodes", 0) == 0

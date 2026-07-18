@@ -12,6 +12,7 @@ import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from importlib.resources import files
+from typing import Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -28,6 +29,7 @@ from .tools import (
     get_docs_section,
     get_impact_radius,
     get_review_context,
+    import_graph_dispatch,
     list_graph_stats,
     query_graph,
     renamed_in_diff,
@@ -101,6 +103,7 @@ mcp = FastMCP(
         "Actions: build (full_rebuild, base, repo_root), update (base, repo_root), "
         "stats (repo_root), embed (repo_root), "
         "export (format, output_path, repo_root), "
+        "import (import_path, repo_root), "
         "summarize (max_nodes, repo_root). "
         "Use `help` tool for full docs."
     ),
@@ -119,9 +122,10 @@ def graph(
     repo_root: str | None = None,
     format: str = "graphml",
     output_path: str | None = None,
+    import_path: str | None = None,
     max_nodes: int = 500,
     roots: list[str] | None = None,
-) -> str:
+) -> dict[str, Any]:
     """Build, update, and manage the code knowledge graph.
 
     Actions (required params -> optional):
@@ -135,8 +139,15 @@ def graph(
     - stats (-> repo_root): Node/edge counts, languages, embedding status
     - embed (-> repo_root): Compute vector embeddings for semantic search
     - export (-> format='graphml', output_path=None, repo_root): Export graph
-        in graphml | json-ld | dot | cypher format. Writes to output_path when
-        provided, otherwise returns payload inline.
+        in graphml | json-ld | dot | cypher | crg format. Writes to output_path
+        when provided, otherwise returns payload inline. ``crg`` (Task 6) is
+        the only format that round-trips back into a store via ``import``.
+    - import (-> import_path, repo_root): Merge a `crg`-format export (from
+        ``export`` action, ``format='crg'``) into the current repo's graph.
+        Imported node/edge ids are namespaced by the exporting repo_id so
+        they never collide with locally-parsed nodes; re-importing the same
+        file is idempotent. Built for artifact portability (build+export on
+        a CI runner, import on a laptop).
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
         Function nodes. Models come from the SUMMARY_MODELS chain (provider
         inferred from the model prefix); when unset a key-gated default
@@ -145,36 +156,29 @@ def graph(
     """
     match action:
         case "build":
-            return _json(
-                build_or_update_graph(
-                    full_rebuild=full_rebuild,
-                    repo_root=repo_root,
-                    base=base,
-                    roots=roots,
-                )
+            return build_or_update_graph(
+                full_rebuild=full_rebuild,
+                repo_root=repo_root,
+                base=base,
+                roots=roots,
             )
         case "update":
-            return _json(
-                build_or_update_graph(
-                    full_rebuild=False, repo_root=repo_root, base=base
-                )
+            return build_or_update_graph(
+                full_rebuild=False, repo_root=repo_root, base=base
             )
         case "stats":
-            return _json(list_graph_stats(repo_root=repo_root))
+            return list_graph_stats(repo_root=repo_root)
         case "embed":
             result = embed_graph(repo_root=repo_root)
-            result = _maybe_include_setup_hint(result)
-            return _json(result)
+            return _maybe_include_setup_hint(result)
         case "export":
-            return _json(
-                export_graph_dispatch(
-                    repo_root=repo_root, format=format, output_path=output_path
-                )
+            return export_graph_dispatch(
+                repo_root=repo_root, format=format, output_path=output_path
             )
+        case "import":
+            return import_graph_dispatch(repo_root=repo_root, import_path=import_path)
         case "summarize":
-            return _json(
-                summarize_graph_dispatch(repo_root=repo_root, max_nodes=max_nodes)
-            )
+            return summarize_graph_dispatch(repo_root=repo_root, max_nodes=max_nodes)
         case _:
             import difflib
 
@@ -182,18 +186,17 @@ def graph(
                 "build",
                 "embed",
                 "export",
+                "import",
                 "stats",
                 "summarize",
                 "update",
             ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
+            return {
+                "error": f"Unknown action '{action}'.{suggestion}",
+                "valid_actions": valid_actions,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +254,7 @@ def query(
     as_of: str = "",
     from_sha: str = "",
     to_sha: str = "",
-) -> str:
+) -> dict[str, Any]:
     """Query the code knowledge graph for relationships, search, and impact analysis.
 
     Actions (required params -> optional):
@@ -273,36 +276,32 @@ def query(
     match action:
         case "query":
             if not pattern:
-                return _json(
-                    {
-                        "error": "pattern is required for query action",
-                        "valid_patterns": [
-                            "callers_of",
-                            "callees_of",
-                            "imports_of",
-                            "importers_of",
-                            "children_of",
-                            "tests_for",
-                            "inheritors_of",
-                            "file_summary",
-                        ],
-                    }
-                )
+                return {
+                    "error": "pattern is required for query action",
+                    "valid_patterns": [
+                        "callers_of",
+                        "callees_of",
+                        "imports_of",
+                        "importers_of",
+                        "children_of",
+                        "tests_for",
+                        "inheritors_of",
+                        "file_summary",
+                    ],
+                }
             if not target:
-                return _json({"error": "target is required for query action"})
-            return _json(
-                query_graph(
-                    pattern=pattern,
-                    target=target,
-                    repo_root=repo_root,
-                    languages=languages,
-                    repo=repo,
-                    as_of=as_of,
-                )
+                return {"error": "target is required for query action"}
+            return query_graph(
+                pattern=pattern,
+                target=target,
+                repo_root=repo_root,
+                languages=languages,
+                repo=repo,
+                as_of=as_of,
             )
         case "search":
             if not search_query:
-                return _json({"error": "search_query is required for search action"})
+                return {"error": "search_query is required for search action"}
             result = semantic_search_nodes(
                 query=search_query,
                 kind=kind,
@@ -311,56 +310,45 @@ def query(
                 repo=repo,
                 as_of=as_of,
             )
-            result = _maybe_include_setup_hint(result)
-            return _json(result)
+            return _maybe_include_setup_hint(result)
         case "impact":
-            return _json(
-                get_impact_radius(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    max_results=max_results,
-                    repo_root=repo_root,
-                    base=base,
-                    max_payload_bytes=max_payload_bytes,
-                    repo=repo,
-                    as_of=as_of,
-                )
+            return get_impact_radius(
+                changed_files=changed_files,
+                max_depth=max_depth,
+                max_results=max_results,
+                repo_root=repo_root,
+                base=base,
+                max_payload_bytes=max_payload_bytes,
+                repo=repo,
+                as_of=as_of,
             )
         case "large_functions":
-            return _json(
-                find_large_functions(
-                    min_lines=min_lines,
-                    kind=kind,
-                    file_path_pattern=file_path_pattern,
-                    limit=limit,
-                    repo_root=repo_root,
-                    repo=repo,
-                )
+            return find_large_functions(
+                min_lines=min_lines,
+                kind=kind,
+                file_path_pattern=file_path_pattern,
+                limit=limit,
+                repo_root=repo_root,
+                repo=repo,
             )
         case "spot_check":
-            return _json(
-                spot_check_last_callers(
-                    n=n,
-                    repo_root=repo_root,
-                    context_lines=context_lines,
-                )
+            return spot_check_last_callers(
+                n=n,
+                repo_root=repo_root,
+                context_lines=context_lines,
             )
         case "renamed_in_diff":
-            return _json(
-                renamed_in_diff(
-                    base=base,
-                    changed_files=changed_files,
-                    repo_root=repo_root,
-                )
+            return renamed_in_diff(
+                base=base,
+                changed_files=changed_files,
+                repo_root=repo_root,
             )
         case "diff":
-            return _json(
-                diff_graph(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    repo=repo,
-                )
+            return diff_graph(
+                repo_root=repo_root,
+                from_sha=from_sha,
+                to_sha=to_sha,
+                repo=repo,
             )
         case _:
             import difflib
@@ -376,12 +364,10 @@ def query(
             ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
+            return {
+                "error": f"Unknown action '{action}'.{suggestion}",
+                "valid_actions": valid_actions,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +409,7 @@ def review(
     from_sha: str = "",
     to_sha: str = "",
     show_line_shifts: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Generate focused review context for code changes.
 
     Actions:
@@ -467,27 +453,23 @@ def review(
     """
     match action:
         case "context":
-            return _json(
-                get_review_context(
-                    changed_files=changed_files,
-                    max_depth=max_depth,
-                    include_source=include_source,
-                    max_lines_per_file=max_lines_per_file,
-                    repo_root=repo_root,
-                    base=base,
-                    languages=languages,
-                    repo=repo,
-                )
+            return get_review_context(
+                changed_files=changed_files,
+                max_depth=max_depth,
+                include_source=include_source,
+                max_lines_per_file=max_lines_per_file,
+                repo_root=repo_root,
+                base=base,
+                languages=languages,
+                repo=repo,
             )
         case "delta":
-            return _json(
-                review_delta(
-                    repo_root=repo_root,
-                    from_sha=from_sha,
-                    to_sha=to_sha,
-                    show_line_shifts=show_line_shifts,
-                    repo=repo,
-                )
+            return review_delta(
+                repo_root=repo_root,
+                from_sha=from_sha,
+                to_sha=to_sha,
+                show_line_shifts=show_line_shifts,
+                repo=repo,
             )
         case _:
             import difflib
@@ -495,12 +477,10 @@ def review(
             valid_actions = ["context", "delta"]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
+            return {
+                "error": f"Unknown action '{action}'.{suggestion}",
+                "valid_actions": valid_actions,
+            }
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +512,7 @@ async def config(
     value: str | None = None,
     repo_root: str | None = None,
     force: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Server configuration, status, and credential setup.
 
     Config actions:
@@ -552,14 +532,12 @@ async def config(
             return _config_status(repo_root)
         case "set":
             if not key:
-                return _json(
-                    {
-                        "error": "key is required for set action",
-                        "valid_keys": ["log_level"],
-                    }
-                )
+                return {
+                    "error": "key is required for set action",
+                    "valid_keys": ["log_level"],
+                }
             if value is None:
-                return _json({"error": "value is required for set action"})
+                return {"error": "value is required for set action"}
             return _config_set(key, value)
         case "cache_clear":
             return _config_cache_clear(repo_root)
@@ -583,48 +561,40 @@ async def config(
             if _providers and _state != "configured":
                 _state = "configured"
 
-            return _json(
-                {
-                    "state": _state,
-                    "setup_url": _cs.get_setup_url(),
-                    "cloud_keys_in_env": _env_keys,
-                    "providers_configured": _providers,
-                }
-            )
+            return {
+                "state": _state,
+                "setup_url": _cs.get_setup_url(),
+                "cloud_keys_in_env": _env_keys,
+                "providers_configured": _providers,
+            }
         case "setup_start":
             from .credential_state import CredentialState, get_state
 
             if get_state() == CredentialState.CONFIGURED and not force:
-                return _json(
-                    {
-                        "status": "already_configured",
-                        "message": "Already configured. Use force=true to reconfigure.",
-                    }
-                )
+                return {
+                    "status": "already_configured",
+                    "message": "Already configured. Use force=true to reconfigure.",
+                }
             # In stdio mode (default after spec 2026-05-01) the server reads
             # API keys from env vars only; the browser-based relay form is
             # served by the HTTP-mode entry point at <PUBLIC_URL>/authorize.
             public_url = os.environ.get("PUBLIC_URL")
             if public_url:
                 url = f"{public_url.rstrip('/')}/authorize"
-                return _json(
-                    {
-                        "status": "setup_started",
-                        "setup_url": url,
-                        "message": "Open this URL to configure API keys.",
-                    }
-                )
-            return _json(
-                {
-                    "status": "stdio_mode",
-                    "message": (
-                        "Stdio mode reads API keys from env vars only. "
-                        "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
-                        "COHERE_API_KEY in the plugin config, or switch to HTTP "
-                        "mode to use the browser-based setup form."
-                    ),
+                return {
+                    "status": "setup_started",
+                    "setup_url": url,
+                    "message": "Open this URL to configure API keys.",
                 }
-            )
+            return {
+                "status": "stdio_mode",
+                "message": (
+                    "Stdio mode reads API keys from env vars only. "
+                    "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
+                    "COHERE_API_KEY in the plugin config, or switch to HTTP "
+                    "mode to use the browser-based setup form."
+                ),
+            }
         case "setup_skip":
             from mcp_core import set_local_mode
 
@@ -632,22 +602,18 @@ async def config(
 
             set_local_mode(SERVER_NAME)
             set_state(CredentialState.LOCAL)
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Local mode set. Relay will not trigger on restart.",
-                }
-            )
+            return {
+                "status": "ok",
+                "message": "Local mode set. Relay will not trigger on restart.",
+            }
         case "setup_reset":
             from .credential_state import reset_state
 
             reset_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "message": "Credentials cleared. Next tool call will offer setup.",
-                }
-            )
+            return {
+                "status": "ok",
+                "message": "Credentials cleared. Next tool call will offer setup.",
+            }
         case "setup_complete":
             from .credential_state import (
                 get_state as _get_state,
@@ -658,13 +624,11 @@ async def config(
 
             resolve_credential_state()
             state = _get_state()
-            return _json(
-                {
-                    "status": "ok",
-                    "state": state.value,
-                    "message": "Credential state refreshed.",
-                }
-            )
+            return {
+                "status": "ok",
+                "state": state.value,
+                "message": "Credential state refreshed.",
+            }
         case _:
             import difflib
 
@@ -680,16 +644,14 @@ async def config(
             ]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
+            return {
+                "error": f"Unknown action '{action}'.{suggestion}",
+                "valid_actions": valid_actions,
+            }
 
 
-def _config_status(repo_root: str | None) -> str:
-    """Return server status as JSON."""
+def _config_status(repo_root: str | None) -> dict[str, Any]:
+    """Return server status."""
     from .tools import _get_store
 
     version = _pkg_version
@@ -710,66 +672,60 @@ def _config_status(repo_root: str | None) -> str:
             finally:
                 emb_store.close()
 
-            return _json(
-                {
-                    "status": "ok",
-                    "version": version,
-                    "graph_path": str(db_path),
-                    "embedding_backend": resolve_backend(),
-                    "total_nodes": stats.total_nodes,
-                    "total_edges": stats.total_edges,
-                    "files_count": stats.files_count,
-                    "languages": stats.languages,
-                    "embeddings_count": emb_count,
-                    "last_updated": stats.last_updated,
-                }
-            )
+            return {
+                "status": "ok",
+                "version": version,
+                "graph_path": str(db_path),
+                "embedding_backend": resolve_backend(),
+                "total_nodes": stats.total_nodes,
+                "total_edges": stats.total_edges,
+                "files_count": stats.files_count,
+                "languages": stats.languages,
+                "embeddings_count": emb_count,
+                "last_updated": stats.last_updated,
+            }
         finally:
             store.close()
     except (RuntimeError, ValueError):
-        return _json(
-            {
-                "status": "ok",
-                "version": version,
-                "graph_path": None,
-                "embedding_backend": resolve_backend(),
-                "total_nodes": 0,
-                "total_edges": 0,
-                "message": "No graph found. Run graph action=build first.",
-            }
-        )
+        return {
+            "status": "ok",
+            "version": version,
+            "graph_path": None,
+            "embedding_backend": resolve_backend(),
+            "total_nodes": 0,
+            "total_edges": 0,
+            "message": "No graph found. Run graph action=build first.",
+        }
 
 
-def _config_set(key: str, value: str) -> str:
+def _config_set(key: str, value: str) -> dict[str, Any]:
     """Update a runtime setting."""
     import logging
 
     valid_keys = {"log_level"}
     if key not in valid_keys:
-        return _json({"error": f"Invalid key: {key}", "valid_keys": sorted(valid_keys)})
+        return {"error": f"Invalid key: {key}", "valid_keys": sorted(valid_keys)}
 
     if key == "log_level":
         level = value.upper()
         if level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
-            return _json(
-                {
-                    "error": f"Invalid log level: {value}",
-                    "valid_levels": [
-                        "DEBUG",
-                        "INFO",
-                        "WARNING",
-                        "ERROR",
-                        "CRITICAL",
-                    ],
-                }
-            )
+            return {
+                "error": f"Invalid log level: {value}",
+                "valid_levels": [
+                    "DEBUG",
+                    "INFO",
+                    "WARNING",
+                    "ERROR",
+                    "CRITICAL",
+                ],
+            }
         logging.getLogger().setLevel(level)
-        return _json({"status": "updated", "key": key, "value": level})
+        return {"status": "updated", "key": key, "value": level}
 
-    return _json({"error": f"Unhandled key: {key}"})  # pragma: no cover
+    return {"error": f"Unhandled key: {key}"}  # pragma: no cover
 
 
-def _config_cache_clear(repo_root: str | None) -> str:
+def _config_cache_clear(repo_root: str | None) -> dict[str, Any]:
     """Clear all embeddings from the graph."""
     from .tools import _get_store
 
@@ -783,18 +739,16 @@ def _config_cache_clear(repo_root: str | None) -> str:
             try:
                 count_before = emb_store.count()
                 emb_store.clear()
-                return _json(
-                    {
-                        "status": "cache cleared",
-                        "embeddings_removed": count_before,
-                    }
-                )
+                return {
+                    "status": "cache cleared",
+                    "embeddings_removed": count_before,
+                }
             finally:
                 emb_store.close()
         finally:
             store.close()
     except (RuntimeError, ValueError):
-        return _json({"status": "cache cleared", "embeddings_removed": 0})
+        return {"status": "cache cleared", "embeddings_removed": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -897,7 +851,7 @@ def security(
     format: str = "json",
     rule_id: str | None = None,
     remove: bool = False,
-) -> str:
+) -> dict[str, Any]:
     """Security scanning tool: scan / report / suppress / rule_list.
 
     Actions (required params -> optional):
@@ -914,27 +868,25 @@ def security(
     """
     match action:
         case "scan":
-            return _json(security_scan(repo_root=repo_root, engine=engine))
+            return security_scan(repo_root=repo_root, engine=engine)
         case "report":
-            return _json(security_report(repo_root=repo_root, format=format))
+            return security_report(repo_root=repo_root, format=format)
         case "suppress":
-            return _json(
-                security_suppress(repo_root=repo_root, rule_id=rule_id, remove=remove)
+            return security_suppress(
+                repo_root=repo_root, rule_id=rule_id, remove=remove
             )
         case "rule_list":
-            return _json(security_rule_list(engine=engine))
+            return security_rule_list(engine=engine)
         case _:
             import difflib
 
             valid_actions = ["report", "rule_list", "scan", "suppress"]
             closest = difflib.get_close_matches(action, valid_actions, n=1)
             suggestion = f" Did you mean '{closest[0]}'?" if closest else ""
-            return _json(
-                {
-                    "error": f"Unknown action '{action}'.{suggestion}",
-                    "valid_actions": valid_actions,
-                }
-            )
+            return {
+                "error": f"Unknown action '{action}'.{suggestion}",
+                "valid_actions": valid_actions,
+            }
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,6 @@ Covers under-tested code paths added by feat commits 14355be..3e1511c:
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -490,13 +489,11 @@ class TestServerSpotCheckAndRenamedInDiff:
             "better_code_review_graph.server.spot_check_last_callers"
         ) as mock_fn:
             mock_fn.return_value = {"status": "ok", "samples": []}
-            result = json.loads(
-                query(
-                    action="spot_check",
-                    n=5,
-                    context_lines=4,
-                    repo_root="/test",
-                )
+            result = query(
+                action="spot_check",
+                n=5,
+                context_lines=4,
+                repo_root="/test",
             )
             mock_fn.assert_called_once_with(n=5, repo_root="/test", context_lines=4)
         assert result["status"] == "ok"
@@ -506,13 +503,11 @@ class TestServerSpotCheckAndRenamedInDiff:
 
         with patch("better_code_review_graph.server.renamed_in_diff") as mock_fn:
             mock_fn.return_value = {"status": "ok", "shifts": []}
-            result = json.loads(
-                query(
-                    action="renamed_in_diff",
-                    base="HEAD~3",
-                    changed_files=["a.py"],
-                    repo_root="/test",
-                )
+            result = query(
+                action="renamed_in_diff",
+                base="HEAD~3",
+                changed_files=["a.py"],
+                repo_root="/test",
             )
             mock_fn.assert_called_once_with(
                 base="HEAD~3",
@@ -546,6 +541,6 @@ class TestServerSpotCheckAndRenamedInDiff:
             patch.object(cs, "get_state", return_value=cs.CredentialState.LOCAL),
         ):
             mock_store.return_value.load.return_value = {}
-            result = json.loads(asyncio.run(config(action="setup_status")))
+            result = asyncio.run(config(action="setup_status"))
         assert result["state"] == "local"
         assert result["providers_configured"] == []

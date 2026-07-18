@@ -39,6 +39,22 @@ def _key_field(key: str, label: str, ph: str, url: str) -> dict[str, Any]:
     }
 
 
+def _api_base_field(key: str, label: str, help_text: str) -> dict[str, Any]:
+    # Always-visible (not derived): the renderer only reveals a derived field
+    # when a model chip derives that exact provider ENV key, and no model
+    # derives *_API_BASE, so a derived endpoint field would stay hidden. The
+    # optional badge comes from required:false. Value is SSRF-vetted per-sub in
+    # mcp_core.llm dispatch before any request.
+    return {
+        "key": key,
+        "label": label,
+        "type": "url",
+        "placeholder": "https://gateway.example/…",
+        "helpText": help_text,
+        "required": False,
+    }
+
+
 RELAY_SCHEMA: dict[str, Any] = {
     "server": "better-code-review-graph",
     "displayName": "Code Review Graph",
@@ -57,6 +73,11 @@ RELAY_SCHEMA: dict[str, Any] = {
             "hasLocal": True,
             "placeholder": "add embedding model…",
         },
+        _api_base_field(
+            "EMBEDDING_API_BASE",
+            "Embedding endpoint",
+            "Custom endpoint / CF AI Gateway for embedding calls.",
+        ),
         {
             "key": "SUMMARY_MODELS",
             "label": "Summary models",
@@ -66,6 +87,11 @@ RELAY_SCHEMA: dict[str, Any] = {
             "hasLocal": False,
             "placeholder": "add summary model…",
         },
+        _api_base_field(
+            "LLM_API_BASE",
+            "Summary (LLM) endpoint",
+            "Custom endpoint / CF AI Gateway for summary LLM calls.",
+        ),
         _key_field(
             "JINA_AI_API_KEY", "Jina AI API Key", "jina_...", "https://jina.ai/api-key"
         ),

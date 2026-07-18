@@ -26,7 +26,7 @@ from .embeddings import (
     resolve_backend,
     semantic_search,
 )
-from .graph import GraphStore, edge_to_dict, node_to_dict
+from .graph import GraphStore, _sanitize_name, edge_to_dict, node_to_dict
 from .incremental import (
     collect_all_files,
     find_project_root,
@@ -42,6 +42,7 @@ from .security.semgrep_engine import (
     SemgrepScanner,
     _resolve_overlay_rules_dir,
 )
+from .xpia import build_external_tool_result, wrap_external_content
 
 logger = logging.getLogger(__name__)
 
@@ -1046,8 +1047,10 @@ def _handle_callees_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving callees
+    edges = store.search_edges_by_source_names([qn], kind="CALLS", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1066,8 +1069,10 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving imports
+    edges = store.search_edges_by_source_names([qn], kind="IMPORTS_FROM", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1092,10 +1097,15 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving importers
+    edges = store.search_edges_by_target_names(
+        [abs_target], kind="IMPORTS_FROM", as_of=as_of
+    )
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == abs_target]
+
     qns = []
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1116,8 +1126,10 @@ def _handle_importers_of(
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], edges_out: list[dict], *, as_of: str = ""
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving children
+    edges = store.search_edges_by_source_names([qn], kind="CONTAINS", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1137,10 +1149,13 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving tests
+    edges = store.search_edges_by_target_names([qn], kind="TESTED_BY", as_of=as_of)
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == qn]
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1166,10 +1181,15 @@ def _handle_inheritors_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving inheritors
+    edges = store.search_edges_by_target_names(
+        [qn], kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    )
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == qn]
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1772,22 +1792,33 @@ def spot_check_last_callers(
             {
                 "file": file_path,
                 "line": line_no,
-                "snippet": snippet,
+                # XPIA: snippet is raw text read from a file in the
+                # reviewed repo -- untrusted third-party content. The
+                # "(could not read file)" fallback is server-synthesized
+                # status text, not third-party content, so it stays
+                # unwrapped (mirrors wet-mcp's asymmetric error handling).
+                "snippet": (
+                    snippet
+                    if snippet == "(could not read file)"
+                    else wrap_external_content(snippet)
+                ),
                 "source_qualified": edge.get("source_qualified"),
                 "target_qualified": edge.get("target_qualified"),
             }
         )
 
-    return {
-        "status": "ok",
-        "summary": (
-            f"Sampled {len(samples)} of {len(edges)} callsites from last "
-            f"{cached['pattern']}('{cached['target']}')."
-        ),
-        "pattern": cached["pattern"],
-        "target": cached["target"],
-        "samples": samples,
-    }
+    return build_external_tool_result(
+        {
+            "status": "ok",
+            "summary": (
+                f"Sampled {len(samples)} of {len(edges)} callsites from last "
+                f"{cached['pattern']}('{cached['target']}')."
+            ),
+            "pattern": cached["pattern"],
+            "target": cached["target"],
+            "samples": samples,
+        }
+    )
 
 
 def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
@@ -2164,18 +2195,34 @@ def get_review_context(
             context["languages_filter"] = list(languages)
 
         if include_source:
-            context["source_snippets"] = _get_source_snippets(
-                root, changed_files, impact["changed_nodes"], max_lines_per_file
-            )
+            # XPIA: source_snippets is raw text read from files in the
+            # reviewed repo -- untrusted third-party content -- wrap each
+            # snippet in envelope markers before it reaches the caller.
+            # The "(could not read file)" fallback is server-synthesized
+            # status text, not third-party content, so it stays unwrapped
+            # (mirrors wet-mcp's asymmetric error handling).
+            context["source_snippets"] = {
+                path: (
+                    text
+                    if text == "(could not read file)"
+                    else wrap_external_content(text)
+                )
+                for path, text in _get_source_snippets(
+                    root, changed_files, impact["changed_nodes"], max_lines_per_file
+                ).items()
+            }
 
         guidance = _generate_review_guidance(impact, changed_files, languages=languages)
         context["review_guidance"] = guidance
 
-        return {
+        result = {
             "status": "ok",
             "summary": _build_review_summary_text(len(changed_files), impact, guidance),
             "context": context,
         }
+        if include_source:
+            result = build_external_tool_result(result)
+        return result
     finally:
         store.close()
 
@@ -2602,13 +2649,15 @@ def export_graph_dispatch(
 ) -> dict[str, Any]:
     """Export the code knowledge graph in an interoperable format.
 
-    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher.
-    GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into Neo4j;
-    JSON-LD drives JSON-aware tooling; DOT renders via Graphviz.
+    Phase 1 v1.6.x feature. Supported formats: graphml, json-ld, dot, cypher,
+    crg. GraphML imports into Gephi/Cytoscape/networkx; Cypher replays into
+    Neo4j; JSON-LD drives JSON-aware tooling; DOT renders via Graphviz; crg
+    (Task 6) is the only format that round-trips back into a GraphStore via
+    `graph(action='import')`.
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
-        format: One of graphml | json-ld | dot | cypher (case-insensitive).
+        format: One of graphml | json-ld | dot | cypher | crg (case-insensitive).
         output_path: When provided, payload is written to this path and only
             metadata is returned. When None, payload is returned inline.
 
@@ -2620,7 +2669,7 @@ def export_graph_dispatch(
 
     store, root = _get_store(repo_root)
     try:
-        payload = export_graph(store, format=format)
+        payload = export_graph(store, format=format, root=root)
     except ValueError as e:
         return {"status": "error", "error": str(e)}
 
@@ -2649,6 +2698,75 @@ def export_graph_dispatch(
         "bytes": byte_count,
         "payload": payload,
     }
+
+
+def import_graph_dispatch(
+    repo_root: str | None = None,
+    import_path: str | None = None,
+) -> dict[str, Any]:
+    """Import a `crg`-format export produced by `graph(action='export', format='crg')`.
+
+    Task 6 feature: merges a graph built and exported elsewhere (e.g. a CI
+    runner) into the current repo's graph store. Every imported node/edge id
+    is namespaced with the exporting repo_id so it never collides with
+    locally-parsed nodes; re-importing the same file is idempotent.
+
+    Args:
+        repo_root: Repository root path. Auto-detected if omitted.
+        import_path: Path to a JSON file previously written via
+            `graph(action='export', format='crg', output_path=...)`. Must
+            resolve inside repo_root. Required.
+
+    Returns:
+        Dict with status='ok' + nodes_added/nodes_updated/edges_added +
+        repo_id + summary on success, or status='error' + error message.
+    """
+    from .federation import RepoRegistry
+    from .importer import import_graph
+
+    if not import_path:
+        return {
+            "status": "error",
+            "error": "import_path is required for action='import'.",
+        }
+
+    store, root = _get_store(repo_root)
+    try:
+        in_p = Path(import_path).resolve()
+        if not in_p.is_relative_to(root.resolve()):
+            return {
+                "status": "error",
+                "error": f"Import path {import_path} must be relative to repo root {root}",
+            }
+        try:
+            payload = json.loads(in_p.read_text(encoding="utf-8"))
+        except OSError as e:
+            return {"status": "error", "error": f"Failed to read import payload: {e}"}
+        except json.JSONDecodeError as e:
+            return {"status": "error", "error": f"Malformed import payload: {e}"}
+
+        registry = RepoRegistry(store)
+        try:
+            result = import_graph(store, registry, payload)
+        except (ValueError, KeyError) as e:
+            return {"status": "error", "error": str(e)}
+
+        # repo_id came from an on-disk JSON file that may originate anywhere
+        # (a downloaded CI artifact, a colleague's export); sanitize before
+        # it flows into a free-text summary, mirroring node_to_dict's
+        # control-character stripping for names surfaced in tool responses.
+        safe_repo_id = _sanitize_name(result["repo_id"])
+        return {
+            "status": "ok",
+            **result,
+            "summary": (
+                f"Imported {result['nodes_added']} new node(s) "
+                f"({result['nodes_updated']} updated) and "
+                f"{result['edges_added']} new edge(s) from repo '{safe_repo_id}'."
+            ),
+        }
+    finally:
+        store.close()
 
 
 def summarize_graph_dispatch(

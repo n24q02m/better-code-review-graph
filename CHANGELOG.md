@@ -2,6 +2,117 @@
 
 <!-- version list -->
 
+## v3.21.0 (2026-07-18)
+
+
+## v3.21.0-beta.2 (2026-07-18)
+
+### Bug Fixes
+
+- Classify wrapped permanent embedding errors as non-retryable
+  ([#879](https://github.com/n24q02m/better-code-review-graph/pull/879),
+  [`5ec1812`](https://github.com/n24q02m/better-code-review-graph/commit/5ec181227dae03cbef0d0aa759e5519d2fdb29d7))
+
+
+## v3.21.0-beta.1 (2026-07-18)
+
+### Bug Fixes
+
+- Add orphan-tag integrity guard to release CI
+  ([#872](https://github.com/n24q02m/better-code-review-graph/pull/872),
+  [`6cfafa5`](https://github.com/n24q02m/better-code-review-graph/commit/6cfafa5c920a6fe60eff9de1813f2792c7bb63cc))
+
+- Adopt better-semantic-release for built-in release guards
+  ([`add33f7`](https://github.com/n24q02m/better-code-review-graph/commit/add33f754e1ba6f7875ed9b11626b332b036e536))
+
+- Bump mcp-core floor to 1.19.0 stable
+  ([#870](https://github.com/n24q02m/better-code-review-graph/pull/870),
+  [`d58d4d2`](https://github.com/n24q02m/better-code-review-graph/commit/d58d4d2404cde98c3272ef578984ce3271e07072))
+
+- Bump mcp-core to 1.20.0b2 for plugin-name and CLI fixes
+  ([#876](https://github.com/n24q02m/better-code-review-graph/pull/876),
+  [`4f38320`](https://github.com/n24q02m/better-code-review-graph/commit/4f383207d7c6e8307eeca4233f0fb4e3a9d45b6b))
+
+- Make git-subprocess tests hermetic under the pre-commit hook
+  ([#877](https://github.com/n24q02m/better-code-review-graph/pull/877),
+  [`ca8878f`](https://github.com/n24q02m/better-code-review-graph/commit/ca8878f056d80e811ee3d86339f9a3fc31e5a757))
+
+- Pin rangeStrategy on delayed packageRules to fix renovate artifacts failure
+  ([#873](https://github.com/n24q02m/better-code-review-graph/pull/873),
+  [`e30e746`](https://github.com/n24q02m/better-code-review-graph/commit/e30e7460b42d45e5c505bb998115d7cb80df10b5))
+
+### Features
+
+- Add PR-title conventional-commit gate + no-bump release warning
+  ([#875](https://github.com/n24q02m/better-code-review-graph/pull/875),
+  [`b7832c6`](https://github.com/n24q02m/better-code-review-graph/commit/b7832c646d94b5a328a016bb18910861a05f1b84))
+
+- Document CLI and smithery in README
+  ([#867](https://github.com/n24q02m/better-code-review-graph/pull/867),
+  [`50f3701`](https://github.com/n24q02m/better-code-review-graph/commit/50f37012ca8f2225c706be4711c02af523386f3b))
+
+- Per-sub custom endpoint (api_base) in relay for gateway routing
+  ([#877](https://github.com/n24q02m/better-code-review-graph/pull/877),
+  [`ca8878f`](https://github.com/n24q02m/better-code-review-graph/commit/ca8878f056d80e811ee3d86339f9a3fc31e5a757))
+
+- Wrap third-party code content in XPIA envelope
+  ([#869](https://github.com/n24q02m/better-code-review-graph/pull/869),
+  [`efd1eb2`](https://github.com/n24q02m/better-code-review-graph/commit/efd1eb210c6d64ddebfc5ef36d5d3048d5573d4c))
+
+
+## v3.20.0 (2026-07-14)
+
+### Features
+
+- Add mcp-server, model-context-protocol, cursor, codex, claude keywords
+  ([#863](https://github.com/n24q02m/better-code-review-graph/pull/863),
+  [`66ced57`](https://github.com/n24q02m/better-code-review-graph/commit/66ced5782eb7cca106f3a4a70ceb444a01b89100))
+
+- Add smithery.yaml for stdio deployment
+  ([#864](https://github.com/n24q02m/better-code-review-graph/pull/864),
+  [`3acb70a`](https://github.com/n24q02m/better-code-review-graph/commit/3acb70a45858e6faa9ab3fa279d322d8a60d823f))
+
+
+## v3.20.0-beta.3 (2026-07-13)
+
+### Bug Fixes
+
+- Correct mention gate expression (balanced parens + precedence)
+  ([#860](https://github.com/n24q02m/better-code-review-graph/pull/860),
+  [`61772c9`](https://github.com/n24q02m/better-code-review-graph/commit/61772c9712230138942e8b13ba3a2800d3b31fb6))
+
+- Fold summary columns into import's raw insert for true atomicity
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+- Gate oc mention job on comment author write access
+  ([#860](https://github.com/n24q02m/better-code-review-graph/pull/860),
+  [`61772c9`](https://github.com/n24q02m/better-code-review-graph/commit/61772c9712230138942e8b13ba3a2800d3b31fb6))
+
+- Round-trip temporal columns, derive crg repo_id from repo root
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+- Run opencode bot on hosted runners
+  ([#859](https://github.com/n24q02m/better-code-review-graph/pull/859),
+  [`ed82c71`](https://github.com/n24q02m/better-code-review-graph/commit/ed82c71c7163959a52e3a0cec11b95aeb006b549))
+
+### Features
+
+- Add graph import with a round-trip export format
+  ([#861](https://github.com/n24q02m/better-code-review-graph/pull/861),
+  [`c41ef27`](https://github.com/n24q02m/better-code-review-graph/commit/c41ef274d3a12bf4e60a3748ff42a5d98e21790f))
+
+
+## v3.20.0-beta.2 (2026-07-12)
+
+### Features
+
+- Return structured content from domain tools
+  ([#856](https://github.com/n24q02m/better-code-review-graph/pull/856),
+  [`236f55d`](https://github.com/n24q02m/better-code-review-graph/commit/236f55de8477c72e8b3beb60c8531491f9434ef5))
+
+
 ## v3.20.0-beta.1 (2026-07-11)
 
 ### Bug Fixes

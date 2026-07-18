@@ -613,6 +613,12 @@ class TestGitHelpers:
 
         assert is_valid_commit(tmp_path, "") is False
 
+    def test_is_valid_commit_argument_injection(self, tmp_path):
+        from better_code_review_graph.incremental import is_valid_commit
+
+        # Should be rejected immediately without calling git
+        assert is_valid_commit(tmp_path, "--batch") is False
+
     @patch("better_code_review_graph.incremental.subprocess.run")
     @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
     def test_run_git_handles_timeout(self, _which, mock_run, tmp_path):

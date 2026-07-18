@@ -69,9 +69,47 @@ _RETRYABLE_PATTERNS = (
 )
 
 
+# Patterns marking a PERMANENT provider error (invalid request, unsupported
+# capability, auth, not-found). litellm frequently re-wraps these as
+# APIConnectionError -- whose class name contains "connection" and whose
+# status_code is a hardcoded 500 -- so classification MUST look at the message
+# semantics, not the exception class or status code. Retrying a permanent error
+# just re-sends the same doomed request and burns the whole retry budget before
+# failing.
+_PERMANENT_PATTERNS = (
+    "not a valid",
+    "not support",
+    "unsupported",
+    "invalid request",
+    "invalid_request",
+    "invalid api key",
+    "output_dimension",
+    "unauthorized",
+    "forbidden",
+    "authentication",
+    "no such model",
+    "model not found",
+    "does not exist",
+    "401",
+    "403",
+    "404",
+    "422",
+)
+
+
 def _is_retryable(exc: Exception) -> bool:
-    """Check if an exception is transient and worth retrying."""
+    """Return True only for TRANSIENT errors worth retrying.
+
+    Classifies on error semantics, NOT the exception class name or a synthetic
+    status_code: litellm wraps a provider's permanent 4xx (e.g. a 422
+    "unsupported output_dimension", a 401 bad key, a 404 unknown model) as
+    ``APIConnectionError`` whose repr contains "connection" and whose
+    ``status_code`` is a hardcoded 500 -- matching either would retry a request
+    that can never succeed, burning the full retry budget before failing loudly.
+    """
     msg = str(exc).lower()
+    if any(p in msg for p in _PERMANENT_PATTERNS):
+        return False
     return any(p in msg for p in _RETRYABLE_PATTERNS)
 
 
@@ -340,18 +378,25 @@ class CloudEmbeddingBackend:
         # Lazy import: litellm costs ~1-2s on first import.
         from mcp_core.llm import embedding
 
+        from .credential_state import config_value_for_current_request
+
         kwargs: dict[str, Any] = {}
         if dimensions:
             kwargs["dimensions"] = dimensions
         if self._provider == "cohere":
             kwargs["input_type"] = "search_document"
 
+        # Resolve the custom endpoint request-scoped (per-sub bucket in HTTP
+        # multi-user, os.environ in stdio/single-user) via the same accessor
+        # as the key, so one sub's gateway URL never serves another. Reading
+        # os.getenv here would make the per-sub endpoint a silent no-op in
+        # multi-user mode. SSRF-vetted downstream in mcp_core.llm dispatch.
         # Normalise empty string to None: mcp_core.llm forwards a non-None
         # api_key to litellm, which suppresses provider env-var fallback (401).
         resp = embedding(
             model=self._litellm_model(),
             input=texts,
-            api_base=os.getenv("EMBEDDING_API_BASE") or None,
+            api_base=config_value_for_current_request("EMBEDDING_API_BASE") or None,
             api_key=self._resolve_api_key() or None,
             **kwargs,
         )
