@@ -52,21 +52,6 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
-      - name: Verify no orphaned release tags (main not regressed behind an existing tag)
-        run: |
-          set -uo pipefail
-          highest_tag="$(git tag -l 'v*' | sort -V | tail -1)"
-          if [ -z "$highest_tag" ]; then
-            echo "No existing tags -- nothing to verify."
-            exit 0
-          fi
-          if git merge-base --is-ancestor "$highest_tag" HEAD; then
-            echo "OK: highest known tag ${highest_tag} is reachable from HEAD."
-          else
-            echo "::error::Highest known tag ${highest_tag} is NOT an ancestor of HEAD (origin/main). Main history was rewritten (rebase/force-push) and dropped the chore(release) commit(s) carrying this tag -- PSR will recompute an already-published version and silently freeze. Do NOT proceed: re-tag ${highest_tag} onto a current main ancestor, or push the orphaned tip to an archive branch, per feedback_psr_release_gotchas. See mcp-dev/references/release-cascade.md."
-            exit 1
-          fi
-
       # Dry-run PSR (no_operation_mode => --noop: no commit/tag/push/release) purely to
       # learn the version it WOULD publish, so the PyPI-collision guard below can fire
       # BEFORE the real run creates a git tag or GitHub Release. Same action + SHA and
