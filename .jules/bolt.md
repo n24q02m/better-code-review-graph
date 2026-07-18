@@ -23,3 +23,9 @@
 ## 2024-07-17 - Prevent N+1 queries when traversing graphs from multiple source nodes
 **Learning:** Resolving targets (e.g. callees, imports, children, inheritors) for graph visualization/traversal previously resulted in N+1 database roundtrips. When expanding multiple edges, executing `get_edges_by_source` or `get_edges_by_target` per original node generated excessive SQLite overhead, especially for dense repositories.
 **Action:** Replace looped individual lookups with batched SQLite queries utilizing `search_edges_by_source_names` or `search_edges_by_target_names` which process multiple node identifiers in a single roundtrip via `json_each`.
+
+## 2024-07-28 - Grouping Setup DDL Statements via executescript
+
+**Learning:** Running multiple `ALTER TABLE`, `CREATE TABLE`, and `CREATE INDEX` statements individually during component initialization creates unnecessary database roundtrip overhead. This slows down application startup, especially when checking or enforcing schema migrations.
+
+**Action:** When performing schema initialization or migrations, batch all DDL statements together into a single string (using semicolons to separate statements) and execute them via `self._conn.executescript()`. This consolidates the initialization process into a single transaction, significantly reducing SQLite execution time.

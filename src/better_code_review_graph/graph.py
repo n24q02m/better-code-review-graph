@@ -491,34 +491,34 @@ class GraphStore:
           call unconditionally on every connect.
         """
         node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
-        if "repo_id" not in node_cols:
-            self._conn.execute(
-                "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
-            )
         edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
-        if "repo_id" not in edge_cols:
-            self._conn.execute(
-                "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''"
+
+        script = []
+        if "repo_id" not in node_cols:
+            script.append(
+                "ALTER TABLE nodes ADD COLUMN repo_id TEXT NOT NULL DEFAULT '';"
             )
+        if "repo_id" not in edge_cols:
+            script.append(
+                "ALTER TABLE edges ADD COLUMN repo_id TEXT NOT NULL DEFAULT '';"
+            )
+
         # Repos registry table — created by migration 003 on disk-backed
         # DBs. Mirror it here for in-memory connections so RepoRegistry
         # works against ``:memory:`` GraphStores too.
-        self._conn.execute(
-            """CREATE TABLE IF NOT EXISTS repos (
+        script.append("""
+            CREATE TABLE IF NOT EXISTS repos (
                 repo_id TEXT PRIMARY KEY NOT NULL,
                 path TEXT NOT NULL,
                 remote_url TEXT,
                 last_indexed_sha TEXT,
                 first_indexed_at INTEGER NOT NULL,
                 last_indexed_at INTEGER NOT NULL
-            )"""
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo_id, kind)"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_edges_repo ON edges(repo_id)"
-        )
+            );
+            CREATE INDEX IF NOT EXISTS idx_nodes_repo_kind ON nodes(repo_id, kind);
+            CREATE INDEX IF NOT EXISTS idx_edges_repo ON edges(repo_id);
+        """)
+        self._conn.executescript("\n".join(script))
         self._conn.commit()
 
     def _ensure_temporal_columns(self) -> None:
@@ -547,29 +547,27 @@ class GraphStore:
         downstream temporal queries treat the two paths identically.
         """
         node_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
+        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
+
+        script = []
         if "valid_from_sha" not in node_cols:
-            self._conn.execute(
-                "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL "
-                "DEFAULT '0000000000000000000000000000000000000000'"
+            script.append(
+                "ALTER TABLE nodes ADD COLUMN valid_from_sha TEXT NOT NULL DEFAULT '0000000000000000000000000000000000000000';"
             )
         if "valid_to_sha" not in node_cols:
-            self._conn.execute("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT")
-        edge_cols = {row[1] for row in self._conn.execute("PRAGMA table_info(edges)")}
+            script.append("ALTER TABLE nodes ADD COLUMN valid_to_sha TEXT;")
         if "valid_from_sha" not in edge_cols:
-            self._conn.execute(
-                "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL "
-                "DEFAULT '0000000000000000000000000000000000000000'"
+            script.append(
+                "ALTER TABLE edges ADD COLUMN valid_from_sha TEXT NOT NULL DEFAULT '0000000000000000000000000000000000000000';"
             )
         if "valid_to_sha" not in edge_cols:
-            self._conn.execute("ALTER TABLE edges ADD COLUMN valid_to_sha TEXT")
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_temporal "
-            "ON nodes(valid_from_sha, valid_to_sha)"
-        )
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_edges_temporal "
-            "ON edges(valid_from_sha, valid_to_sha)"
-        )
+            script.append("ALTER TABLE edges ADD COLUMN valid_to_sha TEXT;")
+
+        script.append("""
+            CREATE INDEX IF NOT EXISTS idx_nodes_temporal ON nodes(valid_from_sha, valid_to_sha);
+            CREATE INDEX IF NOT EXISTS idx_edges_temporal ON edges(valid_from_sha, valid_to_sha);
+        """)
+        self._conn.executescript("\n".join(script))
         self._conn.commit()
 
     def _ensure_summary_columns(self) -> None:
@@ -584,17 +582,20 @@ class GraphStore:
         """
         existing = {row[1] for row in self._conn.execute("PRAGMA table_info(nodes)")}
         column_sqls = {
-            "summary": "ALTER TABLE nodes ADD COLUMN summary TEXT",
-            "summary_provider": "ALTER TABLE nodes ADD COLUMN summary_provider TEXT",
-            "source_hash": "ALTER TABLE nodes ADD COLUMN source_hash TEXT",
-            "source_text": "ALTER TABLE nodes ADD COLUMN source_text TEXT",
+            "summary": "ALTER TABLE nodes ADD COLUMN summary TEXT;",
+            "summary_provider": "ALTER TABLE nodes ADD COLUMN summary_provider TEXT;",
+            "source_hash": "ALTER TABLE nodes ADD COLUMN source_hash TEXT;",
+            "source_text": "ALTER TABLE nodes ADD COLUMN source_text TEXT;",
         }
+
+        script = []
         for column in _SUMMARY_COLUMNS:
             if column not in existing and column in column_sqls:
-                self._conn.execute(column_sqls[column])
-        self._conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash)"
+                script.append(column_sqls[column])
+        script.append(
+            "CREATE INDEX IF NOT EXISTS idx_nodes_source_hash ON nodes(source_hash);"
         )
+        self._conn.executescript("\n".join(script))
         self._conn.commit()
 
     def _invalidate_cache(self) -> None:
