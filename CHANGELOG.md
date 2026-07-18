@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.21.0-beta.2 (2026-07-18)
+
+### Bug Fixes
+
+- Classify wrapped permanent embedding errors as non-retryable
+  ([#879](https://github.com/n24q02m/better-code-review-graph/pull/879),
+  [`5ec1812`](https://github.com/n24q02m/better-code-review-graph/commit/5ec181227dae03cbef0d0aa759e5519d2fdb29d7))
+
+
 ## v3.21.0-beta.1 (2026-07-18)
 
 ### Bug Fixes
