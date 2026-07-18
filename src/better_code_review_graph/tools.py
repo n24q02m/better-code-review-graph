@@ -1047,8 +1047,10 @@ def _handle_callees_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving callees
+    edges = store.search_edges_by_source_names([qn], kind="CALLS", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CALLS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1067,8 +1069,10 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving imports
+    edges = store.search_edges_by_source_names([qn], kind="IMPORTS_FROM", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="IMPORTS_FROM", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1093,10 +1097,15 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving importers
+    edges = store.search_edges_by_target_names(
+        [abs_target], kind="IMPORTS_FROM", as_of=as_of
+    )
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == abs_target]
+
     qns = []
-    for e in store.get_edges_by_target(
-        abs_target, kind="IMPORTS_FROM", as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1117,8 +1126,10 @@ def _handle_importers_of(
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], edges_out: list[dict], *, as_of: str = ""
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving children
+    edges = store.search_edges_by_source_names([qn], kind="CONTAINS", as_of=as_of)
     qns = []
-    for e in store.get_edges_by_source(qn, kind="CONTAINS", as_of=as_of):
+    for e in edges:
         qns.append(e.target_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
@@ -1138,10 +1149,13 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving tests
+    edges = store.search_edges_by_target_names([qn], kind="TESTED_BY", as_of=as_of)
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == qn]
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind="TESTED_BY", as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
     if qns:
         nodes = store.get_nodes_by_qualified_names(qns, as_of=as_of)
@@ -1167,10 +1181,15 @@ def _handle_inheritors_of(
     *,
     as_of: str = "",
 ) -> None:
+    # Bolt: Use batched search to avoid N+1 queries when resolving inheritors
+    edges = store.search_edges_by_target_names(
+        [qn], kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
+    )
+    # Filter out fallback bare name matches since the original call used fallback=False
+    edges = [e for e in edges if e.target_qualified == qn]
+
     qns = []
-    for e in store.get_edges_by_target(
-        qn, kind=("INHERITS", "IMPLEMENTS"), as_of=as_of, fallback=False
-    ):
+    for e in edges:
         qns.append(e.source_qualified)
         edges_out.append(edge_to_dict(e))
     if qns:
