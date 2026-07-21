@@ -23,3 +23,7 @@
 ## 2024-07-17 - Prevent N+1 queries when traversing graphs from multiple source nodes
 **Learning:** Resolving targets (e.g. callees, imports, children, inheritors) for graph visualization/traversal previously resulted in N+1 database roundtrips. When expanding multiple edges, executing `get_edges_by_source` or `get_edges_by_target` per original node generated excessive SQLite overhead, especially for dense repositories.
 **Action:** Replace looped individual lookups with batched SQLite queries utilizing `search_edges_by_source_names` or `search_edges_by_target_names` which process multiple node identifiers in a single roundtrip via `json_each`.
+
+## 2026-04-10 - [Avoid Correlated Scalar Subqueries in SQLite Full-Table Scans]
+**Learning:** Using a correlated scalar subquery (like `(SELECT COUNT(*) FROM json_each(?))`) in the `WHERE` clause of a full-table scan evaluates in O(N) time for every row during the scan, creating a significant performance bottleneck.
+**Action:** Compute lengths or constants externally in Python and pass them as O(1) bound parameters. This optimization applies to `GraphStore.search_nodes` or similar large-scale aggregations.
