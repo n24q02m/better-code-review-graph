@@ -965,6 +965,7 @@ async def run_http(port: int = 0) -> None:
         host=host,
         on_credentials_saved=save_credentials,
         auth_scope=_per_request_sub_scope if public_url else None,
+        stable_sub_enabled=True,
     )
 
 
