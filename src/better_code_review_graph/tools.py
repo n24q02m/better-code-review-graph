@@ -1823,6 +1823,9 @@ def spot_check_last_callers(
 
 def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
     """Fetch file content from a specific git ref."""
+    if base.startswith("-"):
+        return None
+
     import shutil
     import subprocess
 
