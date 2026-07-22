@@ -1164,6 +1164,8 @@ class GraphStore:
         # f-string interpolation is safe (Bandit B608 already lints).
         # Bolt: Removed unnecessary LOWER() calls since SQLite's LIKE is case-insensitive
         # for ASCII by default. This reduces query execution time by ~50% (issue #342).
+        # Bolt: Replaced correlated scalar subquery `(SELECT COUNT(*) FROM json_each(?))`
+        # with an O(1) bound parameter `?` to avoid evaluating it per row during the full table scan.
         cursor = self._conn.execute(
             f"""
             SELECT * FROM nodes
@@ -1172,14 +1174,14 @@ class GraphStore:
                 FROM json_each(?)
                 WHERE nodes.name LIKE '%' || value || '%'
                    OR nodes.qualified_name LIKE '%' || value || '%'
-            ) = (SELECT COUNT(*) FROM json_each(?))
+            ) = ?
               AND (? IS NULL OR kind = ?)
               AND (? = '' OR repo_id = ?){frag}
             ORDER BY name LIMIT ?
             """,  # noqa: S608
             [
                 json.dumps(words),
-                json.dumps(words),
+                len(words),
                 kind,
                 kind,
                 repo,
