@@ -203,6 +203,24 @@ setup form (`config(action="setup_start")` returns the browser URL). See the
 [modes overview](https://mcp.n24q02m.com/get-started/modes-overview/) and
 [multi-user setup](https://mcp.n24q02m.com/get-started/multi-user/).
 
+### Workspace username (HTTP setup form)
+
+The relay setup form has an optional **workspace username** field. Entering the
+same username always lands you in the same per-`sub` bucket, so your keys and
+graph stay reachable across a re-authorization and across devices, instead of
+being tied to the one-off subject minted for each `/authorize` round-trip.
+Leaving it blank keeps the previous per-authorize behaviour.
+
+Trust boundary: when the form is gated by a *shared* `MCP_RELAY_PASSWORD`, the
+username is a partition key, not a secret -- anyone who knows that password can
+type any username and reach that bucket. That is fine for a trusted group; an
+untrusted multi-tenant deployment needs a per-user secret or delegated OAuth
+instead.
+
+**One-time migration:** existing users must re-enter their credentials once after
+this change. Nothing is deleted; credentials stored under the old random subject
+are simply no longer addressed.
+
 ## Tools
 
 Seven tools, each grouping related actions to keep the tool surface small.
