@@ -23,3 +23,7 @@
 ## 2024-07-17 - Prevent N+1 queries when traversing graphs from multiple source nodes
 **Learning:** Resolving targets (e.g. callees, imports, children, inheritors) for graph visualization/traversal previously resulted in N+1 database roundtrips. When expanding multiple edges, executing `get_edges_by_source` or `get_edges_by_target` per original node generated excessive SQLite overhead, especially for dense repositories.
 **Action:** Replace looped individual lookups with batched SQLite queries utilizing `search_edges_by_source_names` or `search_edges_by_target_names` which process multiple node identifiers in a single roundtrip via `json_each`.
+
+## 2024-07-23 - Optimize search_nodes query
+**Learning:** Correlated scalar subqueries like `(SELECT COUNT(*) FROM json_each(?))` on the right-hand side of a WHERE clause equality evaluate in O(N) time for every row during SQLite table scans.
+**Action:** When a subquery relies entirely on bound parameters and doesn't depend on the table row, evaluate its result in Python (e.g. `len(words)`) and pass it as an O(1) bound parameter to the query to avoid per-row subquery evaluation overhead.
