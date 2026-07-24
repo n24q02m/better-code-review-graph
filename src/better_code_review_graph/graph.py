@@ -1172,14 +1172,14 @@ class GraphStore:
                 FROM json_each(?)
                 WHERE nodes.name LIKE '%' || value || '%'
                    OR nodes.qualified_name LIKE '%' || value || '%'
-            ) = (SELECT COUNT(*) FROM json_each(?))
+            ) = ?
               AND (? IS NULL OR kind = ?)
               AND (? = '' OR repo_id = ?){frag}
             ORDER BY name LIMIT ?
             """,  # noqa: S608
             [
                 json.dumps(words),
-                json.dumps(words),
+                len(words),
                 kind,
                 kind,
                 repo,
