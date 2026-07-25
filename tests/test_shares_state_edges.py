@@ -2,7 +2,7 @@
 
 import tree_sitter_language_pack as tslp
 
-from better_code_review_graph.parser import _collect_module_state
+from better_code_review_graph.parser import _collect_module_state, _scan_state_access
 
 
 def _root(source: bytes):
@@ -148,3 +148,98 @@ def test_non_python_returns_empty():
     source = b"const x = 1;\n"
     root = tslp.get_parser("javascript").parse(source).root_node
     assert _collect_module_state(root, source, "javascript") == set()
+
+
+def _functions(source: bytes) -> list:
+    return [c for c in _root(source).children if c.type == "function_definition"]
+
+
+def test_reads_and_writes_are_separated():
+    source = (
+        b"REGISTRY = {}\n"
+        b"\n"
+        b"def writer():\n"
+        b"    global REGISTRY\n"
+        b"    REGISTRY = {}\n"
+        b"\n"
+        b"def reader():\n"
+        b"    return REGISTRY\n"
+    )
+    funcs = _functions(source)
+
+    reads_w, writes_w = _scan_state_access(funcs[0], source, {"REGISTRY"})
+    assert writes_w == {"REGISTRY"}
+    assert reads_w == set()
+
+    reads_r, writes_r = _scan_state_access(funcs[1], source, {"REGISTRY"})
+    assert reads_r == {"REGISTRY"}
+    assert writes_r == set()
+
+
+def test_shadowed_parameter_is_not_shared_state():
+    source = b"REGISTRY = {}\n\n\ndef takes_it(REGISTRY):\n    return REGISTRY\n"
+    reads, writes = _scan_state_access(_functions(source)[0], source, {"REGISTRY"})
+    assert reads == set()
+    assert writes == set()
+
+
+def test_annotated_and_splat_parameters_also_shadow():
+    source = (
+        b"REGISTRY = {}\n"
+        b"CACHE = {}\n"
+        b"\n"
+        b"def takes_them(REGISTRY: dict, *CACHE):\n"
+        b"    return REGISTRY, CACHE\n"
+    )
+    reads, writes = _scan_state_access(
+        _functions(source)[0], source, {"REGISTRY", "CACHE"}
+    )
+    assert reads == set()
+    assert writes == set()
+
+
+def test_augmented_assignment_is_a_write_not_a_read():
+    """``COUNT += 1`` under ``global`` rebinds the module name.
+
+    Matching only ``assignment`` records this as a read, which reverses the
+    edge: the function that changes the value would be listed as depending on
+    it instead of the other way round.
+    """
+    source = b"COUNT = 0\n\n\ndef bump():\n    global COUNT\n    COUNT += 1\n"
+    reads, writes = _scan_state_access(_functions(source)[0], source, {"COUNT"})
+    assert writes == {"COUNT"}
+    assert reads == set()
+
+
+def test_rebinding_without_global_is_a_local_not_a_write():
+    """Assigning a name without ``global`` creates a local that shadows it.
+
+    Python binds the name to the function for its whole body, so the module
+    value is neither read nor replaced. Counting it as a write would make
+    every function holding a same-named local a writer of shared state.
+    """
+    source = b"REGISTRY = {}\n\n\ndef local_only():\n    REGISTRY = {}\n    return REGISTRY\n"
+    reads, writes = _scan_state_access(_functions(source)[0], source, {"REGISTRY"})
+    assert writes == set()
+    assert reads == set()
+
+
+def test_attribute_and_keyword_names_are_not_reads():
+    """``obj.REGISTRY`` and ``f(REGISTRY=1)`` do not read the module name."""
+    source = (
+        b"REGISTRY = {}\n"
+        b"\n"
+        b"def unrelated(obj):\n"
+        b"    f(REGISTRY=1)\n"
+        b"    return obj.REGISTRY\n"
+    )
+    reads, writes = _scan_state_access(_functions(source)[0], source, {"REGISTRY"})
+    assert reads == set()
+    assert writes == set()
+
+
+def test_reading_through_an_attribute_call_still_counts():
+    source = b"REGISTRY = {}\n\n\ndef lookup(key):\n    return REGISTRY.get(key)\n"
+    reads, writes = _scan_state_access(_functions(source)[0], source, {"REGISTRY"})
+    assert reads == {"REGISTRY"}
+    assert writes == set()

@@ -272,6 +272,133 @@ def _collect_module_state(root, source: bytes, language: str) -> set[str]:
     return names
 
 
+def _identifiers_in(target, source: bytes) -> list[str]:
+    """Names bound by an assignment target, flat or destructured."""
+    if target is None:
+        return []
+    if target.type == "identifier":
+        return [source[target.start_byte : target.end_byte].decode()]
+    return [
+        source[c.start_byte : c.end_byte].decode()
+        for c in target.children
+        if c.type == "identifier"
+    ]
+
+
+def _parameter_names(func_node, source: bytes) -> set[str]:
+    """Every name the function's signature binds locally.
+
+    Covers the plain, annotated, defaulted and splat spellings, each of which
+    the grammar gives a different node type.
+    """
+    names: set[str] = set()
+    params = func_node.child_by_field_name("parameters")
+    if params is None:
+        return names
+    for p in params.children:
+        if p.type == "identifier":
+            names.add(source[p.start_byte : p.end_byte].decode())
+            continue
+        named = p.child_by_field_name("name")
+        if named is not None:
+            names.add(source[named.start_byte : named.end_byte].decode())
+            continue
+        names.update(
+            source[c.start_byte : c.end_byte].decode()
+            for c in p.children
+            if c.type == "identifier"
+        )
+    return names
+
+
+def _bindings_and_globals(func_node, source: bytes) -> tuple[set[str], set[str]]:
+    """Names the body binds, and names it declares ``global``.
+
+    The two together decide whether a binding reaches module state: Python
+    only rebinds the module name when the function declared it ``global``.
+    Without that declaration the same statement creates a local.
+    """
+    bound: set[str] = set()
+    declared_global: set[str] = set()
+
+    def walk(node) -> None:
+        if node.type == "global_statement":
+            for c in node.children:
+                if c.type == "identifier":
+                    declared_global.add(source[c.start_byte : c.end_byte].decode())
+            return
+        if node.type in ("assignment", "augmented_assignment", "for_statement"):
+            bound.update(_identifiers_in(node.child_by_field_name("left"), source))
+        for c in node.children:
+            walk(c)
+
+    body = func_node.child_by_field_name("body")
+    if body is not None:
+        walk(body)
+    return bound, declared_global
+
+
+def _collect_reads(node, source: bytes, candidates: set[str], reads: set[str]) -> None:
+    """Record uses of ``candidates`` reachable from ``node``.
+
+    Two positions hold an identifier that is not a use of the name: the
+    member half of ``obj.NAME`` and the keyword half of ``f(NAME=1)``. Both
+    descend only into the part that can genuinely reference module state.
+
+    A missing field yields ``None``; tree-sitter returns a partial tree for
+    unparseable source, and the parser has to keep going on it.
+    """
+    if node is None:
+        return
+    if node.type == "attribute":
+        _collect_reads(node.child_by_field_name("object"), source, candidates, reads)
+        return
+    if node.type == "keyword_argument":
+        _collect_reads(node.child_by_field_name("value"), source, candidates, reads)
+        return
+    if node.type == "global_statement":
+        return
+    if node.type == "identifier":
+        name = source[node.start_byte : node.end_byte].decode()
+        if name in candidates:
+            reads.add(name)
+        return
+    for child in node.children:
+        _collect_reads(child, source, candidates, reads)
+
+
+def _scan_state_access(
+    func_node, source: bytes, state_names: set[str]
+) -> tuple[set[str], set[str]]:
+    """Which of ``state_names`` this function reads and which it rebinds.
+
+    A name is a write only where the function declared it ``global`` and then
+    bound it. A name bound without that declaration is a local that shadows
+    the module name for the whole body, so it is dropped from both sets, as
+    is any name the signature already binds.
+
+    Known to be missed: ``with`` and ``except`` aliases, comprehension
+    targets, and in-place mutation such as ``CONFIG["k"] = v``, which rebinds
+    nothing and is out of scope for this phase.
+    """
+    if not state_names:
+        return set(), set()
+
+    bound, declared_global = _bindings_and_globals(func_node, source)
+    writes = state_names & bound & declared_global
+    shadowed = _parameter_names(func_node, source) | (bound - declared_global)
+
+    candidates = state_names - shadowed
+    if not candidates:
+        return set(), writes
+
+    reads: set[str] = set()
+    body = func_node.child_by_field_name("body")
+    if body is not None:
+        _collect_reads(body, source, candidates, reads)
+    return reads - writes, writes
+
+
 def file_hash(path: Path) -> str:
     """SHA-256 hash of file contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
