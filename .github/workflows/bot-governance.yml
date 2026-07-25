@@ -12,6 +12,32 @@ permissions:
 jobs:
   governance:
     name: Bot PR Rate Limit & Duplicate Check
+    # Govern only branches pushed to this repository. This repo is public, so it
+    # receives pull requests from forks; the private original this workflow was
+    # ported from never saw one.
+    #
+    # Product reason: a fork pull request is an outside contribution. Its branch
+    # name is not ours to read as a bot signature, and closing someone's first
+    # contribution because our own bots spent the day's rate limit is the wrong
+    # outcome.
+    #
+    # Technical reason: on the pull_request trigger a fork gets a read-only
+    # GITHUB_TOKEN, and the permissions block above cannot raise it -- that is a
+    # ceiling, not a grant. Of the writing gh calls below, the --add-label ones
+    # end in `|| true`, but `gh pr close` and `gh pr comment` do not, so under
+    # `set -e` they would fail the job rather than the pull request.
+    #
+    # Kept at job level rather than as the first statement of the script: an
+    # in-script guard is only correct while it stays first, and an ordering
+    # assumption is the very bug being fixed here -- a later edit adding a gh
+    # call above it would reintroduce this silently. A job condition cannot be
+    # stepped over, and it skips without starting a runner.
+    #
+    # Compares full_name rather than testing head.repo.fork, because `fork`
+    # describes the source repository: were this repository itself ever made a
+    # fork, head.repo.fork would be true for our own branches too and governance
+    # would switch off permanently while the workflow still reported green.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Detect and govern bot PRs
@@ -22,7 +48,6 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           REPO: ${{ github.repository }}
-          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -e
 
@@ -41,27 +66,6 @@ jobs:
 
           if [ "$IS_BOT_PR" = "false" ]; then
             echo "Not a bot PR ($BRANCH), skipping governance checks."
-            exit 0
-          fi
-
-          # Never govern a pull request opened from a fork. Two reasons, and
-          # either one alone is sufficient:
-          #
-          #   1. On a public repository the pull_request event hands forks a
-          #      read-only GITHUB_TOKEN no matter what the permissions block
-          #      above requests, so every gh write below would fail anyway --
-          #      and `gh pr close` runs under `set -e`, so it would fail the job
-          #      rather than the PR.
-          #   2. More importantly, the bots this job exists to throttle push
-          #      their branches into this repository, never from a fork. So a
-          #      fork branch that happens to match the patterns above is far
-          #      more likely to be an outside contributor whose branch name ends
-          #      in digits. Auto-closing that is the worst outcome this workflow
-          #      could produce on a public repo.
-          #
-          # This must stay ahead of every gh write below.
-          if [ "$IS_FORK" = "true" ]; then
-            echo "Fork PR ($BRANCH) -- governance skipped; forks are never auto-governed."
             exit 0
           fi
 
