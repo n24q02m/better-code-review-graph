@@ -22,6 +22,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           REPO: ${{ github.repository }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           set -e
 
@@ -40,6 +41,27 @@ jobs:
 
           if [ "$IS_BOT_PR" = "false" ]; then
             echo "Not a bot PR ($BRANCH), skipping governance checks."
+            exit 0
+          fi
+
+          # Never govern a pull request opened from a fork. Two reasons, and
+          # either one alone is sufficient:
+          #
+          #   1. On a public repository the pull_request event hands forks a
+          #      read-only GITHUB_TOKEN no matter what the permissions block
+          #      above requests, so every gh write below would fail anyway --
+          #      and `gh pr close` runs under `set -e`, so it would fail the job
+          #      rather than the PR.
+          #   2. More importantly, the bots this job exists to throttle push
+          #      their branches into this repository, never from a fork. So a
+          #      fork branch that happens to match the patterns above is far
+          #      more likely to be an outside contributor whose branch name ends
+          #      in digits. Auto-closing that is the worst outcome this workflow
+          #      could produce on a public repo.
+          #
+          # This must stay ahead of every gh write below.
+          if [ "$IS_FORK" = "true" ]; then
+            echo "Fork PR ($BRANCH) -- governance skipped; forks are never auto-governed."
             exit 0
           fi
 
