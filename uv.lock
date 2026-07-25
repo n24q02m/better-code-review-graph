@@ -198,7 +198,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5,<2" },
     { name = "defusedxml", specifier = ">=0.7.1" },
-    { name = "fastmcp", specifier = ">=3.4.2,<4" },
+    { name = "fastmcp", specifier = ">=3.4.4,<4" },
     { name = "httpx" },
     { name = "litellm", specifier = ">=1.93.0" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
