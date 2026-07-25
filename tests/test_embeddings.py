@@ -291,7 +291,7 @@ class TestResolveEmbeddingChain:
         ):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("CO_API_KEY", "co-test")
-        assert resolve_embedding_chain() == ["cohere/embed-multilingual-v3.0"]
+        assert resolve_embedding_chain() == ["cohere/embed-v4.0"]
 
     def test_legacy_embedding_model_honored(self, monkeypatch):
         for k in (
@@ -427,7 +427,7 @@ class TestCloudEmbeddingBackend:
         """Cloud backend dispatches through mcp_core.llm.embedding."""
         with patch.dict(os.environ, {}, clear=True):
             backend = CloudEmbeddingBackend(
-                model="cohere/embed-english-v3.0", api_key="test-key"
+                model="cohere/embed-v4.0", api_key="test-key"
             )
             with patch("mcp_core.llm.embedding") as mock_embed:
                 mock_embed.return_value = _embedding_response(["hello"], dim=768)
@@ -436,9 +436,11 @@ class TestCloudEmbeddingBackend:
                 assert len(vectors[0]) == 768
                 mock_embed.assert_called_once()
                 call_kwargs = mock_embed.call_args.kwargs
-                assert call_kwargs["model"] == "cohere/embed-english-v3.0"
+                assert call_kwargs["model"] == "cohere/embed-v4.0"
                 assert call_kwargs["input"] == ["hello"]
-                assert call_kwargs["dimensions"] == 768
+                # Cohere only accepts a fixed set of widths, and 768 is not one
+                # of them, so the request is widened to 1024 and trimmed back.
+                assert call_kwargs["dimensions"] == 1024
                 # Cohere passes input_type through kwargs.
                 assert call_kwargs["input_type"] == "search_document"
                 # Explicit api_key forwarded; empty api_base normalised to None.

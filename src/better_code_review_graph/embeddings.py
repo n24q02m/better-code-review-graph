@@ -251,12 +251,36 @@ class Qwen3EmbedBackend:
 
 
 # Explicit provider prefixes -> unambiguous key detection + litellm routing.
+#
+# The cohere leg pins v4 deliberately. Its predecessors (embed-*-v3.0) emit a
+# fixed 1024-wide vector and are not Matryoshka-trained, so there is no way to
+# reach the 768 storage width from them: they reject a narrower request, and
+# slicing their output would discard dimensions that carry meaning. v4 is
+# Matryoshka, so a prefix of its vector remains a valid embedding.
 _DEFAULT_EMBEDDING_CHAIN = (
     "jina_ai/jina-embeddings-v5-text-small",
     "gemini/gemini-embedding-001",
     "openai/text-embedding-3-large",
-    "cohere/embed-multilingual-v3.0",
+    "cohere/embed-v4.0",
 )
+
+# Cohere validates the requested width against this fixed set and rejects
+# anything else outright ("<n> is not a valid output_dimension", HTTP 422).
+# _DEFAULT_DIMS is not a member, so the width has to be negotiated rather than
+# passed straight through -- see _cohere_output_dimension.
+# Source: https://docs.cohere.com/docs/cohere-embed
+_COHERE_OUTPUT_DIMENSIONS = (256, 512, 1024, 1536)
+
+
+def _cohere_output_dimension(dimensions: int) -> int | None:
+    """Narrowest Cohere width that ``dimensions`` fits inside.
+
+    Returns ``None`` when no supported width is wide enough; the caller then
+    omits the parameter entirely and takes Cohere's own default width.
+    """
+    return next((d for d in _COHERE_OUTPUT_DIMENSIONS if d >= dimensions), None)
+
+
 _KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KEY"}
 
 
@@ -319,8 +343,7 @@ class CloudEmbeddingBackend:
         api_key: str | None = None,
     ):
         self.model = (
-            model
-            or (resolve_embedding_chain() or ["cohere/embed-multilingual-v3.0"])[0]
+            model or (resolve_embedding_chain() or [_DEFAULT_EMBEDDING_CHAIN[-1]])[0]
         )
         self.api_key = api_key
         self._provider = _detect_embedding_provider(self.model)
@@ -385,6 +408,17 @@ class CloudEmbeddingBackend:
             kwargs["dimensions"] = dimensions
         if self._provider == "cohere":
             kwargs["input_type"] = "search_document"
+            # litellm forwards ``dimensions`` to Cohere as ``output_dimension``,
+            # which only accepts _COHERE_OUTPUT_DIMENSIONS. Requesting the
+            # storage width directly is rejected before any vector is returned,
+            # so ask for the next supported width up and let the truncation at
+            # the end of this method trim it back down.
+            if dimensions:
+                negotiated = _cohere_output_dimension(dimensions)
+                if negotiated is None:
+                    del kwargs["dimensions"]
+                else:
+                    kwargs["dimensions"] = negotiated
 
         # Resolve the custom endpoint request-scoped (per-sub bucket in HTTP
         # multi-user, os.environ in stdio/single-user) via the same accessor
@@ -417,8 +451,11 @@ class CloudEmbeddingBackend:
         data = sorted(resp.data or [], key=_idx)
         embeddings = [_vec(item) for item in data]
 
-        # Truncate locally if server returned more dims than requested (Cohere
-        # and other providers that ignore ``dimensions`` server-side).
+        # Truncate locally when the server returned more dims than requested:
+        # Cohere is deliberately asked for the next supported width up (see
+        # above), and some providers ignore ``dimensions`` server-side. Slicing
+        # a prefix preserves meaning only on Matryoshka-trained models, which is
+        # why the default chain pins models that are.
         if dimensions and embeddings and len(embeddings[0]) > dimensions:
             embeddings = [e[:dimensions] for e in embeddings]
         return embeddings

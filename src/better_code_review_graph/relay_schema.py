@@ -19,7 +19,7 @@ _EMBEDDING_SUGGESTED = [
     "jina_ai/jina-embeddings-v5-text-small",
     "gemini/gemini-embedding-001",
     "openai/text-embedding-3-large",
-    "cohere/embed-multilingual-v3.0",
+    "cohere/embed-v4.0",
 ]
 _SUMMARY_SUGGESTED = [
     "gemini/gemini-2.5-flash",
