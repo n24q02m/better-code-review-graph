@@ -213,4 +213,14 @@ Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/
 **Node types:** File, Class, Function, Type, Test
 **Edge types:** CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON
 
+`TESTED_BY` means **called directly by a test function**, not "adequately
+tested". It is emitted for each call site inside a test, so a function the
+test merely uses along the way -- a fixture builder, a comparison utility --
+also receives one. Functions defined in a test file are excluded, since test
+scaffolding is never the subject under test; support code living in an
+ordinary module cannot be told apart from a subject by syntax alone and is
+not excluded. A call written inside a helper belongs to that helper, so
+indirect reach is not credited to the test. Read `tests_for` results and the
+untested-function warning in `get_review_context` with that meaning in mind.
+
 Qualified names use `file_path::name` format (e.g. `src/auth.py::authenticate`). Cross-repo edges produced by federation prefix the target with the owning `repo_id`: `<repo_id>:<file_path>::<symbol>` (see "Federation: cross-repo graphs" above).

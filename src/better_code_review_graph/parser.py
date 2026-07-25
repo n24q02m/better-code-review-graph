@@ -211,6 +211,21 @@ def _is_test_function(name: str, file_path: str) -> bool:
     return any(p.search(name) for p in _TEST_PATTERNS)
 
 
+def _is_test_file(qualified_or_path: str) -> bool:
+    """Whether a qualified name (``<path>::<name>``) or path sits in a test file.
+
+    Used to keep a test's own helpers out of TESTED_BY: a function defined in
+    a test file is test scaffolding, never the subject under test. Helpers
+    living in a non-test module (``support.py``, a fixtures package) are not
+    detectable this way and do produce an edge -- see the TESTED_BY note in
+    ``docs/graph.md``.
+    """
+    path = qualified_or_path.split("::", 1)[0]
+    if not path:
+        return False
+    return any(p.search(Path(path).stem) for p in _TEST_PATTERNS)
+
+
 def file_hash(path: Path) -> str:
     """SHA-256 hash of file contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -822,12 +837,14 @@ class CodeParser:
                     line=line,
                 )
             )
-            # A call made from inside a test function is also evidence that the
-            # callee is covered by that test. Emitting TESTED_BY here rides on
-            # the call target already resolved above, so coverage is derived
-            # from what the test actually exercises rather than from whether
-            # the test happens to be named after its subject.
-            if _is_test_function(enclosing_func, file_path):
+            # TESTED_BY means "called directly by a test", NOT "properly
+            # tested". A test calls its subject, but it also calls helpers,
+            # builders and assertion utilities, and no static rule separates
+            # intent from incidental use. Consumers must read the edge with
+            # that meaning -- see _is_test_file for the one exclusion applied.
+            if _is_test_function(enclosing_func, file_path) and not _is_test_file(
+                target
+            ):
                 edges.append(
                     EdgeInfo(
                         kind="TESTED_BY",

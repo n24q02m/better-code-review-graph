@@ -43,9 +43,38 @@ def test_dispatch_path():
 """
 
 
+# A test calls more than its subject. These two fixtures pin down which of
+# those calls become TESTED_BY -- see TestTestedByScope.
+SUPPORT = """\
+def build_fixture():
+    return {"a": 1, "b": 2}
+"""
+
+MIXED_TEST = """\
+from calculator import add
+from support import build_fixture
+
+
+def _local_helper(v):
+    return v
+
+
+def test_add_with_helpers():
+    data = build_fixture()
+    assert add(_local_helper(data["a"]), data["b"]) == 3
+"""
+
+
 def _write_repo(root: Path) -> None:
     (root / "calculator.py").write_text(SUBJECT)
     (root / "test_calculator.py").write_text(TESTS)
+    (root / ".git").mkdir(exist_ok=True)
+
+
+def _write_mixed_repo(root: Path) -> None:
+    (root / "calculator.py").write_text(SUBJECT)
+    (root / "support.py").write_text(SUPPORT)
+    (root / "test_mixed.py").write_text(MIXED_TEST)
     (root / ".git").mkdir(exist_ok=True)
 
 
@@ -74,6 +103,70 @@ class TestParserEmitsTestedBy:
         # calculate() calls add(), but neither is a test.
         assert any(e.kind == "CALLS" for e in edges)
         assert not [e for e in edges if e.kind == "TESTED_BY"]
+
+
+class TestTestedByScope:
+    """Pins the declared meaning of the edge: called directly by a test.
+
+    Not "properly tested" -- a test also calls helpers, and no static rule
+    separates intent from incidental use. One exclusion is applied (helpers
+    defined in a test file); the rest is accepted and documented. A later
+    change that widens or narrows this should have to edit these assertions.
+    """
+
+    def test_subject_called_by_test_gets_an_edge(self, tmp_path):
+        _write_mixed_repo(tmp_path)
+
+        _nodes, edges = CodeParser().parse_file(tmp_path / "test_mixed.py")
+
+        targets = {e.target for e in edges if e.kind == "TESTED_BY"}
+        assert any(t.endswith("::add") for t in targets)
+
+    def test_helper_defined_in_the_test_file_is_excluded(self, tmp_path):
+        _write_mixed_repo(tmp_path)
+
+        _nodes, edges = CodeParser().parse_file(tmp_path / "test_mixed.py")
+
+        targets = {e.target for e in edges if e.kind == "TESTED_BY"}
+        assert not any(t.endswith("::_local_helper") for t in targets), (
+            "a function defined in a test file is scaffolding, not a subject"
+        )
+
+    def test_helper_in_a_non_test_module_still_gets_an_edge(self, tmp_path):
+        """Accepted false positive, asserted so it stays a decision.
+
+        build_fixture() is test support, but it lives in support.py and
+        nothing in the syntax says so. Consumers are told the edge means
+        "called by a test" precisely because of cases like this.
+        """
+        _write_mixed_repo(tmp_path)
+
+        _nodes, edges = CodeParser().parse_file(tmp_path / "test_mixed.py")
+
+        targets = {e.target for e in edges if e.kind == "TESTED_BY"}
+        assert any(t.endswith("::build_fixture") for t in targets)
+
+    def test_call_nested_inside_a_helper_is_not_attributed_to_the_test(self, tmp_path):
+        """Only the test's own call sites count.
+
+        A call written inside a helper has that helper as its enclosing
+        function, so it never reaches the TESTED_BY branch -- indirect reach
+        is not silently credited to the test.
+        """
+        (tmp_path / "calculator.py").write_text(SUBJECT)
+        (tmp_path / "test_indirect.py").write_text(
+            "from calculator import add\n\n\n"
+            "def _run(a, b):\n"
+            "    return add(a, b)\n\n\n"
+            "def test_indirect():\n"
+            "    assert _run(1, 2) == 3\n"
+        )
+        (tmp_path / ".git").mkdir(exist_ok=True)
+
+        _nodes, edges = CodeParser().parse_file(tmp_path / "test_indirect.py")
+
+        targets = {e.target for e in edges if e.kind == "TESTED_BY"}
+        assert not any(t.endswith("::add") for t in targets)
 
 
 class TestTestsForFindsUnconventionallyNamedTests:
