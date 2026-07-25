@@ -19,8 +19,8 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker
 - `tests/` -- Mirror source modules
-- `skills/` -- Claude Code skills (build-graph, review-delta, review-pr)
-- `hooks/` -- SessionStart + PostToolUse hooks
+- `skills/` -- Claude Code skills (impact-audit, onboard-repo, refactor-check, review-delta, review-pr, security-sweep)
+- `hooks/` -- SessionStart + UserPromptSubmit + PostToolUse hooks
 - `.claude-plugin/` -- Plugin manifest + marketplace metadata
 
 ## Lenh thuong dung

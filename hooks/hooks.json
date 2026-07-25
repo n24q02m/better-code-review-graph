@@ -10,6 +10,16 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/stale-graph-check.py\""
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|Bash",
@@ -17,6 +27,15 @@
           {
             "type": "command",
             "command": "uvx --from better-code-review-graph python -c \"from better_code_review_graph.incremental import incremental_update_from_hook; incremental_update_from_hook()\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/branch-sync-check.py\""
           }
         ]
       }
