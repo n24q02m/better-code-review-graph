@@ -2,7 +2,11 @@
 
 import tree_sitter_language_pack as tslp
 
-from better_code_review_graph.parser import _collect_module_state, _scan_state_access
+from better_code_review_graph.parser import (
+    CodeParser,
+    _collect_module_state,
+    _scan_state_access,
+)
 
 
 def _root(source: bytes):
@@ -243,3 +247,100 @@ def test_reading_through_an_attribute_call_still_counts():
     reads, writes = _scan_state_access(_functions(source)[0], source, {"REGISTRY"})
     assert reads == {"REGISTRY"}
     assert writes == set()
+
+
+SUBJECT = """\
+REGISTRY: dict[str, int] = {}
+
+
+def register(key: str, value: int) -> None:
+    global REGISTRY
+    REGISTRY = {**REGISTRY, key: value}
+
+
+def lookup(key: str) -> int | None:
+    return REGISTRY.get(key)
+"""
+
+
+def _shares_state(path):
+    _nodes, edges = CodeParser().parse_file(path)
+    return [e for e in edges if e.kind == "SHARES_STATE"]
+
+
+def test_writer_links_to_reader_through_module_state(tmp_path):
+    (tmp_path / "registry.py").write_text(SUBJECT)
+
+    _nodes, edges = CodeParser().parse_file(tmp_path / "registry.py")
+
+    shares = [e for e in edges if e.kind == "SHARES_STATE"]
+    assert shares, (
+        f"expected a SHARES_STATE edge, got kinds {sorted({e.kind for e in edges})}"
+    )
+    assert len(shares) == 1
+    edge = shares[0]
+    assert edge.source.endswith("::register")
+    assert edge.target.endswith("::lookup")
+    assert edge.extra.get("name") == "REGISTRY"
+
+
+def test_no_edge_when_nobody_writes(tmp_path):
+    (tmp_path / "constants.py").write_text(
+        "LIMIT = 10\n\n\ndef a():\n    return LIMIT\n\n\ndef b():\n    return LIMIT * 2\n"
+    )
+
+    assert _shares_state(tmp_path / "constants.py") == []
+
+
+def test_decorated_writer_is_not_skipped(tmp_path):
+    """A decorated writer sits under ``decorated_definition``.
+
+    Scanning module children for ``function_definition`` alone would drop it
+    and the reader would look uncoupled.
+    """
+    (tmp_path / "decorated.py").write_text(
+        "REGISTRY = {}\n"
+        "\n"
+        "\n"
+        "@staticmethod\n"
+        "def register(key):\n"
+        "    global REGISTRY\n"
+        "    REGISTRY = {}\n"
+        "\n"
+        "\n"
+        "def lookup(key):\n"
+        "    return REGISTRY.get(key)\n"
+    )
+
+    shares = _shares_state(tmp_path / "decorated.py")
+    assert len(shares) == 1
+    assert shares[0].source.endswith("::register")
+    assert shares[0].target.endswith("::lookup")
+
+
+def test_local_shadow_does_not_create_an_edge(tmp_path):
+    """A same-named local is not a writer of the module name."""
+    (tmp_path / "shadow.py").write_text(
+        "REGISTRY = {}\n"
+        "\n"
+        "\n"
+        "def builds_its_own():\n"
+        "    REGISTRY = {}\n"
+        "    return REGISTRY\n"
+        "\n"
+        "\n"
+        "def lookup(key):\n"
+        "    return REGISTRY.get(key)\n"
+    )
+
+    assert _shares_state(tmp_path / "shadow.py") == []
+
+
+def test_non_python_file_gets_no_shared_state_edges(tmp_path):
+    (tmp_path / "mod.js").write_text(
+        "let registry = {};\n"
+        "function register() { registry = {}; }\n"
+        "function lookup() { return registry; }\n"
+    )
+
+    assert _shares_state(tmp_path / "mod.js") == []
