@@ -223,4 +223,11 @@ not excluded. A call written inside a helper belongs to that helper, so
 indirect reach is not credited to the test. Read `tests_for` results and the
 untested-function warning in `get_review_context` with that meaning in mind.
 
+That exclusion recognises a test file **by filename**, using the same patterns
+that classify a test function. A module whose name merely looks like one --
+`test_fixtures.py` holding sample data, or `Testimonial.py` -- is treated as a
+test file too, so functions defined in it never receive a `TESTED_BY` edge and
+stay in the untested list even when a test calls them. If a function you expect
+to be covered keeps appearing there, check the filename first.
+
 Qualified names use `file_path::name` format (e.g. `src/auth.py::authenticate`). Cross-repo edges produced by federation prefix the target with the owning `repo_id`: `<repo_id>:<file_path>::<symbol>` (see "Federation: cross-repo graphs" above).

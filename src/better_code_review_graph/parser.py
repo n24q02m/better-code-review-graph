@@ -219,11 +219,19 @@ def _is_test_file(qualified_or_path: str) -> bool:
     living in a non-test module (``support.py``, a fixtures package) are not
     detectable this way and do produce an edge -- see the TESTED_BY note in
     ``docs/graph.md``.
+
+    Both the stem and the full filename are checked because the patterns split
+    across the two: ``_test$`` / ``_spec$`` anchor on a stem (``foo_test.go``),
+    while ``\\.test\\.`` / ``\\.spec\\.`` need the extension still attached
+    (``foo.spec.ts`` has stem ``foo.spec``, which no pattern matches).
     """
     path = qualified_or_path.split("::", 1)[0]
     if not path:
         return False
-    return any(p.search(Path(path).stem) for p in _TEST_PATTERNS)
+    candidate = Path(path)
+    return any(
+        p.search(candidate.stem) or p.search(candidate.name) for p in _TEST_PATTERNS
+    )
 
 
 def file_hash(path: Path) -> str:
