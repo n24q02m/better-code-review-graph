@@ -812,15 +812,31 @@ class CodeParser:
                 import_map or {},
                 defined_names or set(),
             )
+            line = node.start_point[0] + 1
             edges.append(
                 EdgeInfo(
                     kind="CALLS",
                     source=caller,
                     target=target,
                     file_path=file_path,
-                    line=node.start_point[0] + 1,
+                    line=line,
                 )
             )
+            # A call made from inside a test function is also evidence that the
+            # callee is covered by that test. Emitting TESTED_BY here rides on
+            # the call target already resolved above, so coverage is derived
+            # from what the test actually exercises rather than from whether
+            # the test happens to be named after its subject.
+            if _is_test_function(enclosing_func, file_path):
+                edges.append(
+                    EdgeInfo(
+                        kind="TESTED_BY",
+                        source=caller,
+                        target=target,
+                        file_path=file_path,
+                        line=line,
+                    )
+                )
         return False
 
     def _handle_solidity_emit_statement(
