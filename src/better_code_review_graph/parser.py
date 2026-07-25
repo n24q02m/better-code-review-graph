@@ -226,6 +226,242 @@ def _is_test_file(qualified_or_path: str) -> bool:
     return any(p.search(Path(path).stem) for p in _TEST_PATTERNS)
 
 
+# Languages whose module-level state is understood well enough to emit
+# SHARES_STATE edges. Every other language returns no state and is untouched.
+_MODULE_STATE_LANGUAGES = {"python"}
+
+
+def _assignment_nodes(root) -> list:
+    """Assignment nodes bound at module scope in ``root``.
+
+    Only direct children of the module node count. A name bound inside a
+    function or class body belongs to that scope, not to module state, and
+    treating it as shared would link every function that reuses a common
+    local name.
+
+    Both spellings the grammar has used are accepted: tree-sitter 0.26 puts
+    the ``assignment`` directly under ``module``, while earlier versions wrap
+    it in an ``expression_statement``. Reading only one of them yields an
+    empty set and no error, so the feature would go quiet rather than fail.
+    """
+    found = []
+    for child in root.children:
+        if child.type == "assignment":
+            found.append(child)
+        elif child.type == "expression_statement":
+            found.extend(c for c in child.children if c.type == "assignment")
+    return found
+
+
+def _collect_module_state(root, source: bytes, language: str) -> set[str]:
+    """Names bound at module import time in ``root``."""
+    if language not in _MODULE_STATE_LANGUAGES:
+        return set()
+
+    names: set[str] = set()
+    for assignment in _assignment_nodes(root):
+        left = assignment.child_by_field_name("left")
+        if left is None:
+            continue
+        if left.type == "identifier":
+            names.add(source[left.start_byte : left.end_byte].decode())
+        elif left.type in ("pattern_list", "tuple_pattern"):
+            for target in left.children:
+                if target.type == "identifier":
+                    names.add(source[target.start_byte : target.end_byte].decode())
+    return names
+
+
+def _identifiers_in(target, source: bytes) -> list[str]:
+    """Names bound by an assignment target, flat or destructured."""
+    if target is None:
+        return []
+    if target.type == "identifier":
+        return [source[target.start_byte : target.end_byte].decode()]
+    return [
+        source[c.start_byte : c.end_byte].decode()
+        for c in target.children
+        if c.type == "identifier"
+    ]
+
+
+def _parameter_names(func_node, source: bytes) -> set[str]:
+    """Every name the function's signature binds locally.
+
+    Covers the plain, annotated, defaulted and splat spellings, each of which
+    the grammar gives a different node type.
+    """
+    names: set[str] = set()
+    params = func_node.child_by_field_name("parameters")
+    if params is None:
+        return names
+    for p in params.children:
+        if p.type == "identifier":
+            names.add(source[p.start_byte : p.end_byte].decode())
+            continue
+        named = p.child_by_field_name("name")
+        if named is not None:
+            names.add(source[named.start_byte : named.end_byte].decode())
+            continue
+        names.update(
+            source[c.start_byte : c.end_byte].decode()
+            for c in p.children
+            if c.type == "identifier"
+        )
+    return names
+
+
+def _bindings_and_globals(func_node, source: bytes) -> tuple[set[str], set[str]]:
+    """Names the body binds, and names it declares ``global``.
+
+    The two together decide whether a binding reaches module state: Python
+    only rebinds the module name when the function declared it ``global``.
+    Without that declaration the same statement creates a local.
+    """
+    bound: set[str] = set()
+    declared_global: set[str] = set()
+
+    def walk(node) -> None:
+        if node.type == "global_statement":
+            for c in node.children:
+                if c.type == "identifier":
+                    declared_global.add(source[c.start_byte : c.end_byte].decode())
+            return
+        if node.type in ("assignment", "augmented_assignment", "for_statement"):
+            bound.update(_identifiers_in(node.child_by_field_name("left"), source))
+        for c in node.children:
+            walk(c)
+
+    body = func_node.child_by_field_name("body")
+    if body is not None:
+        walk(body)
+    return bound, declared_global
+
+
+def _collect_reads(node, source: bytes, candidates: set[str], reads: set[str]) -> None:
+    """Record uses of ``candidates`` reachable from ``node``.
+
+    Two positions hold an identifier that is not a use of the name: the
+    member half of ``obj.NAME`` and the keyword half of ``f(NAME=1)``. Both
+    descend only into the part that can genuinely reference module state.
+
+    A missing field yields ``None``; tree-sitter returns a partial tree for
+    unparseable source, and the parser has to keep going on it.
+    """
+    if node is None:
+        return
+    if node.type == "attribute":
+        _collect_reads(node.child_by_field_name("object"), source, candidates, reads)
+        return
+    if node.type == "keyword_argument":
+        _collect_reads(node.child_by_field_name("value"), source, candidates, reads)
+        return
+    if node.type == "global_statement":
+        return
+    if node.type == "identifier":
+        name = source[node.start_byte : node.end_byte].decode()
+        if name in candidates:
+            reads.add(name)
+        return
+    for child in node.children:
+        _collect_reads(child, source, candidates, reads)
+
+
+def _scan_state_access(
+    func_node, source: bytes, state_names: set[str]
+) -> tuple[set[str], set[str]]:
+    """Which of ``state_names`` this function reads and which it rebinds.
+
+    A name is a write only where the function declared it ``global`` and then
+    bound it. A name bound without that declaration is a local that shadows
+    the module name for the whole body, so it is dropped from both sets, as
+    is any name the signature already binds.
+
+    Known to be missed: ``with`` and ``except`` aliases, comprehension
+    targets, and in-place mutation such as ``CONFIG["k"] = v``, which rebinds
+    nothing and is out of scope for this phase.
+    """
+    if not state_names:
+        return set(), set()
+
+    bound, declared_global = _bindings_and_globals(func_node, source)
+    writes = state_names & bound & declared_global
+    shadowed = _parameter_names(func_node, source) | (bound - declared_global)
+
+    candidates = state_names - shadowed
+    if not candidates:
+        return set(), writes
+
+    reads: set[str] = set()
+    body = func_node.child_by_field_name("body")
+    if body is not None:
+        _collect_reads(body, source, candidates, reads)
+    return reads - writes, writes
+
+
+def _module_functions(root) -> list:
+    """Function definitions at module scope, decorated ones included.
+
+    A decorator wraps the definition in ``decorated_definition``, so looking
+    only for ``function_definition`` among the module's children silently
+    drops every decorated function.
+    """
+    found = []
+    for child in root.children:
+        if child.type == "function_definition":
+            found.append(child)
+        elif child.type == "decorated_definition":
+            found.extend(c for c in child.children if c.type == "function_definition")
+    return found
+
+
+def _module_state_edges(
+    root, source: bytes, file_path: str, state_names: set[str]
+) -> list[EdgeInfo]:
+    """Link each writer of a module-level name to each of its readers.
+
+    A SHARES_STATE edge from A to B means A assigns a module-level name that
+    B reads. It does not assert that the two are functionally related, and it
+    says nothing about ordering at runtime. Direction is writer to reader,
+    matching the direction of influence get_impact_radius reasons about.
+
+    Readers alone produce nothing: two functions reading the same constant
+    are not coupled, and linking them would swamp the impact radius.
+    """
+    writers: dict[str, list[str]] = {}
+    readers: dict[str, list[str]] = {}
+
+    for func in _module_functions(root):
+        name_node = func.child_by_field_name("name")
+        if name_node is None:
+            continue
+        func_name = source[name_node.start_byte : name_node.end_byte].decode()
+        qualified = f"{file_path}::{func_name}"
+        reads, writes = _scan_state_access(func, source, state_names)
+        for n in sorted(writes):
+            writers.setdefault(n, []).append(qualified)
+        for n in sorted(reads):
+            readers.setdefault(n, []).append(qualified)
+
+    edges: list[EdgeInfo] = []
+    for state_name in sorted(writers):
+        for writer_qn in writers[state_name]:
+            for reader_qn in readers.get(state_name, []):
+                if reader_qn == writer_qn:
+                    continue
+                edges.append(
+                    EdgeInfo(
+                        kind="SHARES_STATE",
+                        source=writer_qn,
+                        target=reader_qn,
+                        file_path=file_path,
+                        line=0,
+                        extra={"name": state_name},
+                    )
+                )
+    return edges
+
+
 def file_hash(path: Path) -> str:
     """SHA-256 hash of file contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -390,6 +626,17 @@ class CodeParser:
                 import_map=import_map,
                 defined_names=defined_names,
             )
+
+            # Module-level shared state. Runs after the walk because it pairs
+            # functions with each other rather than emitting per-node, and it
+            # needs the whole file's set of module-level names first.
+            state_names = _collect_module_state(tree.root_node, source, language)
+            if state_names:
+                edges.extend(
+                    _module_state_edges(
+                        tree.root_node, source, file_path_str, state_names
+                    )
+                )
         finally:
             self._current_source_lines = None
 
