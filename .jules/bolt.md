@@ -1,7 +1,8 @@
-# Bolt ledger
+# Performance decision log
 
 Performance changes that have already landed, and proposals that were evaluated
-and rejected. Read both sections before opening a PR.
+and rejected. Read both sections before opening a performance PR, so that work
+already done is not repeated and work already ruled out is not re-proposed.
 
 Every landed entry is anchored to a commit. If an entry cannot be located in
 `git log`, treat the anchor as authoritative over the date.
@@ -76,13 +77,14 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 
 **Proposal:** batch the `ALTER TABLE` / `CREATE TABLE` / `CREATE INDEX` statements in `_ensure_federation_columns`, `_ensure_temporal_columns` and `_ensure_summary_columns` into one `self._conn.executescript()` call each.
 
-**Why it was rejected:** the measured saving is 46 microseconds per `GraphStore` init (median of 200 runs: 358.9 us individual vs 312.7 us batched), and these helpers run once per connection from `GraphStore.__init__` (`graph.py:258-260`). Against that, `sqlite3.Connection.executescript()` issues an implicit `COMMIT` before running its script — an uncommitted `INSERT` was observed surviving a subsequent `rollback()`. The patch turns three ordinary helpers into calls that silently end whatever transaction is open, and that is invisible at the call site.
+**Why it was rejected:** the measured saving is 46 microseconds per `GraphStore` init (median of 200 runs: 358.9 us individual vs 312.7 us batched), and these helpers run once per connection from `GraphStore.__init__`. Against that, `sqlite3.Connection.executescript()` issues an implicit `COMMIT` before running its script — an uncommitted `INSERT` was observed surviving a subsequent `rollback()`. The patch turns three ordinary helpers into calls that silently end whatever transaction is open, and that is invisible at the call site.
 
 **Action:** keep schema backfills as individual `execute()` calls. Reserve `executescript()` for migration scripts that already run outside a transaction, where the implicit commit is intended.
 
-## Conventions for this ledger
+## Conventions for this log
 
 - Date every entry with the date of the commit that landed it, taken from `git log`, not from the wall clock of the run writing the entry. Entries in this file dated 2024 were corrected to their real 2026 dates on 2026-07-25 after cross-checking with `git log -S`; an entry misfiled by two years cannot be matched against history and reads as absent.
 - Anchor every landed entry to a commit SHA.
+- Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
