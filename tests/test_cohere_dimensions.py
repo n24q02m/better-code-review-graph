@@ -20,9 +20,11 @@ import pytest
 
 from better_code_review_graph.embeddings import (
     _COHERE_OUTPUT_DIMENSIONS,
+    _COHERE_WIDTH_SELECTABLE_MODELS,
     _DEFAULT_EMBEDDING_CHAIN,
     CloudEmbeddingBackend,
     _cohere_output_dimension,
+    _cohere_supports_width_selection,
 )
 from better_code_review_graph.relay_schema import _EMBEDDING_SUGGESTED
 
@@ -100,6 +102,34 @@ class TestCohereDispatch:
             backend.embed_texts(["hello"], dimensions=STORAGE_DIMS)
         assert m.call_args.kwargs["dimensions"] == STORAGE_DIMS
 
+    def test_a_model_that_cannot_select_a_width_is_left_alone(self):
+        """A pinned v3 model must keep failing loudly, not get silently sliced.
+
+        Cohere accepts output_dimension when it equals the model's native width,
+        so widening 768 to 1024 would succeed against v3 and hand back a vector
+        we would then slice -- and v3 is not Matryoshka, so that slice is
+        meaningless. Sending 768 unchanged makes the provider reject it instead.
+        """
+        backend = CloudEmbeddingBackend(
+            model="cohere/embed-multilingual-v3.0", api_key="k"
+        )
+        with patch("mcp_core.llm.embedding", return_value=_resp(1024)) as m:
+            backend.embed_texts(["hello"], dimensions=STORAGE_DIMS)
+        assert m.call_args.kwargs["dimensions"] == STORAGE_DIMS
+
+    def test_an_unknown_cohere_model_is_left_alone(self):
+        """Unrecognised models fail loudly rather than being assumed Matryoshka."""
+        backend = CloudEmbeddingBackend(model="cohere/embed-v9-imaginary", api_key="k")
+        with patch("mcp_core.llm.embedding", return_value=_resp(1024)) as m:
+            backend.embed_texts(["hello"], dimensions=STORAGE_DIMS)
+        assert m.call_args.kwargs["dimensions"] == STORAGE_DIMS
+
+    def test_bare_model_name_is_recognised(self):
+        """The chain uses a cohere/ prefix, but a bare name resolves too."""
+        assert _cohere_supports_width_selection("embed-v4.0")
+        assert _cohere_supports_width_selection("cohere/embed-v4.0")
+        assert not _cohere_supports_width_selection("cohere/embed-multilingual-v3.0")
+
     def test_no_dimensions_requested_stays_omitted(self):
         backend = CloudEmbeddingBackend(model="cohere/embed-v4.0", api_key="k")
         with patch("mcp_core.llm.embedding", return_value=_resp(1536)) as m:
@@ -125,6 +155,12 @@ class TestDefaultChain:
             for m in _DEFAULT_EMBEDDING_CHAIN
             if m.startswith("cohere/embed-multilingual-v3")
         ]
+
+    def test_the_pinned_model_is_one_the_negotiation_is_valid_for(self):
+        """Ties the two constants together: the chain cannot drift off the list."""
+        cohere = [m for m in _DEFAULT_EMBEDDING_CHAIN if m.startswith("cohere/")][0]
+        assert _cohere_supports_width_selection(cohere)
+        assert cohere.split("/", 1)[1] in _COHERE_WIDTH_SELECTABLE_MODELS
 
     def test_relay_suggestions_match_the_chain(self):
         """The setup form must not advertise a model the chain no longer uses."""
