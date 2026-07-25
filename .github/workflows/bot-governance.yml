@@ -1,0 +1,90 @@
+name: Bot PR Governance
+
+on:
+  pull_request:
+    types:
+      - opened
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  governance:
+    name: Bot PR Rate Limit & Duplicate Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Detect and govern bot PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.head_ref }}
+          ACTOR: ${{ github.actor }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+
+          # Detect if this is a bot-created PR by branch name pattern.
+          # Two signals:
+          #   1. Explicit bot-tool prefixes (Bolt, Palette, Jules, fix/web-scraper)
+          #   2. Any branch ending with a long numeric task/trace ID (-[0-9]{14,})
+          IS_BOT_PR=false
+          if echo "$BRANCH" | grep -qE \
+              '^(bolt[-/]|palette-ux-|fix/web-scraper-|jules[-/])'; then
+            IS_BOT_PR=true
+          elif echo "$BRANCH" | grep -qE -- \
+              '-[0-9]{14,}$'; then
+            IS_BOT_PR=true
+          fi
+
+          if [ "$IS_BOT_PR" = "false" ]; then
+            echo "Not a bot PR ($BRANCH), skipping governance checks."
+            exit 0
+          fi
+
+          echo "Bot PR detected on branch: $BRANCH"
+          gh pr edit "$PR_NUMBER" --add-label "bot-generated" --repo "$REPO" || true
+
+          # --- Rate limit: max 5 bot PRs/actor/day ---
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+                  date -u -v-24H +%Y-%m-%dT%H:%M:%SZ)
+          COUNT=$(gh pr list --repo "$REPO" --state open \
+                   --json createdAt,headRefName,author \
+                   --jq "[.[] |
+                          select(.author.login == \"$ACTOR\") |
+                          select(.createdAt > \"$SINCE\") |
+                          select(.headRefName | test(
+                            \"^(bolt[-/]|palette-ux-|fix/web-scraper-|jules[-/])\" +
+                            \"|-[0-9]{14,}$\"
+                          ))] | length" 2>/dev/null || echo 0)
+
+          echo "Bot PRs by $ACTOR in last 24h: $COUNT"
+
+          if [ "${COUNT:-0}" -gt 5 ]; then
+            gh pr close "$PR_NUMBER" --repo "$REPO" \
+              --comment "**Bot rate limit exceeded**: $COUNT PRs created in the last 24 hours (limit: 5/day). This PR has been automatically closed to reduce PR backlog and CI resource waste. Please consolidate related fixes."
+            echo "PR #$PR_NUMBER closed: rate limit exceeded ($COUNT/5 today)"
+            exit 0
+          fi
+
+          # --- Duplicate detection by title keyword ---
+          KEYWORD=$(echo "$PR_TITLE" | sed 's/[^a-zA-Z0-9 _-]//g' | \
+                    tr '[:upper:]' '[:lower:]' | cut -c1-50 | xargs)
+          if [ -z "$KEYWORD" ]; then
+            echo "No keyword extracted, skipping duplicate check."
+            exit 0
+          fi
+
+          DUPES=$(gh pr list --repo "$REPO" --state open --search "$KEYWORD" \
+                   --json number \
+                   --jq "[.[] | select(.number != $PR_NUMBER)] | length" \
+                   2>/dev/null || echo 0)
+
+          echo "Similar open PRs for '$KEYWORD': $DUPES"
+          if [ "${DUPES:-0}" -ge 1 ]; then
+            gh pr edit "$PR_NUMBER" --repo "$REPO" \
+              --add-label "possible-duplicate" || true
+            gh pr comment "$PR_NUMBER" --repo "$REPO" \
+              --body "**Possible duplicate**: found ${DUPES} open PR(s) with similar title ('${KEYWORD}'). Check before merging: \`gh pr list --search '${KEYWORD}' --state open\`"
+          fi
