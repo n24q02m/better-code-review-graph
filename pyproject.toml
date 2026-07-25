@@ -40,7 +40,7 @@ dependencies = [
     # but Dependency Review flags the package version. 1.88.0+ clears all four.
     # crg's optional semgrep extra otherwise pins the resolver to litellm 1.83.0; this
     # floor lifts it (semgrep resolves to 1.79.x, fine for a dev-only SAST tool).
-    "litellm>=1.91.0",
+    "litellm>=1.93.0",
     "Pygments>=2.20.0",
     "alembic>=1.18.5,<2",
     "defusedxml>=0.7.1",
