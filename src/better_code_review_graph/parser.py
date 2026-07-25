@@ -226,6 +226,52 @@ def _is_test_file(qualified_or_path: str) -> bool:
     return any(p.search(Path(path).stem) for p in _TEST_PATTERNS)
 
 
+# Languages whose module-level state is understood well enough to emit
+# SHARES_STATE edges. Every other language returns no state and is untouched.
+_MODULE_STATE_LANGUAGES = {"python"}
+
+
+def _assignment_nodes(root) -> list:
+    """Assignment nodes bound at module scope in ``root``.
+
+    Only direct children of the module node count. A name bound inside a
+    function or class body belongs to that scope, not to module state, and
+    treating it as shared would link every function that reuses a common
+    local name.
+
+    Both spellings the grammar has used are accepted: tree-sitter 0.26 puts
+    the ``assignment`` directly under ``module``, while earlier versions wrap
+    it in an ``expression_statement``. Reading only one of them yields an
+    empty set and no error, so the feature would go quiet rather than fail.
+    """
+    found = []
+    for child in root.children:
+        if child.type == "assignment":
+            found.append(child)
+        elif child.type == "expression_statement":
+            found.extend(c for c in child.children if c.type == "assignment")
+    return found
+
+
+def _collect_module_state(root, source: bytes, language: str) -> set[str]:
+    """Names bound at module import time in ``root``."""
+    if language not in _MODULE_STATE_LANGUAGES:
+        return set()
+
+    names: set[str] = set()
+    for assignment in _assignment_nodes(root):
+        left = assignment.child_by_field_name("left")
+        if left is None:
+            continue
+        if left.type == "identifier":
+            names.add(source[left.start_byte : left.end_byte].decode())
+        elif left.type in ("pattern_list", "tuple_pattern"):
+            for target in left.children:
+                if target.type == "identifier":
+                    names.add(source[target.start_byte : target.end_byte].decode())
+    return names
+
+
 def file_hash(path: Path) -> str:
     """SHA-256 hash of file contents."""
     return hashlib.sha256(path.read_bytes()).hexdigest()

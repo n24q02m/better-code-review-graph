@@ -2,6 +2,8 @@
 
 import tree_sitter_language_pack as tslp
 
+from better_code_review_graph.parser import _collect_module_state
+
 
 def _root(source: bytes):
     return tslp.get_parser("python").parse(source).root_node
@@ -119,3 +121,30 @@ def test_attribute_and_keyword_argument_hold_a_bare_identifier():
     kwarg = call.child_by_field_name("arguments").children[1]
     assert kwarg.type == "keyword_argument"
     assert kwarg.child_by_field_name("name").type == "identifier"
+
+
+def test_collects_only_module_level_names():
+    source = (
+        b"REGISTRY = {}\n"
+        b"_CACHE, _MISSES = {}, 0\n"
+        b"\n"
+        b"def f():\n"
+        b"    local_only = 1\n"
+        b"    return local_only\n"
+        b"\n"
+        b"class C:\n"
+        b"    attr = 2\n"
+    )
+    names = _collect_module_state(_root(source), source, "python")
+    assert names == {"REGISTRY", "_CACHE", "_MISSES"}
+
+
+def test_collects_annotated_module_binding():
+    source = b"REGISTRY: dict[str, int] = {}\n"
+    assert _collect_module_state(_root(source), source, "python") == {"REGISTRY"}
+
+
+def test_non_python_returns_empty():
+    source = b"const x = 1;\n"
+    root = tslp.get_parser("javascript").parse(source).root_node
+    assert _collect_module_state(root, source, "javascript") == set()
