@@ -453,9 +453,9 @@ def _snapshot_pre_functions(
 ) -> dict[str, dict[str, str]]:
     """Create per-file snapshot of pre-update Function qualified_names.
 
-    Bolt: Optimized to use a single batched query to fetch only the needed columns,
-    avoiding the overhead of N+1 database calls and materializing full GraphNode
-    objects (including large source_text fields) just to read hashes.
+    Uses a single batched query over just the needed columns, so reading
+    hashes does not cost N+1 database calls or materialize full GraphNode
+    objects (including large source_text fields).
     """
     pre_functions: dict[str, dict[str, str]] = {}
     repo_resolved = repo_root.resolve()
@@ -518,7 +518,7 @@ def _update_files_in_store(
             source_preview = abs_path.read_bytes()
             fhash = hashlib.sha256(source_preview).hexdigest()
 
-            # Bolt: Check file_hash directly via SQL to avoid materializing all
+            # Check file_hash directly via SQL to avoid materializing all
             # GraphNode objects for unchanged files.
             existing_hash = store.get_file_hash(str(abs_path))
             if existing_hash == fhash:

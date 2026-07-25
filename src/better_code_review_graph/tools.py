@@ -1016,7 +1016,7 @@ def _handle_callers_of(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving callers (issue #342).
+    # Batched search to avoid N+1 queries when resolving callers (issue #342).
     # We look for CALLS edges targeting either the qualified name or the bare name.
     search_targets = [qn]
     if node and node.name and node.name != qn:
@@ -1047,7 +1047,7 @@ def _handle_callees_of(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving callees
+    # Batched search to avoid N+1 queries when resolving callees
     edges = store.search_edges_by_source_names([qn], kind="CALLS", as_of=as_of)
     qns = []
     for e in edges:
@@ -1069,7 +1069,7 @@ def _handle_imports_of(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving imports
+    # Batched search to avoid N+1 queries when resolving imports
     edges = store.search_edges_by_source_names([qn], kind="IMPORTS_FROM", as_of=as_of)
     qns = []
     for e in edges:
@@ -1097,7 +1097,7 @@ def _handle_importers_of(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving importers
+    # Batched search to avoid N+1 queries when resolving importers
     edges = store.search_edges_by_target_names(
         [abs_target], kind="IMPORTS_FROM", as_of=as_of
     )
@@ -1126,7 +1126,7 @@ def _handle_importers_of(
 def _handle_children_of(
     store: Any, qn: str, results: list[dict], edges_out: list[dict], *, as_of: str = ""
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving children
+    # Batched search to avoid N+1 queries when resolving children
     edges = store.search_edges_by_source_names([qn], kind="CONTAINS", as_of=as_of)
     qns = []
     for e in edges:
@@ -1149,7 +1149,7 @@ def _handle_tests_for(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving tests
+    # Batched search to avoid N+1 queries when resolving tests
     edges = store.search_edges_by_target_names([qn], kind="TESTED_BY", as_of=as_of)
     # Filter out fallback bare name matches since the original call used fallback=False
     edges = [e for e in edges if e.target_qualified == qn]
@@ -1181,7 +1181,7 @@ def _handle_inheritors_of(
     *,
     as_of: str = "",
 ) -> None:
-    # Bolt: Use batched search to avoid N+1 queries when resolving inheritors
+    # Batched search to avoid N+1 queries when resolving inheritors
     edges = store.search_edges_by_target_names(
         [qn], kind=("INHERITS", "IMPLEMENTS"), as_of=as_of
     )

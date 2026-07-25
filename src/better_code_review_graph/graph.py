@@ -1084,7 +1084,7 @@ class GraphStore:
     ) -> list[GraphEdge]:
         """Batch search for edges where source_qualified matches any of the given names.
 
-        Bolt: Optimized to prevent N+1 queries when resolving multiple sources
+        Batched to prevent N+1 queries when resolving multiple sources
         to their targets.
         """
         if not names:
@@ -1109,7 +1109,7 @@ class GraphStore:
     ) -> list[GraphEdge]:
         """Batch search for edges where target_qualified matches any of the given names.
 
-        Bolt: Optimized to prevent N+1 queries when resolving multiple targets
+        Batched to prevent N+1 queries when resolving multiple targets
         to their callers (issue #342).
         """
         if not names:
@@ -1162,8 +1162,8 @@ class GraphStore:
         # The temporal fragment is a static prefix/clause produced by
         # ``_temporal_filter`` from a hard-coded set of strings, so the
         # f-string interpolation is safe (Bandit B608 already lints).
-        # Bolt: Removed unnecessary LOWER() calls since SQLite's LIKE is case-insensitive
-        # for ASCII by default. This reduces query execution time by ~50% (issue #342).
+        # No LOWER() call: SQLite's LIKE is already case-insensitive for
+        # ASCII by default (issue #342).
         cursor = self._conn.execute(
             f"""
             SELECT * FROM nodes
@@ -1472,8 +1472,8 @@ class GraphStore:
             if self._nxg_cache is not None:
                 return self._nxg_cache
             g: nx.DiGraph = nx.DiGraph()
-            # Bolt: Optimized to fetch only necessary columns and use generator expression
-            # with add_edges_from instead of multiple add_edge calls in a Python loop.
+            # Fetch only the needed columns and feed add_edges_from a generator
+            # rather than calling add_edge per row in a Python loop.
             cursor = self._conn.execute(
                 "SELECT source_qualified, target_qualified, kind FROM edges"
             )

@@ -63,11 +63,9 @@ _CYPHER_VAR_PATTERN = re.compile(r"\W")
 def _cypher_var(node_id: str) -> str:
     """Return a Cypher-safe variable name derived from node id.
 
-    ⚡ Bolt Optimization:
-    Replaced generator expression `"".join(...)` with a pre-compiled
-    regular expression `\\W` (matches non-alphanumeric and non-underscore).
-    This pushes the string traversal into optimized C code and significantly
-    reduces overhead for large graph serializations (~2x faster).
+    Uses a pre-compiled `\\W` regular expression (non-alphanumeric,
+    non-underscore) rather than a generator expression with `"".join(...)`,
+    which keeps the string traversal in C for large graph serializations.
     """
     safe = _CYPHER_VAR_PATTERN.sub("_", node_id)
     return f"n_{safe}"
