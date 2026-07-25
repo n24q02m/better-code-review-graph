@@ -110,10 +110,14 @@ jobs:
   codeql:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    # Runs for bot actors too. The "Main Ruleset" requires CodeQL results to
+    # merge, and this repo has code-scanning default setup disabled, so this
+    # job is the only producer of those results. Excluding dependabot and
+    # renovate left every dependency PR permanently blocked and merged only
+    # via --admin, which bypasses the whole ruleset rather than just CodeQL.
+    # Dependency changes are also the changes most worth scanning.
     if: >-
       (github.event_name == 'pull_request' || github.event_name == 'push')
-      && github.actor != 'dependabot[bot]'
-      && github.actor != 'renovate[bot]'
     permissions:
       contents: read
       security-events: write
