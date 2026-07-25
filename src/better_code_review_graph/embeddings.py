@@ -272,6 +272,26 @@ _DEFAULT_EMBEDDING_CHAIN = (
 _COHERE_OUTPUT_DIMENSIONS = (256, 512, 1024, 1536)
 
 
+# Cohere models that accept an explicit output_dimension. Widening the request
+# is only correct for these, and for two reasons that happen to coincide: they
+# are the models that accept a width at all, and they are the Matryoshka ones,
+# which is what makes slicing the response back down meaning-preserving.
+#
+# Every other cohere model keeps receiving the exact width asked for. That is
+# deliberate: such a model rejects it outright ("output_dimension is not
+# supported for this model") and the caller finds out. Widening the request
+# instead would be accepted -- the native width is always a legal value -- and
+# we would then slice a non-Matryoshka vector into nonsense without a word.
+# A model added here later must be checked for Matryoshka training, not just
+# for accepting the parameter.
+_COHERE_WIDTH_SELECTABLE_MODELS = ("embed-v4.0",)
+
+
+def _cohere_supports_width_selection(model: str) -> bool:
+    """Whether ``model`` can be asked for a width other than its native one."""
+    return _strip_provider(model).lower() in _COHERE_WIDTH_SELECTABLE_MODELS
+
+
 def _cohere_output_dimension(dimensions: int) -> int | None:
     """Narrowest Cohere width that ``dimensions`` fits inside.
 
@@ -412,8 +432,9 @@ class CloudEmbeddingBackend:
             # which only accepts _COHERE_OUTPUT_DIMENSIONS. Requesting the
             # storage width directly is rejected before any vector is returned,
             # so ask for the next supported width up and let the truncation at
-            # the end of this method trim it back down.
-            if dimensions:
+            # the end of this method trim it back down. Models that cannot
+            # select a width are left alone -- see the note there.
+            if dimensions and _cohere_supports_width_selection(self.model):
                 negotiated = _cohere_output_dimension(dimensions)
                 if negotiated is None:
                     del kwargs["dimensions"]
