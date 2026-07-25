@@ -27,11 +27,11 @@ dependencies = [
     "qwen3-embed>=1.12.1",
     "httpx",
     "pydantic-settings",
-    # 1.20.0b2 fixes build_cli's `config`/`doctor` PerPluginStore key
+    # 1.20.0 carries the build_cli `config`/`doctor` PerPluginStore key fix
     # (#666) for servers whose plugin slug differs from server_name
     # (this repo's slug == server_name already, so no CLI regression
-    # here -- bumped for cascade parity with wet/mnemo).
-    "n24q02m-mcp-core[llm]>=1.20.0b2,<2",
+    # here -- kept for cascade parity with wet/mnemo).
+    "n24q02m-mcp-core[llm]>=1.20.0,<2",
     # litellm security floor (transitive via mcp-core[llm]). 1.83.x-1.87.x carry 4
     # advisories in litellm's PROXY server: GHSA-r75f-5x8p-qvmc (SQLi in proxy key
     # verify), GHSA-xqmj-j6mv-4862 (SSTI /prompts/test), GHSA-v4p8-mg3p-g94g (cmd-exec
