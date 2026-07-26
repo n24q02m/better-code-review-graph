@@ -88,3 +88,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-07-28 - Skip json.loads() for empty JSON objects
+
+**Anchor:** (current PR)
+
+**Learning:** During materialization of database rows (`_row_to_node`, `_row_to_edge`), `json.loads(row["extra"])` is called for every row. For the vast majority of nodes and edges, this field simply contains `"{}"`. Parsing this string via `json.loads` incurs a significant performance penalty (Python-to-C overhead and JSON validation) compared to instantly returning an empty Python dictionary `{}`, becoming a CPU bottleneck on operations that query millions of rows.
+
+**Action:** When deserializing JSON strings that are frequently empty objects, explicitly check for the literal string `"{}"` and short-circuit to return `{}` before invoking `json.loads`.
