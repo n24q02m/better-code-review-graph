@@ -1507,6 +1507,7 @@ class GraphStore:
             return_type=row["return_type"],
             is_test=bool(row["is_test"]),
             file_hash=row["file_hash"],
+            # Performance optimization: Bypass json.loads overhead for empty JSON objects
             extra={} if not extra_val or extra_val == "{}" else json.loads(extra_val),
         )
 
@@ -1519,6 +1520,7 @@ class GraphStore:
             target_qualified=row["target_qualified"],
             file_path=row["file_path"],
             line=row["line"],
+            # Performance optimization: Bypass json.loads overhead for empty JSON objects
             extra={} if not extra_val or extra_val == "{}" else json.loads(extra_val),
         )
 
