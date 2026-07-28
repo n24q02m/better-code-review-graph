@@ -1,5 +1,7 @@
 # Better Code Review Graph
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.n24q02m%2Fbetter-code-review-graph.svg)](https://mcptoplist.com/server/io.github.n24q02m%2Fbetter-code-review-graph)
+
 mcp-name: io.github.n24q02m/better-code-review-graph
 
 **Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.**
