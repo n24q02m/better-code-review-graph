@@ -88,3 +88,6 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+## 2024-07-29 - Optimize json.loads calls for empty JSON in graph queries
+**Learning:** `json.loads` has measurable overhead when parsing empty objects, especially when materializing rows during SQLite table scans in graph queries (e.g., `_row_to_node` and `_row_to_edge`).
+**Action:** When materializing database rows that store JSON in text columns, check if the string representation is empty or explicitly `"{}"`, and return an empty dictionary instead of invoking `json.loads()`.
