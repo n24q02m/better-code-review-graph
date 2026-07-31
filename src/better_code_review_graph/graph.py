@@ -1506,7 +1506,9 @@ class GraphStore:
             return_type=row["return_type"],
             is_test=bool(row["is_test"]),
             file_hash=row["file_hash"],
-            extra=json.loads(row["extra"]) if row["extra"] else {},
+            extra={}
+            if not row["extra"] or row["extra"] == "{}"
+            else json.loads(row["extra"]),
         )
 
     def _row_to_edge(self, row: sqlite3.Row) -> GraphEdge:
@@ -1517,7 +1519,9 @@ class GraphStore:
             target_qualified=row["target_qualified"],
             file_path=row["file_path"],
             line=row["line"],
-            extra=json.loads(row["extra"]) if row["extra"] else {},
+            extra={}
+            if not row["extra"] or row["extra"] == "{}"
+            else json.loads(row["extra"]),
         )
 
 
