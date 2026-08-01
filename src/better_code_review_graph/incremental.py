@@ -334,20 +334,20 @@ def find_dependents(store: GraphStore, file_path: str) -> list[str]:
     """
     dependents = set()
     # Find edges where someone imports from this file
-    edges = store.get_edges_by_target(file_path)
+    edges = store.get_edges_by_target(file_path, kind="IMPORTS_FROM")
     for e in edges:
-        if e.kind == "IMPORTS_FROM":
-            # The source is a file path (for IMPORTS_FROM edges)
-            dependents.add(e.file_path)
+        # The source is a file path (for IMPORTS_FROM edges)
+        dependents.add(e.file_path)
 
     # Also check for DEPENDS_ON edges
     nodes = store.get_nodes_by_file(file_path)
     qns = [n.qualified_name for n in nodes]
     if qns:
-        batch_edges = store.get_edges_by_targets(qns)
+        batch_edges = store.get_edges_by_targets(
+            qns, kind=("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS")
+        )
         for e in batch_edges:
-            if e.kind in ("CALLS", "IMPORTS_FROM", "INHERITS", "IMPLEMENTS"):
-                dependents.add(e.file_path)
+            dependents.add(e.file_path)
 
     dependents.discard(file_path)
     return list(dependents)
