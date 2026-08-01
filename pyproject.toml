@@ -7,13 +7,13 @@ name = "better-code-review-graph"
 version = "3.21.0"
 description = "Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase."
 readme = { file = "README.md", content-type = "text/markdown" }
-license = "MIT"
+license = "Apache-2.0"
 requires-python = "==3.13.*"
 authors = [{ name = "n24q02m" }]
 keywords = ["code-review", "knowledge-graph", "tree-sitter", "claude-code", "mcp", "mcp-server", "model-context-protocol", "cursor", "codex", "claude"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
 ]

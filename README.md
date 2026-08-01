@@ -9,7 +9,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 [![codecov](https://codecov.io/gh/n24q02m/better-code-review-graph/graph/badge.svg)](https://codecov.io/gh/n24q02m/better-code-review-graph)
 [![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
 [![Docker](https://img.shields.io/docker/v/n24q02m/better-code-review-graph?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/better-code-review-graph)
-[![License: MIT](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
 
 <!-- Badge Row 2: Tech -->
 [![Python](https://img.shields.io/badge/Python_3.13-3776AB?logo=python&logoColor=white)](#)
@@ -371,7 +371,7 @@ How better-code-review-graph stacks up against direct competitors in each pillar
 | Token-optimized review context | Yes (`review` tool, git-diff scoped) | Yes (PR review comments) | No (code-context assistant) | No (context layer, not review) |
 | Security scanning | Yes (Semgrep `p/auto` + 3-rule overlay, SARIF) | ? | ? | No |
 | Self-hostable | Yes (stdio default, machine-bound) | Yes (Docker / K8s / air-gapped) | Yes (self-hosted instance) | Yes (100% local, no API keys) |
-| Free / open source | Yes (MIT) | No (proprietary SaaS; free OSS tier) | No (Enterprise license, source private) | Yes (MIT) |
+| Free / open source | Yes (Apache-2.0) | No (proprietary SaaS; free OSS tier) | No (Enterprise license, source private) | Yes (MIT) |
 
 Sources: [Greptile](https://www.greptile.com/docs/introduction) · [Greptile pricing](https://www.greptile.com/pricing) · [Sourcegraph MCP](https://sourcegraph.com/mcp) · [CodeGraph](https://github.com/colbymchenry/codegraph). Cells marked `?` are capabilities the competitor does not publicly document, not confirmed absences.
 
@@ -433,4 +433,4 @@ Use the `help` tool from any MCP client for inline per-tool reference.
 
 ## License
 
-MIT -- See [LICENSE](LICENSE).
+Apache-2.0 -- See [LICENSE](LICENSE).
