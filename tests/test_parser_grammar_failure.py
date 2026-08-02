@@ -8,12 +8,15 @@ containing no nodes at all -- the exact failure that took a full CI run
 plus a hand-built experiment to diagnose.
 
 These tests pin both halves of the split this file's fix introduces:
-infrastructure breakage raises, unsupported languages stay quiet.
+infrastructure breakage raises, unsupported languages stay quiet. They also
+pin the one caller that used to swallow the new error back down to silence.
 """
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -161,3 +164,81 @@ class TestHealthyHostIsUnaffected:
             Path("sample.py"), b"def outer():\n    return 1\n"
         )
         assert [n for n in nodes if n.kind == "Function"]
+
+
+def _run_git(repo: str, *args: str) -> None:
+    subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def shifted_repo(tmp_path):
+    """A repo whose only symbol moved down a line between HEAD~1 and HEAD."""
+    repo = tmp_path
+    _run_git(str(repo), "init", "--initial-branch=main")
+    _run_git(str(repo), "config", "user.email", "test@example.com")
+    _run_git(str(repo), "config", "user.name", "test")
+
+    src = repo / "module.py"
+    src.write_text("def alpha():\n    return 1\n")
+    _run_git(str(repo), "add", "module.py")
+    _run_git(str(repo), "commit", "-m", "feat: initial")
+
+    src.write_text("\ndef alpha():\n    return 1\n")
+    _run_git(str(repo), "add", "module.py")
+    _run_git(str(repo), "commit", "-m", "fix: shift alpha down")
+    return repo
+
+
+class TestReviewDeltaDoesNotSwallowGrammarFailure:
+    """``renamed_in_diff`` must not answer "nothing moved" on a broken host.
+
+    ``_get_symbol_lines`` is the one caller of ``parse_bytes`` that catches
+    broadly and drops to ``logger.debug`` + ``{}``. Left alone it would
+    swallow the very error this change introduces, so the review-delta path
+    would keep reporting a clean, empty, wrong answer.
+    """
+
+    def test_get_symbol_lines_reraises_grammar_failure(self, broken_grammar):
+        """The helper must not convert a host fault into "no symbols"."""
+        from better_code_review_graph.tools import _get_symbol_lines
+
+        with pytest.raises(GrammarUnavailableError):
+            _get_symbol_lines(CodeParser(), Path("module.py"), b"def alpha():\n")
+
+    def test_get_symbol_lines_still_swallows_ordinary_parse_errors(self):
+        """Narrow the catch, do not remove it.
+
+        ``test_renamed_in_diff_exception`` pins that an ordinary per-file
+        parse error is skipped rather than failing the whole tool. That
+        best-effort contract stays exactly as it was.
+        """
+        from better_code_review_graph.tools import _get_symbol_lines
+
+        parser = CodeParser()
+        with patch.object(
+            parser, "parse_bytes", side_effect=Exception("ordinary parse error")
+        ):
+            assert _get_symbol_lines(parser, Path("module.py"), b"x") == {}
+
+    def test_renamed_in_diff_reports_the_cause_instead_of_no_shifts(
+        self, broken_grammar, shifted_repo
+    ):
+        """The tool result must name the fault, not claim an empty diff."""
+        from better_code_review_graph.tools import renamed_in_diff
+
+        result = renamed_in_diff(base="HEAD~1", repo_root=str(shifted_repo))
+
+        assert result["status"] == "error", (
+            "a host that cannot parse anything must not report status=ok"
+        )
+        assert _CACHE_ERROR in result["error"], "the original cause must survive"
+        assert "python" in result["error"], "the failing language must be named"
+        assert result["shifts"] == []
+
+    def test_renamed_in_diff_still_works_on_a_healthy_host(self, shifted_repo):
+        """Regression guard: the real path is untouched."""
+        from better_code_review_graph.tools import renamed_in_diff
+
+        result = renamed_in_diff(base="HEAD~1", repo_root=str(shifted_repo))
+        assert result["status"] == "ok"
+        assert any(s["symbol"] == "alpha" for s in result["shifts"]), result["shifts"]
