@@ -53,8 +53,10 @@ def test_handle_not_found_store_error(tmp_graph_store):
     target = "error_symbol"
     tmp_graph_store.close()
 
-    # _list_kinds_in_graph should catch the exception and return []
+    # The symbol genuinely was not found, so the status still holds -- but
+    # the closed connection means we cannot also claim the graph is empty.
     result = _handle_not_found(tmp_graph_store, target)
 
     assert result["status"] == "not_found"
-    assert result["indexed_kinds"] == []
+    assert result["indexed_kinds"] is None
+    assert "not 'nothing indexed'" in result["indexed_kinds_error"]

@@ -767,10 +767,26 @@ class CodeParser:
                     source_repo_id,
                     target_repos,
                 )
-            except Exception:
+            except Exception as exc:
                 # The resolver may touch the filesystem; treat any
                 # error as "no cross-repo match" rather than aborting
                 # the whole parse. Single-repo mode is preserved.
+                #
+                # The fallback is deliberate, the silence was not: the
+                # resolver returns None for a genuine "no match", so an
+                # exception here is a different event entirely, and it
+                # previously produced no record at any log level. A whole
+                # federated build could resolve zero cross-repo imports and
+                # look exactly like a correctly configured single-repo one.
+                logger.warning(
+                    "Cross-repo import resolution failed for %r in %s "
+                    "(%s: %s); leaving the edge target unresolved, so this "
+                    "import will not be linked across repos.",
+                    stmt,
+                    path,
+                    type(exc).__name__,
+                    exc,
+                )
                 resolved = None
             if resolved is not None:
                 edge.target = resolved

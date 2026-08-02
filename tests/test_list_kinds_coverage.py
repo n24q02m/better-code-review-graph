@@ -17,17 +17,17 @@ def test_list_kinds_in_graph_success():
 
 
 def test_list_kinds_in_graph_execute_exception():
-    """Verify that _list_kinds_in_graph returns an empty list if execute() raises an exception."""
+    """A failed execute() reports unknown (None), never an empty graph."""
     mock_store = MagicMock()
     mock_store._conn.execute.side_effect = RuntimeError("SQL Error")
 
     result = _list_kinds_in_graph(mock_store)
 
-    assert result == []
+    assert result is None
 
 
 def test_list_kinds_in_graph_iteration_exception():
-    """Verify that _list_kinds_in_graph returns an empty list if cursor iteration raises."""
+    """Failed cursor iteration reports unknown (None), never an empty graph."""
     mock_store = MagicMock()
     mock_cursor = MagicMock()
     mock_cursor.__iter__.side_effect = Exception("Iter Error")
@@ -35,15 +35,15 @@ def test_list_kinds_in_graph_iteration_exception():
 
     result = _list_kinds_in_graph(mock_store)
 
-    assert result == []
+    assert result is None
 
 
 def test_list_kinds_in_graph_processing_exception():
-    """Verify that _list_kinds_in_graph returns an empty list if an exception occurs during list comprehension."""
+    """A row missing 'kind' reports unknown (None), never an empty graph."""
     mock_store = MagicMock()
     # Returning rows missing the 'kind' key will trigger a KeyError in the list comprehension
     mock_store._conn.execute.return_value = [{"not_kind": "foo"}]
 
     result = _list_kinds_in_graph(mock_store)
 
-    assert result == []
+    assert result is None
