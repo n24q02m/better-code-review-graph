@@ -139,7 +139,19 @@ def resolve_credential_state() -> CredentialState:
                 _state = CredentialState.CONFIGURED
                 return _state
         except Exception as e:
-            logger.debug("Exception in %s: %s", __name__, e)
+            # load() returns None when nothing was ever saved, so reaching
+            # here means the store exists but could not be read: a corrupt
+            # config.json, a rotated machine key, or a permission problem.
+            # Startup still continues -- crg runs without cloud credentials --
+            # but falling through silently would report "not configured yet"
+            # and send the user to re-enter keys that are already saved.
+            logger.warning(
+                "Per-plugin credential store exists but could not be read "
+                "({}: {}). Continuing in awaiting_setup mode; any saved cloud "
+                "API keys are being ignored until this is resolved.",
+                type(e).__name__,
+                e,
+            )
 
         try:
             from mcp_core import get_mode
@@ -150,7 +162,16 @@ def resolve_credential_state() -> CredentialState:
                 _state = CredentialState.LOCAL
                 return _state
         except Exception as e:
-            logger.debug("Exception in %s: %s", __name__, e)
+            # Same reasoning: get_mode returns None when no marker was ever
+            # written, so an exception means an earlier "skip relay" choice is
+            # unreadable and the user will be prompted to set up again.
+            logger.warning(
+                "Local-mode marker could not be read ({}: {}). Continuing in "
+                "awaiting_setup mode; a previous 'skip relay' choice is being "
+                "ignored.",
+                type(e).__name__,
+                e,
+            )
 
     logger.info("No credentials found -- server starting in awaiting_setup mode")
     _state = CredentialState.AWAITING_SETUP
