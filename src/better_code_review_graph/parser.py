@@ -21,6 +21,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+class GrammarUnavailableError(RuntimeError):
+    """A language this parser claims to support has no loadable grammar.
+
+    Signals a broken *host*, not a broken file: the grammar cache could not
+    be resolved, downloaded, or loaded. Distinct from an unsupported
+    language, which is an ordinary empty result.
+    """
+
+
 # ---------------------------------------------------------------------------
 # Data models for extracted entities
 # ---------------------------------------------------------------------------
@@ -95,6 +105,11 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".php": "php",
     ".sol": "solidity",
 }
+
+#: The languages this parser claims to handle. Membership is what separates
+#: "crg does not parse this" (an ordinary empty result) from "this host
+#: cannot load a grammar it is supposed to have" (a fault worth raising).
+SUPPORTED_LANGUAGES: frozenset[str] = frozenset(EXTENSION_TO_LANGUAGE.values())
 
 # Tree-sitter node type mappings per language
 # Maps (language) -> dict of semantic role -> list of TS node types
@@ -506,17 +521,40 @@ class CodeParser:
         self._current_source_lines: list[str] | None = None
 
     def _get_parser(self, language: str):
+        """The Tree-sitter parser for ``language``.
+
+        Returns ``None`` only when ``language`` is outside
+        :data:`SUPPORTED_LANGUAGES` -- i.e. crg does not parse it, which is
+        an ordinary "nothing to extract" answer.
+
+        Raises :class:`GrammarUnavailableError` when a *supported* language
+        has no loadable grammar. That is a broken host, and it must not be
+        reported as an empty parse: every caller would record zero nodes for
+        a file full of code and the build would look like it succeeded.
+        """
         if language not in self._parsers:
+            if language not in SUPPORTED_LANGUAGES:
+                return None
             try:
                 # tslp.get_parser expects SupportedLanguage (a large Literal
-                # union). We validate against EXTENSION_TO_LANGUAGE upstream
-                # and fall back on ValueError/KeyError via the generic except
-                # below, so narrowing through cast is safe here.
+                # union). Membership in SUPPORTED_LANGUAGES is checked above,
+                # so narrowing through cast is safe here.
                 self._parsers[language] = tslp.get_parser(
                     cast("tslp.SupportedLanguage", language)
                 )
-            except Exception:
-                return None
+            except Exception as exc:
+                raise GrammarUnavailableError(
+                    f"Tree-sitter grammar for {language!r} could not be loaded: "
+                    f"{exc}. This is a host problem, not a problem with the "
+                    f"file being parsed -- continuing would index every "
+                    f"{language} file as zero nodes and report the build as "
+                    f"successful. Check that the grammar cache directory is "
+                    f"resolvable and writable "
+                    f"(tree_sitter_language_pack.cache_dir()); on a host with "
+                    f"no network or no usable cache location, pre-download the "
+                    f"grammars or pin the cache explicitly via "
+                    f"tslp.configure(tslp.PackConfig(cache_dir=...))."
+                ) from exc
         return self._parsers[language]
 
     def detect_language(self, path: Path) -> str | None:
@@ -579,6 +617,10 @@ class CodeParser:
         if not language:
             return [], []
 
+        # ``language`` came from EXTENSION_TO_LANGUAGE, so it is always in
+        # SUPPORTED_LANGUAGES and _get_parser either returns a parser or
+        # raises GrammarUnavailableError. The None branch is kept as a guard
+        # for callers that reach _get_parser with an unmapped language.
         parser = self._get_parser(language)
         if not parser:
             return [], []
