@@ -81,6 +81,39 @@ def _allow_temporal_migration_without_git() -> None:
     os.environ["CRG_TEST_ALLOW_NO_GIT"] = "1"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _pin_tree_sitter_grammar_cache() -> None:
+    """Pin the tree-sitter grammar cache to its real location.
+
+    MUST run before ``_isolate_per_plugin_home`` redirects HOME -- session
+    scope guarantees that, since pytest sets higher-scoped fixtures up first.
+
+    ``tree_sitter_language_pack`` keeps its downloaded grammar shared
+    libraries in an OS cache dir derived from the environment (``$HOME`` /
+    ``$XDG_CACHE_HOME`` on Linux, ``LOCALAPPDATA`` on Windows). Redirecting
+    HOME per-test moves that cache to an empty tmp dir, so every
+    ``get_parser`` call has to re-download the grammar; on a network-
+    restricted CI runner that raises
+    ``RuntimeError: Download error: Could not determine system cache
+    directory``. ``CodeParser._get_parser`` catches that and returns
+    ``None``, which ``parse_bytes`` turns into an empty result -- so the
+    whole suite silently parses zero nodes instead of erroring. That is
+    exactly what happened on ubuntu-latest, while Windows stayed green
+    because its cache follows LOCALAPPDATA rather than the redirected home.
+
+    Resolving the path here and handing it straight back via ``configure``
+    is idempotent (verified: ``cache_dir()`` is unchanged afterwards) and
+    keeps grammar loading working identically to a run with no fixtures at
+    all. The grammar cache is a downloaded build artifact, not developer
+    state, so sharing it is the same deliberate carve-out as
+    ``GIT_CONFIG_GLOBAL`` above -- credential isolation is unaffected because
+    ``PerPluginStore`` resolves from ``Path.home()``, not this cache.
+    """
+    import tree_sitter_language_pack as tslp
+
+    tslp.configure(tslp.PackConfig(cache_dir=tslp.cache_dir()))
+
+
 @pytest.fixture(autouse=True)
 def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
     """Redirect ``~`` to a per-test tmp dir so credential-store writes stay

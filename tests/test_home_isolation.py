@@ -12,9 +12,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import tree_sitter_language_pack as tslp
 from mcp_core.storage.per_plugin_store import PerPluginStore
 
 from better_code_review_graph.credential_state import PLUGIN_NAME
+from better_code_review_graph.parser import CodeParser
 
 from .conftest import REAL_HOME
 
@@ -72,3 +74,36 @@ def test_isolated_home_is_empty_per_test() -> None:
     assert Path.home() != REAL_HOME, _FIXTURE_HINT
     assert not (Path.home() / f".{PLUGIN_NAME}-mcp").exists()
     assert PerPluginStore(PLUGIN_NAME).load() is None
+
+
+def test_tree_sitter_grammar_cache_survives_the_isolated_home() -> None:
+    """Redirecting HOME must not drag the tree-sitter grammar cache with it.
+
+    ``tree_sitter_language_pack`` resolves its grammar cache from the
+    environment (``$HOME`` / ``$XDG_CACHE_HOME`` on Linux, ``LOCALAPPDATA``
+    on Windows) and memoises the result on first use. If the first resolution
+    happens inside a test, it lands in that test's empty tmp home, grammar
+    loading fails, ``CodeParser._get_parser`` swallows the error and returns
+    ``None``, and ``parse_bytes`` yields an empty result -- so the suite
+    parses zero nodes everywhere instead of erroring.
+
+    ``conftest._pin_tree_sitter_grammar_cache`` forces that first resolution
+    to happen at session start, with the real environment still in place.
+    ``cache_dir()`` raises outright when unresolvable, so this asserts both
+    that it resolves and that it did not follow the redirect.
+    """
+    assert Path.home() != REAL_HOME, _FIXTURE_HINT
+
+    cache = Path(tslp.cache_dir())
+    assert not cache.is_relative_to(Path.home()), (
+        f"tree-sitter grammar cache followed the isolated home ({cache}) -- "
+        "see conftest._pin_tree_sitter_grammar_cache"
+    )
+
+    nodes, _edges = CodeParser().parse_bytes(
+        Path("sample.py"), b"def outer():\n    return 1\n"
+    )
+    assert [n for n in nodes if n.kind == "Function"], (
+        "tree-sitter returned no Function nodes -- grammar loading is broken "
+        "under the isolated HOME (see conftest._pin_tree_sitter_grammar_cache)"
+    )
