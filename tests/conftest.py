@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
+
+#: The developer's / CI runner's genuine home directory, captured at conftest
+#: import time -- i.e. before any fixture has had a chance to redirect it.
+#: ``tests/test_home_isolation.py`` compares against this to prove the
+#: ``_isolate_per_plugin_home`` fixture below is still in force.
+REAL_HOME = Path.home()
 
 
 def pytest_addoption(parser):
@@ -72,6 +79,69 @@ def _allow_temporal_migration_without_git() -> None:
     explicitly clear this env var via ``monkeypatch.delenv``.
     """
     os.environ["CRG_TEST_ALLOW_NO_GIT"] = "1"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pin_tree_sitter_grammar_cache() -> None:
+    """Pin the tree-sitter grammar cache to its real location.
+
+    MUST run before ``_isolate_per_plugin_home`` redirects HOME -- session
+    scope guarantees that, since pytest sets higher-scoped fixtures up first.
+
+    ``tree_sitter_language_pack`` keeps its downloaded grammar shared
+    libraries in an OS cache dir derived from the environment (``$HOME`` /
+    ``$XDG_CACHE_HOME`` on Linux, ``LOCALAPPDATA`` on Windows). Redirecting
+    HOME per-test moves that cache to an empty tmp dir, so every
+    ``get_parser`` call has to re-download the grammar; on a network-
+    restricted CI runner that raises
+    ``RuntimeError: Download error: Could not determine system cache
+    directory``. ``CodeParser._get_parser`` catches that and returns
+    ``None``, which ``parse_bytes`` turns into an empty result -- so the
+    whole suite silently parses zero nodes instead of erroring. That is
+    exactly what happened on ubuntu-latest, while Windows stayed green
+    because its cache follows LOCALAPPDATA rather than the redirected home.
+
+    Resolving the path here and handing it straight back via ``configure``
+    is idempotent (verified: ``cache_dir()`` is unchanged afterwards) and
+    keeps grammar loading working identically to a run with no fixtures at
+    all. The grammar cache is a downloaded build artifact, not developer
+    state, so sharing it is the same deliberate carve-out as
+    ``GIT_CONFIG_GLOBAL`` above -- credential isolation is unaffected because
+    ``PerPluginStore`` resolves from ``Path.home()``, not this cache.
+    """
+    import tree_sitter_language_pack as tslp
+
+    tslp.configure(tslp.PackConfig(cache_dir=tslp.cache_dir()))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_per_plugin_home(tmp_path_factory, monkeypatch):
+    """Redirect ``~`` to a per-test tmp dir so credential-store writes stay
+    out of the developer's real home directory.
+
+    ``mcp_core.storage.per_plugin_store.PerPluginStore`` resolves every path
+    from ``Path.home()``: the encrypted config lands in
+    ``~/.better-code-review-graph-mcp/config.json`` and the AES-GCM machine
+    key in ``~/.better-code-review-graph-mcp/.secret``. Tests that exercise
+    the ``config`` tool end-to-end (e.g.
+    ``test_server.py::TestConfigTool::test_setup_status_action``) reach the
+    real store unmocked, so on a machine where the developer actually uses
+    CRG a plain ``uv run pytest`` reads their live credentials and
+    ``_load_or_generate_machine_key`` mints a fresh ``.secret`` into their
+    home. ``credential_state._sub_data_dir`` has the same problem via its
+    ``~/.crg`` default. In CI with parallel workers those writes race on one
+    shared home.
+
+    ``Path.home()`` reads ``HOME`` on POSIX and ``USERPROFILE`` on Windows,
+    so both are set. This is function-scoped on purpose: neither
+    session-scoped autouse fixture above resolves a home path (they only set
+    ``GIT_CONFIG_GLOBAL`` and ``CRG_TEST_ALLOW_NO_GIT``), so there is nothing
+    that needs the redirect earlier than per-test setup, and function scope
+    keeps the plain ``monkeypatch`` fixture usable.
+    """
+    fake_home = tmp_path_factory.mktemp("crg_test_home")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
 
 
 @pytest.fixture(autouse=True)
