@@ -82,15 +82,19 @@ def test_tree_sitter_grammar_cache_survives_the_isolated_home() -> None:
     ``tree_sitter_language_pack`` resolves its grammar cache from the
     environment (``$HOME`` / ``$XDG_CACHE_HOME`` on Linux, ``LOCALAPPDATA``
     on Windows) and memoises the result on first use. If the first resolution
-    happens inside a test, it lands in that test's empty tmp home, grammar
-    loading fails, ``CodeParser._get_parser`` swallows the error and returns
-    ``None``, and ``parse_bytes`` yields an empty result -- so the suite
-    parses zero nodes everywhere instead of erroring.
+    happens inside a test, it lands in that test's empty tmp home and grammar
+    loading fails. That used to be invisible: ``CodeParser._get_parser``
+    swallowed the error and returned ``None``, ``parse_bytes`` yielded an
+    empty result, and the suite parsed zero nodes everywhere instead of
+    erroring. A supported language whose grammar will not load now raises
+    ``GrammarUnavailableError``, so the same breakage reports itself.
 
-    ``conftest._pin_tree_sitter_grammar_cache`` forces that first resolution
-    to happen at session start, with the real environment still in place.
-    ``cache_dir()`` raises outright when unresolvable, so this asserts both
-    that it resolves and that it did not follow the redirect.
+    ``conftest._pin_tree_sitter_grammar_cache`` is still what keeps the
+    grammars reachable: it forces that first resolution to happen at session
+    start, with the real environment still in place. ``cache_dir()`` raises
+    outright when unresolvable, so this asserts both that it resolves and
+    that it did not follow the redirect. The parse below then confirms the
+    grammars genuinely load, rather than trusting the path check alone.
     """
     assert Path.home() != REAL_HOME, _FIXTURE_HINT
 

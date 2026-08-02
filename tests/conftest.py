@@ -95,11 +95,18 @@ def _pin_tree_sitter_grammar_cache() -> None:
     ``get_parser`` call has to re-download the grammar; on a network-
     restricted CI runner that raises
     ``RuntimeError: Download error: Could not determine system cache
-    directory``. ``CodeParser._get_parser`` catches that and returns
-    ``None``, which ``parse_bytes`` turns into an empty result -- so the
-    whole suite silently parses zero nodes instead of erroring. That is
-    exactly what happened on ubuntu-latest, while Windows stayed green
-    because its cache follows LOCALAPPDATA rather than the redirected home.
+    directory``. This fixture is what stops that happening, and it is still
+    required: without it the grammars are unreachable and nothing parses.
+
+    What changed is only how that unreachability *presents*.
+    ``CodeParser._get_parser`` used to catch the error and return ``None``,
+    which ``parse_bytes`` turned into an empty result, so the whole suite
+    silently parsed zero nodes instead of erroring -- which is exactly what
+    happened on ubuntu-latest, while Windows stayed green because its cache
+    follows LOCALAPPDATA rather than the redirected home. A supported
+    language whose grammar will not load now raises
+    ``GrammarUnavailableError`` instead, so removing this fixture fails the
+    suite loudly with the reason attached rather than quietly emptying it.
 
     Resolving the path here and handing it straight back via ``configure``
     is idempotent (verified: ``cache_dir()`` is unchanged afterwards) and

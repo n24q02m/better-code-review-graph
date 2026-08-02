@@ -1844,7 +1844,16 @@ def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
 
 
 def _get_symbol_lines(parser: Any, full_path: Path, source: bytes) -> dict[str, int]:
-    """Extract symbol names and their start lines from source code bytes."""
+    """Extract symbol names and their start lines from source code bytes.
+
+    An ordinary per-file parse error yields ``{}`` so one bad file cannot
+    fail the whole comparison. A :class:`GrammarUnavailableError` is not a
+    per-file problem though -- the host cannot parse *anything*, so every
+    file would report "no symbols" and the caller would conclude nothing
+    moved. That one is re-raised for the tool boundary to report.
+    """
+    from .parser import GrammarUnavailableError
+
     try:
         nodes, _ = parser.parse_bytes(full_path, source)
         return {
@@ -1852,6 +1861,8 @@ def _get_symbol_lines(parser: Any, full_path: Path, source: bytes) -> dict[str, 
             for n in nodes
             if n.kind == "Function" and n.line_start is not None
         }
+    except GrammarUnavailableError:
+        raise
     except Exception as e:
         logger.debug("Exception in %s: %s", __name__, e)
         return {}
@@ -1903,9 +1914,10 @@ def renamed_in_diff(
         repo_root: Repository root. Auto-detected if omitted.
 
     Returns:
-        ``shifts`` list of ``{symbol, file, base_line, head_line, delta}``.
+        ``shifts`` list of ``{symbol, file, base_line, head_line, delta}``,
+        or ``status: "error"`` when no grammar could be loaded at all.
     """
-    from .parser import CodeParser
+    from .parser import CodeParser, GrammarUnavailableError
 
     store, root = _get_store(repo_root)
     try:
@@ -1959,6 +1971,15 @@ def renamed_in_diff(
             ),
             "base": base,
             "shifts": shifts,
+        }
+    except GrammarUnavailableError as e:
+        # No grammar loads on this host, so "no shifts" would be a lie.
+        # MCP tools report failure in the payload rather than raising.
+        return {
+            "status": "error",
+            "error": str(e),
+            "base": base,
+            "shifts": [],
         }
     finally:
         store.close()
