@@ -18,6 +18,10 @@ Look for `total_nodes > 0` and `last_updated < 24h`. If `embeddings_count == 0`
 and you plan to run `search` on phrases (not literal identifiers), run
 `graph action=embed` first or expect a keyword-only warning (#317).
 
+`embeddings_count` is `null` (not `0`) when the embedding store could not be
+read at all, with the reason in `header.embeddings_error`. Running
+`graph action=embed` will not fix that - check the store itself.
+
 ---
 
 ## Stage 1 - Build / refresh
@@ -67,7 +71,8 @@ and `hint` to scope down (#315).
 
 Check the response `header.embeddings_count` first (#330). If zero, use a
 literal identifier only - keyword fallback returns garbage on phrases
-(#317 emits a warning when it sees a phrase-shaped query).
+(#317 emits a warning when it sees a phrase-shaped query). If it is `null`,
+the count is unknown rather than zero; see `header.embeddings_error`.
 
 ---
 
@@ -164,6 +169,13 @@ reference.
   and `auth()` exist, the Function will be picked.
 - `search` and `query` responses always include a `header` block with
   `embeddings_count`, `keyword_only`, and `graph_last_updated` (#330)
-  so audit trails do not need a separate `config status` call.
+  so audit trails do not need a separate `config status` call. A `null` in
+  `embeddings_count` or `graph_last_updated` means the read failed, not that
+  the value is zero or unset; the companion `embeddings_error` /
+  `graph_last_updated_error` key carries the reason.
+- A `not_found` response reports `indexed_kinds: null` plus
+  `indexed_kinds_error` when the graph could not be queried for its node
+  kinds. That is distinct from `indexed_kinds: []`, which means the graph
+  really is empty and should be rebuilt.
 - Pass `max_payload_bytes=0` to `impact` to opt out of the size cap if
   you can handle the full payload.

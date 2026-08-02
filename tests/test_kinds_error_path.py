@@ -9,4 +9,5 @@ def test_list_kinds_in_graph_error_path():
     mock_store._conn.execute.side_effect = Exception("DB Error")
 
     kinds = _list_kinds_in_graph(mock_store)
-    assert kinds == []
+    # None, not []: an empty list would claim the graph holds no nodes.
+    assert kinds is None

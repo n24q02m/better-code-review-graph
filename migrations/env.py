@@ -21,7 +21,21 @@ from sqlalchemy import engine_from_config, pool
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # ``disable_existing_loggers`` defaults to True, which sets
+    # ``disabled = True`` on every logger created before this point --
+    # including every ``better_code_review_graph.*`` logger, since the
+    # package is imported long before any migration runs. The effect is
+    # permanent for the life of the process: crg stops logging entirely,
+    # silently, with no error.
+    #
+    # In production this never fired because ``GraphStore`` builds its
+    # Alembic Config programmatically and leaves ``config_file_name``
+    # unset. It fired in the test suite, where ``tests/test_alembic_*``
+    # loads ``alembic.ini`` directly -- so from the first such test
+    # onward, every log-based assertion in the run was testing a logger
+    # that could not emit. Tests passed in isolation and silently lost
+    # their teeth in the full run.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # No declarative metadata: schema is hand-authored in versions/.
 target_metadata = None

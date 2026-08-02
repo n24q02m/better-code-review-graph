@@ -232,9 +232,14 @@ def _build_response_header(
     Surfaces ``embeddings_count`` and the derived ``keyword_only`` flag so
     consumers know whether the results came from semantic-similarity search
     (``embeddings_count > 0``) or keyword-substring fallback. Plus
-    ``graph_last_updated`` when available. Errors are swallowed and the
-    relevant fields fall back to ``None`` -- the header is best-effort
-    metadata, never load-bearing for query correctness.
+    ``graph_last_updated`` when available.
+
+    The header never raises -- it is metadata, not query correctness -- but a
+    read that fails is reported as ``null`` plus an explicit ``*_error`` key
+    rather than as a plausible-looking value. ``embeddings_count: 0`` in
+    particular is documented advice (``docs/recipes.md``: "if
+    ``embeddings_count == 0`` ... run ``graph action=embed`` first"), and
+    embedding cannot fix a store that will not open.
 
     Args:
         store: Open ``GraphStore`` (used for ``last_updated`` metadata).
@@ -244,6 +249,7 @@ def _build_response_header(
             flag is derived from ``embeddings_count``.
     """
     emb_count: int | None = None
+    emb_error: str | None = None
     if db_path is not None:
         try:
             backend = init_backend()
@@ -253,25 +259,50 @@ def _build_response_header(
             finally:
                 emb_store.close()
         except Exception as e:
-            logger.debug("Exception in %s: %s", __name__, e)
+            emb_error = f"{type(e).__name__}: {e}"
             emb_count = None
+            logger.warning(
+                "Embedding store at %s could not be read (%s); reporting "
+                "embeddings_count as null rather than 0, because 0 means "
+                "'no embeddings yet, run graph action=embed' and that will "
+                "not fix an unreadable store.",
+                db_path,
+                emb_error,
+            )
 
     last_updated: str | None = None
+    meta_error: str | None = None
     if store is not None:
         try:
             last_updated = store.get_metadata("last_updated")
         except Exception as e:
-            logger.debug("Exception in %s: %s", __name__, e)
+            meta_error = f"{type(e).__name__}: {e}"
             last_updated = None
+            logger.warning(
+                "Graph metadata could not be read (%s); graph_last_updated "
+                "is null because the read failed, not because the graph was "
+                "never built.",
+                meta_error,
+            )
 
     if keyword_only is None:
+        # An unreadable embedding store cannot serve semantic search either,
+        # so keyword_only is true whether the count is zero or unknown.
         keyword_only = (emb_count is None) or (emb_count == 0)
 
-    return {
-        "embeddings_count": emb_count if emb_count is not None else 0,
+    header: dict[str, Any] = {
+        # Zero only when a read succeeded and found nothing, or when there
+        # was no db_path to read in the first place. Never as a stand-in for
+        # "could not tell".
+        "embeddings_count": None if emb_error else (emb_count or 0),
         "keyword_only": bool(keyword_only),
         "graph_last_updated": last_updated,
     }
+    if emb_error:
+        header["embeddings_error"] = emb_error
+    if meta_error:
+        header["graph_last_updated_error"] = meta_error
+    return header
 
 
 def _validate_repo_root(path: Path) -> Path:
@@ -717,14 +748,25 @@ _QUERY_PATTERNS = {
 _LAST_CALLERS_RESULT: dict[str, dict[str, Any]] = {}
 
 
-def _list_kinds_in_graph(store: Any) -> list[str]:
-    """Return distinct node kinds present in the graph (for D15 hints)."""
+def _list_kinds_in_graph(store: Any) -> list[str] | None:
+    """Return distinct node kinds present in the graph (for D15 hints).
+
+    Returns ``None`` -- not ``[]`` -- when the graph cannot be queried. An
+    empty list is a factual claim that nothing is indexed, and the caller
+    turns that claim into "rebuild your graph"; a failed read cannot
+    support it.
+    """
     try:
         cursor = store._conn.execute("SELECT DISTINCT kind FROM nodes ORDER BY kind")
         return [r["kind"] for r in cursor]
     except Exception as e:
-        logger.debug("Exception in %s: %s", __name__, e)
-        return []
+        logger.warning(
+            "Could not list node kinds from the graph (%s: %s); reporting "
+            "them as unknown rather than as an empty graph.",
+            type(e).__name__,
+            e,
+        )
+        return None
 
 
 def _lookup_node_directly(
@@ -853,7 +895,7 @@ def _resolve_path_fallback(
 def _handle_not_found(store: Any, target: str) -> dict[str, Any]:
     """Generate the not_found error response for D15."""
     indexed_kinds = _list_kinds_in_graph(store)
-    return {
+    response: dict[str, Any] = {
         "status": "not_found",
         "reason": "no_such_symbol",
         "summary": f"No node found matching {target!r}.",
@@ -864,6 +906,17 @@ def _handle_not_found(store: Any, target: str) -> dict[str, Any]:
             "('file_path::Class.method')."
         ),
     }
+    if indexed_kinds is None:
+        # The symbol genuinely was not found, so ``not_found`` still holds --
+        # but we cannot also claim the graph is empty. Saying
+        # ``indexed_kinds: []`` here would send the caller off to rebuild a
+        # graph whose real problem is that it will not answer queries.
+        response["indexed_kinds_error"] = (
+            "The graph could not be queried for its indexed node kinds, so "
+            "this is 'unknown', not 'nothing indexed'. See the server log "
+            "for the underlying error."
+        )
+    return response
 
 
 def _resolve_query_target(
@@ -978,7 +1031,17 @@ def _scan_dynamic_dispatch_hints(
         for e in store.get_edges_by_target(target_file, kind="IMPORTS_FROM"):  # type: ignore[attr-defined]
             candidate_files.add(e.file_path)
     except Exception as e:
-        logger.debug("Exception in %s: %s", __name__, e)
+        # Deliberately non-fatal: the scan still covers the target's own
+        # file, which is where most dynamic-dispatch sites live. But the
+        # caller gets a narrower hint set than it asked for, so say so --
+        # at debug this was indistinguishable from "no importers found".
+        logger.warning(
+            "Could not list importers of %s (%s: %s); dynamic-dispatch hints "
+            "cover only that file, so the hint list may be incomplete.",
+            target_file,
+            type(e).__name__,
+            e,
+        )
 
     hits: list[dict[str, Any]] = []
     for fp in candidate_files:

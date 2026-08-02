@@ -65,19 +65,20 @@ def _clear_caches():
 
 
 # ---------------------------------------------------------------------------
-# _build_response_header (#330) — exception fallbacks
+# _build_response_header (#330) â€” exception fallbacks
 # ---------------------------------------------------------------------------
 
 
 class TestBuildResponseHeader:
     def test_init_backend_exception_yields_zero_count(self, tmp_path):
-        """When init_backend raises, emb_count fallback is None -> 0."""
+        """When init_backend raises, the count is unknown, not zero."""
         with patch(
             "better_code_review_graph.tools.init_backend",
             side_effect=RuntimeError("backend boom"),
         ):
             header = _build_response_header(None, tmp_path / "graph.db")
-        assert header["embeddings_count"] == 0
+        assert header["embeddings_count"] is None
+        assert "backend boom" in header["embeddings_error"]
         assert header["keyword_only"] is True
         assert header["graph_last_updated"] is None
 
@@ -91,18 +92,19 @@ class TestBuildResponseHeader:
 
 
 # ---------------------------------------------------------------------------
-# _list_kinds_in_graph — exception fallback
+# _list_kinds_in_graph â€” exception fallback
 # ---------------------------------------------------------------------------
 
 
-def test_list_kinds_in_graph_returns_empty_on_exception():
+def test_list_kinds_in_graph_returns_none_on_exception():
     bad_store = MagicMock()
     bad_store._conn.execute.side_effect = RuntimeError("sql boom")
-    assert _list_kinds_in_graph(bad_store) == []
+    # None, not []: an empty list would claim the graph holds no nodes.
+    assert _list_kinds_in_graph(bad_store) is None
 
 
 # ---------------------------------------------------------------------------
-# _scan_dynamic_dispatch_hints — language fallthroughs / edge cases
+# _scan_dynamic_dispatch_hints â€” language fallthroughs / edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -177,7 +179,7 @@ class TestScanDynamicDispatchHints:
 
 
 # ---------------------------------------------------------------------------
-# spot_check_last_callers — no-edges + read-error
+# spot_check_last_callers â€” no-edges + read-error
 # ---------------------------------------------------------------------------
 
 
@@ -222,7 +224,7 @@ class TestSpotCheckEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# renamed_in_diff (#320) — filter branches
+# renamed_in_diff (#320) â€” filter branches
 # ---------------------------------------------------------------------------
 
 
@@ -400,7 +402,7 @@ class TestLiteralIdentifier:
 
 
 # ---------------------------------------------------------------------------
-# semantic_search_nodes — query-too-long guard
+# semantic_search_nodes â€” query-too-long guard
 # ---------------------------------------------------------------------------
 
 
@@ -411,7 +413,7 @@ def test_semantic_search_rejects_overlong_query():
 
 
 # ---------------------------------------------------------------------------
-# query_graph — target-too-long guard
+# query_graph â€” target-too-long guard
 # ---------------------------------------------------------------------------
 
 
@@ -426,7 +428,7 @@ def test_query_graph_rejects_overlong_target():
 
 
 # ---------------------------------------------------------------------------
-# get_impact_radius — symlink + path-traversal filters
+# get_impact_radius â€” symlink + path-traversal filters
 # ---------------------------------------------------------------------------
 
 
@@ -477,7 +479,7 @@ class TestReviewContextHelpers:
 
 
 # ---------------------------------------------------------------------------
-# server.py — spot_check + renamed_in_diff action wrappers
+# server.py â€” spot_check + renamed_in_diff action wrappers
 # ---------------------------------------------------------------------------
 
 

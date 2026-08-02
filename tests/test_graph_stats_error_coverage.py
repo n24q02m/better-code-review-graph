@@ -7,14 +7,18 @@ from better_code_review_graph.tools import _build_response_header, _list_kinds_i
 def test_list_kinds_in_graph_exception_handled():
     mock_store = MagicMock()
     mock_store._conn.execute.side_effect = Exception("DB error")
-    assert _list_kinds_in_graph(mock_store) == []
+    # None, not []: an empty list would claim the graph holds no nodes.
+    assert _list_kinds_in_graph(mock_store) is None
 
 
 def test_build_response_header_embedding_exception_handled():
     with patch("better_code_review_graph.tools.EmbeddingStore") as mock_emb:
         mock_emb.side_effect = Exception("Embedding error")
         header = _build_response_header(db_path=Path("/tmp/fake"), store=None)
-        assert header["embeddings_count"] == 0
+        # None, not 0: 0 is documented advice to run `graph action=embed`,
+        # which cannot fix a store that will not open.
+        assert header["embeddings_count"] is None
+        assert "Embedding error" in header["embeddings_error"]
         assert header["keyword_only"] is True
 
 
