@@ -1047,7 +1047,11 @@ class GraphStore:
         return f" AND kind IN ({placeholders})", tuple(kind)
 
     def get_edges_by_targets(
-        self, qualified_names: list[str], kind: str | tuple[str, ...] | None = None, *, as_of: str = ""
+        self,
+        qualified_names: list[str],
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         """Batch fetch edges by their target qualified names to prevent N+1 queries."""
         if not qualified_names:
