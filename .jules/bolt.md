@@ -88,3 +88,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-08-03 - N+1 materialization overhead in Python filtering
+
+**Anchor:** `5167bde`
+
+**Learning:** When retrieving data from SQLite using batch operations (like `find_dependents` which calls `get_edges_by_targets`), pulling all results into Python and then applying a loop-based `kind` filter (e.g. `if e.kind in (...)`) forces the materialization of unnecessary GraphEdge objects. This introduces significant CPU overhead and memory churn for large graphs, especially when the underlying data set is heavily filtered out.
+
+**Action:** Push data filtering into the database engine. Operations like `get_edges_by_targets` must support an optional `kind` filter so SQLite evaluates the `IN` clause before rows are returned, entirely avoiding Python-side N+1 object materialization and reducing I/O roundtrips.
