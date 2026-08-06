@@ -88,3 +88,9 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+## 2026-08-03 - Push edge filtering to SQLite in find_dependents
+
+**Learning:** In data retrieval functions like `find_dependents` in `incremental.py`, fetching all edges and filtering by `kind` in Python causes unnecessary row materializations (an N+1 style overhead).
+
+**Action:** Push data filtering down to the database engine by passing the `kind` parameter directly to `GraphStore` methods (e.g., `get_edges_by_target`, `get_edges_by_targets`).

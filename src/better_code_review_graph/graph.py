@@ -1047,7 +1047,11 @@ class GraphStore:
         return f" AND kind IN ({placeholders})", tuple(kind)
 
     def get_edges_by_targets(
-        self, qualified_names: list[str], *, as_of: str = ""
+        self,
+        qualified_names: list[str],
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
         """Batch fetch edges by their target qualified names to prevent N+1 queries."""
         if not qualified_names:
@@ -1055,10 +1059,16 @@ class GraphStore:
 
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
-        cursor = self._conn.execute(
+        kind_clause, kind_params = self._kind_filter(kind)
+
+        query = (
             "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
-            (json.dumps(unique_qns), *frag_params),
+            f"(SELECT value FROM json_each(?)){kind_clause}{frag}"
+        )
+
+        cursor = self._conn.execute(
+            query,
+            (json.dumps(unique_qns), *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
 
