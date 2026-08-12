@@ -1509,7 +1509,9 @@ class GraphStore:
             # Optimization: Short-circuit JSON parsing for empty object representation "{}"
             # This bypasses the Python-to-C overhead of json.loads for the vast majority of nodes
             # which have empty extra properties, yielding ~17x faster extra parsing.
-            extra=json.loads(row["extra"]) if row["extra"] and row["extra"] != "{}" else {},
+            extra=json.loads(row["extra"])
+            if row["extra"] and row["extra"] != "{}"
+            else {},
         )
 
     def _row_to_edge(self, row: sqlite3.Row) -> GraphEdge:
@@ -1521,7 +1523,9 @@ class GraphStore:
             file_path=row["file_path"],
             line=row["line"],
             # Optimization: Short-circuit empty JSON representations.
-            extra=json.loads(row["extra"]) if row["extra"] and row["extra"] != "{}" else {},
+            extra=json.loads(row["extra"])
+            if row["extra"] and row["extra"] != "{}"
+            else {},
         )
 
 
