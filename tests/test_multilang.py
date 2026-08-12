@@ -169,7 +169,7 @@ def _has_csharp_parser():
 
         tslp.get_parser("csharp")
         return True
-    except (LookupError, ImportError):
+    except Exception:
         return False
 
 
