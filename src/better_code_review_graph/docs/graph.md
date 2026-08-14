@@ -213,6 +213,16 @@ Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/
 **Node types:** File, Class, Function, Type, Test
 **Edge types:** CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON
 
+`IMPLEMENTS` means the parser found a declared abstract contract: an explicit
+interface/trait clause in languages that have one, or an ABC/Protocol contract
+in Python. Qualified Python decorators such as `@abc.abstractmethod` count.
+It does not claim implicit or structural conformance, such as Python protocol
+typing without inheritance or Go method-set satisfaction. C# has no distinct
+`implements` syntax, so a class's single external base remains unresolved and
+is kept as `INHERITS`; same-file interfaces and struct base lists are proven
+implementations. `INHERITS` remains the edge for concrete superclass and other
+inheritance relationships.
+
 `TESTED_BY` means **called directly by a test function**, not "adequately
 tested". It is emitted for each call site inside a test, so a function the
 test merely uses along the way -- a fixture builder, a comparison utility --
