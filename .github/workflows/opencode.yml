@@ -32,9 +32,65 @@ jobs:
           use_github_token: true
           share: "false"
 
-  # Auto-answer issues opened by real outside people (not the owner, not a bot).
+  # The OpenCode action requires the event actor to have repository write/admin access.
+  # Check that exact identity before creating the action job's write-capable token.
+  auto-issue-permission:
+    if: ${{ github.event_name == 'issues' && github.event.action == 'opened' && github.event.issue.user.login != github.repository_owner && github.event.issue.user.type != 'Bot' }}
+    name: Check issue actor permission
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      allowed: ${{ steps.permission.outputs.allowed }}
+    steps:
+      - name: Check issue actor permission
+        id: permission
+        shell: bash
+        env:
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          response_file="${RUNNER_TEMP}/issue-actor-permission.json"
+          error_file="${RUNNER_TEMP}/issue-actor-permission.error"
+          set +e
+          http_status="$(curl --silent --show-error --location \
+            --retry 2 --retry-delay 1 --retry-all-errors \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
+            "https://api.github.com/repos/${REPOSITORY}/collaborators/${ACTOR}/permission" \
+            2>"${error_file}")"
+          curl_status=$?
+          set -e
+
+          permission=""
+          if [[ "${curl_status}" -eq 0 && "${http_status}" == "200" ]]; then
+            permission="$(jq -r '.permission // empty' "${response_file}" 2>/dev/null || true)"
+          fi
+
+          allowed=false
+          if [[ "${curl_status}" -eq 0 && "${http_status}" == "200" && ("${permission}" == "admin" || "${permission}" == "write") ]]; then
+            allowed=true
+            echo "::notice::Issue actor ${ACTOR} has ${permission} permission; OpenCode is allowed."
+          elif [[ "${curl_status}" -ne 0 ]]; then
+            echo "::notice::Permission API request failed; treating ${ACTOR} as not allowed. OpenCode was not invoked."
+          elif [[ "${http_status}" != "200" ]]; then
+            echo "::notice::Permission API returned HTTP ${http_status}; treating ${ACTOR} as not allowed. OpenCode was not invoked."
+          else
+            echo "::notice::Issue actor ${ACTOR} has ${permission:-unknown} permission, not admin/write. OpenCode was not invoked."
+          fi
+
+          echo "allowed=${allowed}" >> "${GITHUB_OUTPUT}"
+
+  # Auto-answer issues opened by real outside people with write/admin access.
   auto-issue:
-    if: ${{ github.event_name == 'issues' && github.event.issue.user.login != github.repository_owner && github.event.issue.user.type != 'Bot' }}
+    needs: auto-issue-permission
+    if: ${{ needs.auto-issue-permission.result == 'success' && needs.auto-issue-permission.outputs.allowed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
