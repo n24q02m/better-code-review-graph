@@ -1,6 +1,7 @@
 """Kiểm tra resolver model embedding local theo contract generic."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -72,6 +73,155 @@ def test_builtin_model_id_is_not_registered(monkeypatch):
     server._maybe_register_custom_embed("builtin/reference-text")
 
     assert called == []
+
+
+def test_register_spec_uses_fastretrieval_public_api(monkeypatch):
+    from better_code_review_graph import server
+
+    created = []
+
+    class FakeSpec:
+        def __init__(self, **kwargs):
+            created.append((kwargs, self))
+
+        def register(self):
+            self.registered = True
+
+    monkeypatch.setattr("fastretrieval.CustomModelSpec", FakeSpec)
+
+    server._register_spec(model_id="acme/tiny-e5", dim=384)
+
+    assert created[0][0] == {"model_id": "acme/tiny-e5", "dim": 384}
+    assert created[0][1].registered is True
+
+
+def test_builtin_model_ids_read_dict_and_object_registry_entries(monkeypatch):
+    from better_code_review_graph import server
+
+    class FakeTextEmbedding:
+        @classmethod
+        def list_supported_models(cls):
+            return [
+                {"model": "acme/dict-model"},
+                SimpleNamespace(model="acme/object-model"),
+                {"model": 123},
+            ]
+
+    monkeypatch.setattr("fastretrieval.TextEmbedding", FakeTextEmbedding)
+
+    assert server._built_in_model_ids() == {
+        "acme/dict-model",
+        "acme/object-model",
+    }
+
+
+def test_empty_custom_model_is_ignored(monkeypatch):
+    from better_code_review_graph import server
+
+    monkeypatch.setattr(
+        server,
+        "_built_in_model_ids",
+        lambda: pytest.fail("empty model must return before registry lookup"),
+    )
+
+    server._maybe_register_custom_embed("  ")
+
+
+def test_custom_model_file_path_is_refused(monkeypatch, tmp_path):
+    from better_code_review_graph import server
+
+    model_file = tmp_path / "model.onnx"
+    model_file.write_bytes(b"not-an-artifact")
+    monkeypatch.setattr(server, "_built_in_model_ids", lambda: set())
+
+    with pytest.raises(ValueError, match="must be a model ID or directory"):
+        server._maybe_register_custom_embed(str(model_file))
+
+
+def test_local_backend_uses_registry_and_embedding_facade(monkeypatch):
+    from better_code_review_graph.embeddings import LocalEmbeddingBackend
+
+    class Vector:
+        def tolist(self):
+            return [0.1, 0.2]
+
+    class FakeTextEmbedding:
+        @classmethod
+        def list_supported_models(cls):
+            return [{"model": ""}, SimpleNamespace(model="acme/registry-model")]
+
+        def __init__(self, model_name, specific_model_path):
+            self.model_name = model_name
+            self.specific_model_path = specific_model_path
+
+        def embed(self, texts, **kwargs):
+            assert kwargs in ({}, {"dim": 2})
+            return [Vector() for _ in texts]
+
+        def query_embed(self, text, **kwargs):
+            assert text == "query"
+            assert kwargs == {"dim": 2}
+            return [Vector()]
+
+    monkeypatch.setattr("fastretrieval.TextEmbedding", FakeTextEmbedding)
+
+    backend = LocalEmbeddingBackend()
+    assert backend.name == "local:registry"
+    assert backend.embed_texts(["text"], dimensions=2) == [[0.1, 0.2]]
+    assert backend.embed_texts(["text"]) == [[0.1, 0.2]]
+    assert backend.embed_single_query("query", dimensions=2) == [0.1, 0.2]
+    assert backend.name == "local:acme/registry-model"
+
+
+def test_local_backend_rejects_empty_registry(monkeypatch):
+    from better_code_review_graph.embeddings import LocalEmbeddingBackend
+
+    class EmptyTextEmbedding:
+        @classmethod
+        def list_supported_models(cls):
+            return []
+
+    monkeypatch.setattr("fastretrieval.TextEmbedding", EmptyTextEmbedding)
+
+    with pytest.raises(ValueError, match="registry is empty"):
+        LocalEmbeddingBackend().embed_texts(["text"])
+
+
+def test_init_backend_returns_configured_builtin_backend(monkeypatch):
+    from better_code_review_graph import server
+    from better_code_review_graph.config import settings
+    from better_code_review_graph.embeddings import LocalEmbeddingBackend, init_backend
+
+    monkeypatch.setattr(settings, "local_embedding_model", "builtin/reference-text")
+    monkeypatch.setattr(server, "_maybe_register_custom_embed", lambda value: None)
+    monkeypatch.setattr(
+        server,
+        "_built_in_model_ids",
+        lambda: {"builtin/reference-text"},
+    )
+
+    backend = init_backend(mode="local")
+
+    assert isinstance(backend, LocalEmbeddingBackend)
+    assert backend.name == "local:builtin/reference-text"
+
+
+def test_local_model_source_resolves_ids_and_manifest(tmp_path):
+    from better_code_review_graph.embeddings import _resolve_local_model_source
+
+    assert _resolve_local_model_source("acme/model") == ("acme/model", None)
+
+    model_dir = tmp_path / "tiny-e5"
+    model_dir.mkdir()
+    (model_dir / "fastretrieval-manifest.json").write_text(
+        json.dumps(_manifest_payload()),
+        encoding="utf-8",
+    )
+
+    model_id, model_path = _resolve_local_model_source(str(model_dir))
+
+    assert model_id == "acme/tiny-e5"
+    assert model_path == str(model_dir.resolve())
 
 
 def test_non_qwen_manifest_uses_the_same_registration_path(monkeypatch, tmp_path):
