@@ -88,3 +88,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-08-14 - Push graph filtering to SQLite layer
+
+**Anchor:** `$(git rev-parse HEAD)`
+
+**Learning:** When retrieving edges from the graph store and subsequently filtering them in Python (e.g., `if e.kind == "IMPORTS_FROM":`), we incur the overhead of materializing edge objects in Python for rows that are eventually discarded. This is particularly wasteful when iterating over target dependencies.
+
+**Action:** Push the `kind` filtering down to the database layer by adding a `kind` parameter to batch retrieval methods like `GraphStore.get_edges_by_targets` (and utilizing it in single lookups like `get_edges_by_target`). Pass the filter tuple from the business logic directly to the database layer so SQLite handles filtering natively, avoiding N+1 materialization overhead.
