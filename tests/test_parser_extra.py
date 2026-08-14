@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from better_code_review_graph.parser import (
     CodeParser,
     _is_test_function,
@@ -17,6 +19,60 @@ def _relationship_edges(edges, source):
         for edge in edges
         if edge.source == source and edge.kind in {"INHERITS", "IMPLEMENTS"}
     }
+
+
+def _has_dart_parser():
+    try:
+        import tree_sitter_language_pack as tslp
+
+        tslp.get_parser("dart")
+        return True
+    except (LookupError, ImportError):
+        return False
+
+
+@pytest.mark.skipif(
+    not _has_dart_parser(), reason="dart tree-sitter grammar not installed"
+)
+def test_parse_dart_classes_methods_and_top_level_function(tmp_path):
+    parser = CodeParser()
+    dart_file = tmp_path / "main.dart"
+    dart_file.write_text(
+        """abstract class Shape {
+  double area();
+}
+
+class Circle implements Shape {
+  @override
+  double area() {
+    return 1.0;
+  }
+}
+
+int add(int a, int b) => a + b;
+"""
+    )
+
+    assert parser.detect_language(Path("main.dart")) == "dart"
+
+    nodes, edges = parser.parse_file(dart_file)
+
+    assert {node.kind for node in nodes} >= {"File", "Class", "Function"}
+    assert {node.name for node in nodes if node.kind == "Class"} == {
+        "Shape",
+        "Circle",
+    }
+    functions = [
+        (node.name, node.parent_name) for node in nodes if node.kind == "Function"
+    ]
+    assert functions.count(("area", "Shape")) == 1
+    assert functions.count(("area", "Circle")) == 1
+    assert functions.count(("add", None)) == 1
+
+    inherits = [edge for edge in edges if edge.kind == "INHERITS"]
+    assert any(
+        edge.source.endswith("::Circle") and edge.target == "Shape" for edge in inherits
+    )
 
 
 class TestParserUtils:
