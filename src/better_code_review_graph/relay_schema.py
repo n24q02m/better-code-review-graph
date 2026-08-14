@@ -124,7 +124,7 @@ RELAY_SCHEMA: dict[str, Any] = {
         {
             "label": "Embedding",
             "priority": "configurable",
-            "description": "Vector embeddings for code graph search. Empty = local Qwen3-Embedding (0.6B ONNX).",
+            "description": "Vector embeddings for code graph search. Empty = local fastretrieval registry.",
         },
         {
             "label": "Summary",
