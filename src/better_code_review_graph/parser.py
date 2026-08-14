@@ -104,6 +104,7 @@ EXTENSION_TO_LANGUAGE: dict[str, str] = {
     ".swift": "swift",
     ".php": "php",
     ".sol": "solidity",
+    ".dart": "dart",
 }
 
 #: The languages this parser claims to handle. Membership is what separates
@@ -142,6 +143,7 @@ _CLASS_TYPES: dict[str, list[str]] = {
         "error_declaration",
         "user_defined_type_definition",
     ],
+    "dart": ["class_definition"],
 }
 
 _FUNCTION_TYPES: dict[str, list[str]] = {
@@ -170,6 +172,7 @@ _FUNCTION_TYPES: dict[str, list[str]] = {
         "event_definition",
         "fallback_receive_definition",
     ],
+    "dart": ["method_signature", "function_signature"],
 }
 
 _IMPORT_TYPES: dict[str, list[str]] = {
@@ -877,7 +880,11 @@ class CodeParser:
                     python_abstract_contracts,
                     declared_interfaces,
                 )
-            elif node_type in func_types:
+            elif node_type in func_types and not (
+                language == "dart"
+                and node_type == "function_signature"
+                and root.type == "method_signature"
+            ):
                 processed = self._handle_function_node(
                     child,
                     source,
@@ -1745,6 +1752,20 @@ class CodeParser:
             if name:
                 return name
 
+        if language == "dart":
+            name_node = node.child_by_field_name("name")
+            if name_node is None and node.type == "method_signature":
+                name_node = next(
+                    (
+                        child.child_by_field_name("name")
+                        for child in node.children
+                        if child.type == "function_signature"
+                    ),
+                    None,
+                )
+            if name_node is not None:
+                return name_node.text.decode("utf-8", errors="replace")
+
         if language in ("c", "cpp") and kind == "function":
             name = self._get_name_cpp(node, language, kind)
             if name:
@@ -1798,6 +1819,21 @@ class CodeParser:
         if language == "solidity":
             return self._get_params_solidity(node)
 
+        if language == "dart" and node.type == "method_signature":
+            node = next(
+                (
+                    child
+                    for child in node.children
+                    if child.type == "function_signature"
+                ),
+                node,
+            )
+
+        if language == "dart":
+            for child in node.children:
+                if child.type == "formal_parameter_list":
+                    return child.text.decode("utf-8", errors="replace")
+
         for child in node.children:
             if child.type in ("parameters", "formal_parameters", "parameter_list"):
                 return child.text.decode("utf-8", errors="replace")
@@ -1818,6 +1854,20 @@ class CodeParser:
         """Extract return type annotation if present."""
         if language == "python":
             return self._get_return_type_python(node)
+
+        if language == "dart":
+            if node.type == "method_signature":
+                node = next(
+                    (
+                        child
+                        for child in node.children
+                        if child.type == "function_signature"
+                    ),
+                    node,
+                )
+            for child in node.children:
+                if child.type in ("type_identifier", "built_in_type"):
+                    return child.text.decode("utf-8", errors="replace")
 
         for child in node.children:
             if child.type in (
@@ -2092,6 +2142,14 @@ class CodeParser:
             return [("INHERITS", base) for base in self._get_bases_solidity(node)]
         if language == "go":
             return [("INHERITS", base) for base in self._get_bases_go(node)]
+        if language == "dart":
+            return [
+                ("INHERITS", sub.text.decode("utf-8", errors="replace"))
+                for child in node.children
+                if child.type in ("superclass", "interfaces")
+                for sub in child.children
+                if sub.type == "type_identifier"
+            ]
         return []
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
