@@ -103,10 +103,11 @@ class TestJavaParsing:
         imports = [e for e in self.edges if e.kind == "IMPORTS_FROM"]
         assert len(imports) >= 2
 
-    def test_finds_inheritance(self):
-        inherits = [e for e in self.edges if e.kind == "INHERITS"]
-        # InMemoryRepo implements UserRepository
-        assert len(inherits) >= 1
+    def test_finds_implements(self):
+        implements = [e for e in self.edges if e.kind == "IMPLEMENTS"]
+        assert ("InMemoryRepo", "UserRepository") in {
+            (e.source.split("::")[-1], e.target.rsplit("::", 1)[-1]) for e in implements
+        }
 
     def test_finds_calls(self):
         calls = [e for e in self.edges if e.kind == "CALLS"]
@@ -194,6 +195,24 @@ class TestCSharpParsing:
         funcs = [n for n in self.nodes if n.kind == "Function"]
         names = {f.name for f in funcs}
         assert "FindById" in names or "Save" in names
+
+    def test_finds_implements(self):
+        implements = [e for e in self.edges if e.kind == "IMPLEMENTS"]
+        assert ("InMemoryRepo", "IRepository") in {
+            (e.source.split("::")[-1], e.target.rsplit("::", 1)[-1]) for e in implements
+        }
+
+    def test_finds_struct_implements(self, tmp_path):
+        path = tmp_path / "Value.cs"
+        path.write_text(
+            "struct Value : System.IDisposable {\n    public void Dispose() {}\n}\n"
+        )
+        _nodes, edges = self.parser.parse_file(path)
+        assert {
+            (edge.kind, edge.target)
+            for edge in edges
+            if edge.kind in {"INHERITS", "IMPLEMENTS"}
+        } == {("IMPLEMENTS", "System.IDisposable")}
 
 
 class TestRubyParsing:

@@ -119,7 +119,7 @@ _CLASS_TYPES: dict[str, list[str]] = {
     "typescript": ["class_declaration", "class"],
     "tsx": ["class_declaration", "class"],
     "go": ["type_declaration"],
-    "rust": ["struct_item", "enum_item", "impl_item"],
+    "rust": ["struct_item", "enum_item", "trait_item", "impl_item"],
     "java": ["class_declaration", "interface_declaration", "enum_declaration"],
     "c": ["struct_specifier", "type_definition"],
     "cpp": ["class_specifier", "struct_specifier"],
@@ -656,6 +656,16 @@ class CodeParser:
                 language,
                 source,
             )
+            python_abstract_contracts = (
+                self._collect_python_abstract_contracts(tree.root_node, source)
+                if language == "python"
+                else set()
+            )
+            declared_interfaces = (
+                self._collect_declared_interfaces(tree.root_node, language)
+                if language in {"csharp", "kotlin"}
+                else set()
+            )
 
             # Walk the tree
             self._extract_from_tree(
@@ -667,6 +677,8 @@ class CodeParser:
                 edges,
                 import_map=import_map,
                 defined_names=defined_names,
+                python_abstract_contracts=python_abstract_contracts,
+                declared_interfaces=declared_interfaces,
             )
 
             # Module-level shared state. Runs after the walk because it pairs
@@ -838,6 +850,8 @@ class CodeParser:
         enclosing_func: str | None = None,
         import_map: dict[str, str] | None = None,
         defined_names: set[str] | None = None,
+        python_abstract_contracts: set[str] | None = None,
+        declared_interfaces: set[str] | None = None,
     ) -> None:
         """Recursively walk the AST and extract nodes/edges."""
         class_types = set(_CLASS_TYPES.get(language, []))
@@ -860,6 +874,8 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    python_abstract_contracts,
+                    declared_interfaces,
                 )
             elif node_type in func_types:
                 processed = self._handle_function_node(
@@ -872,6 +888,8 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    python_abstract_contracts,
+                    declared_interfaces,
                 )
             elif node_type in import_types:
                 processed = self._handle_import_node(
@@ -917,6 +935,8 @@ class CodeParser:
                 enclosing_func=enclosing_func,
                 import_map=import_map,
                 defined_names=defined_names,
+                python_abstract_contracts=python_abstract_contracts,
+                declared_interfaces=declared_interfaces,
             )
 
     def _handle_class_node(
@@ -930,41 +950,58 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        python_abstract_contracts: set[str] | None,
+        declared_interfaces: set[str] | None,
     ) -> bool:
         name = self._get_name(node, language, "class")
         if not name:
             return False
 
-        node_info = NodeInfo(
-            kind="Class",
-            name=name,
-            file_path=file_path,
-            line_start=node.start_point[0] + 1,
-            line_end=node.end_point[0] + 1,
-            language=language,
-            parent_name=enclosing_class,
-        )
-        nodes.append(node_info)
-
-        # CONTAINS edge
-        edges.append(
-            EdgeInfo(
-                kind="CONTAINS",
-                source=file_path,
-                target=self._qualify(name, file_path, enclosing_class),
+        is_rust_impl = language == "rust" and node.type == "impl_item"
+        if not is_rust_impl:
+            node_info = NodeInfo(
+                kind="Class",
+                name=name,
                 file_path=file_path,
-                line=node.start_point[0] + 1,
+                line_start=node.start_point[0] + 1,
+                line_end=node.end_point[0] + 1,
+                language=language,
+                parent_name=enclosing_class,
             )
-        )
+            nodes.append(node_info)
 
-        # Inheritance edges
-        bases = self._get_bases(node, language, source)
-        for base in bases:
+            # CONTAINS edge
             edges.append(
                 EdgeInfo(
-                    kind="INHERITS",
+                    kind="CONTAINS",
+                    source=file_path,
+                    target=self._qualify(name, file_path, enclosing_class),
+                    file_path=file_path,
+                    line=node.start_point[0] + 1,
+                )
+            )
+
+        # Inheritance/implementation edges
+        relationships = self._get_bases(
+            node,
+            language,
+            source,
+            python_abstract_contracts=python_abstract_contracts,
+            declared_interfaces=declared_interfaces,
+        )
+        for kind, base in relationships:
+            target = base
+            if (
+                kind == "IMPLEMENTS"
+                and not any(separator in base for separator in (".", "::", "\\"))
+                and base in (defined_names or set())
+            ):
+                target = self._qualify(base, file_path, None)
+            edges.append(
+                EdgeInfo(
+                    kind=kind,
                     source=self._qualify(name, file_path, enclosing_class),
-                    target=base,
+                    target=target,
                     file_path=file_path,
                     line=node.start_point[0] + 1,
                 )
@@ -982,6 +1019,8 @@ class CodeParser:
             enclosing_func=None,
             import_map=import_map,
             defined_names=defined_names,
+            python_abstract_contracts=python_abstract_contracts,
+            declared_interfaces=declared_interfaces,
         )
         return True
 
@@ -996,6 +1035,8 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        python_abstract_contracts: set[str] | None = None,
+        declared_interfaces: set[str] | None = None,
     ) -> bool:
         name = self._get_name(node, language, "function")
         if not name:
@@ -1080,6 +1121,8 @@ class CodeParser:
             enclosing_func=name,
             import_map=import_map,
             defined_names=defined_names,
+            python_abstract_contracts=python_abstract_contracts,
+            declared_interfaces=declared_interfaces,
         )
         return True
 
@@ -1421,6 +1464,99 @@ class CodeParser:
 
         return import_map, defined_names
 
+    @staticmethod
+    def _iter_tree_nodes(root):
+        yield root
+        for child in root.children:
+            yield from CodeParser._iter_tree_nodes(child)
+
+    @staticmethod
+    def _short_type_name(value: str) -> str:
+        value = re.sub(r"(?:<.*>|\[.*\])$", "", value.strip())
+        return value.rsplit(".", 1)[-1].rsplit("::", 1)[-1].rsplit("\\", 1)[-1].strip()
+
+    def _collect_python_abstract_contracts(self, root, source: bytes) -> set[str]:
+        """Collect abstract contracts known within one Python module.
+
+        Python's protocol conformance is structural and intentionally remains
+        out of scope. An ``IMPLEMENTS`` edge is emitted only for an explicit
+        ABC/Protocol inheritance chain or a class that declares an
+        ``@abstractmethod``.
+        """
+        contracts = {"ABC", "Protocol"}
+        abstract_decorators = {"abstractmethod"}
+        for import_node in self._iter_tree_nodes(root):
+            if import_node.type != "import_from_statement":
+                continue
+            statement = import_node.text.decode("utf-8", errors="replace")
+            match = re.match(
+                r"from\s+(abc|typing)\s+import\s+(.+)", statement, re.DOTALL
+            )
+            if not match:
+                continue
+            for item in match.group(2).split(","):
+                parts = item.strip().split()
+                if not parts:
+                    continue
+                original = parts[0]
+                local = parts[2] if len(parts) >= 3 and parts[1] == "as" else original
+                if original in {"ABC", "Protocol"}:
+                    contracts.add(local)
+                if original == "abstractmethod":
+                    abstract_decorators.add(local)
+        classes: list[tuple[str, list[str], bool]] = []
+
+        for candidate in self._iter_tree_nodes(root):
+            if candidate.type != "class_definition":
+                continue
+            name = self._get_name(candidate, "python", "class")
+            if not name:
+                continue
+            bases = self._get_bases_python(candidate)
+            has_abstract_method = any(
+                descendant.type == "decorator"
+                and any(
+                    re.search(
+                        rf"(?:@|\.){re.escape(marker)}\b",
+                        descendant.text.decode("utf-8", errors="replace"),
+                    )
+                    for marker in abstract_decorators
+                )
+                for descendant in self._iter_tree_nodes(candidate)
+            )
+            classes.append((name, bases, has_abstract_method))
+
+        changed = True
+        while changed:
+            changed = False
+            for name, bases, has_abstract_method in classes:
+                if name in contracts:
+                    continue
+                if has_abstract_method or any(
+                    self._short_type_name(base) in contracts for base in bases
+                ):
+                    contracts.add(name)
+                    changed = True
+        return contracts
+
+    def _collect_declared_interfaces(self, root, language: str) -> set[str]:
+        if language not in {"csharp", "kotlin"}:
+            return set()
+        return {
+            name
+            for node in self._iter_tree_nodes(root)
+            if (
+                node.type == "interface_declaration"
+                or (
+                    language == "kotlin"
+                    and node.type == "class_declaration"
+                    and any(child.type == "interface" for child in node.children)
+                )
+            )
+            for name in [self._get_name(node, language, "class")]
+            if name
+        }
+
     def _collect_import_names(
         self,
         node,
@@ -1604,6 +1740,11 @@ class CodeParser:
             if name:
                 return name
 
+        if language == "rust" and node.type == "impl_item":
+            name = self._get_name_rust_impl(node)
+            if name:
+                return name
+
         if language in ("c", "cpp") and kind == "function":
             name = self._get_name_cpp(node, language, kind)
             if name:
@@ -1702,23 +1843,108 @@ class CodeParser:
                 for arg in child.children:
                     if arg.type in ("identifier", "attribute"):
                         bases.append(arg.text.decode("utf-8", errors="replace"))
+                    elif arg.type == "subscript":
+                        value = arg.child_by_field_name("value")
+                        if value is not None:
+                            bases.append(value.text.decode("utf-8", errors="replace"))
         return bases
 
-    def _get_bases_jvm_like(self, node) -> list[str]:
-        bases = []
+    @staticmethod
+    def _get_direct_type_names(node) -> list[str]:
+        """Extract type names from a grammar wrapper without splitting paths."""
+        atom_types = {
+            "identifier",
+            "member_expression",
+            "nested_identifier",
+            "nested_type_identifier",
+            "qualified_identifier",
+            "qualified_name",
+            "scoped_type_identifier",
+            "scoped_identifier",
+            "simple_identifier",
+            "type_identifier",
+            "name",
+        }
+
+        def collect(current) -> list[str]:
+            if current.type in atom_types:
+                text = current.text.decode("utf-8", errors="replace").strip()
+                text = re.sub(r"(?:<.*>|\[.*\])$", "", text).lstrip("\\")
+                return [text] if text else []
+
+            # Generic wrappers contain the base type followed by type
+            # arguments. Only the base type is an edge target.
+            if current.type in {"generic_name", "generic_type"}:
+                for child in current.children:
+                    names = collect(child)
+                    if names:
+                        return names[:1]
+                return []
+
+            if current.type in {
+                "type_argument_list",
+                "type_arguments",
+                "type_parameter_list",
+                "type_parameters",
+                "trait_bounds",
+            }:
+                return []
+
+            names: list[str] = []
+            for child in current.children:
+                names.extend(collect(child))
+            return names
+
+        return collect(node)
+
+    def _get_bases_jvm_like(self, node) -> list[tuple[str, str]]:
+        relationships: list[tuple[str, str]] = []
         for child in node.children:
-            if child.type in (
-                "superclass",
-                "super_interfaces",
-                "extends_type",
-                "implements_type",
-                "type_identifier",
-                "supertype",
-                "delegation_specifier",
-            ):
-                text = child.text.decode("utf-8", errors="replace")
-                bases.append(text)
-        return bases
+            if child.type == "superclass":
+                kind = "INHERITS"
+            elif child.type == "super_interfaces":
+                kind = "IMPLEMENTS"
+            elif child.type == "extends_interfaces":
+                kind = "INHERITS"
+            elif child.type in ("extends_type", "implements_type"):
+                kind = "IMPLEMENTS" if child.type == "implements_type" else "INHERITS"
+            elif child.type == "type_identifier":
+                kind = "INHERITS"
+            elif child.type in ("supertype", "delegation_specifier"):
+                kind = "INHERITS"
+            else:
+                continue
+
+            names = self._get_direct_type_names(child)
+            relationships.extend((kind, name) for name in names)
+        return relationships
+
+    def _get_bases_kotlin(
+        self, node, declared_interfaces: set[str]
+    ) -> list[tuple[str, str]]:
+        relationships: list[tuple[str, str]] = []
+        for child in node.children:
+            if child.type == "delegation_specifier":
+                for specifier in child.children:
+                    names = self._get_direct_type_names(specifier)
+                    if not names:
+                        continue
+                    if any(
+                        grandchild.type == "interface" for grandchild in node.children
+                    ):
+                        kind = "INHERITS"
+                    elif specifier.type == "constructor_invocation":
+                        kind = "INHERITS"
+                    elif specifier.type == "user_type":
+                        kind = "IMPLEMENTS"
+                    else:
+                        kind = (
+                            "IMPLEMENTS"
+                            if names[0] in declared_interfaces
+                            else "INHERITS"
+                        )
+                    relationships.extend((kind, name) for name in names)
+        return relationships
 
     def _get_bases_cpp(self, node) -> list[str]:
         bases = []
@@ -1729,18 +1955,75 @@ class CodeParser:
                         bases.append(sub.text.decode("utf-8", errors="replace"))
         return bases
 
-    def _get_bases_web(self, node) -> list[str]:
-        bases = []
+    def _get_bases_web(self, node) -> list[tuple[str, str]]:
+        relationships: list[tuple[str, str]] = []
+
+        def collect_heritage_clauses(current) -> None:
+            if current.type in ("extends_clause", "implements_clause"):
+                kind = (
+                    "IMPLEMENTS" if current.type == "implements_clause" else "INHERITS"
+                )
+                for name in self._get_direct_type_names(current):
+                    relationships.append((kind, name))
+                return
+            for child in current.children:
+                collect_heritage_clauses(child)
+
+        collect_heritage_clauses(node)
+        return relationships
+
+    def _get_bases_csharp(
+        self, node, declared_interfaces: set[str]
+    ) -> list[tuple[str, str]]:
+        relationships: list[tuple[str, str]] = []
         for child in node.children:
-            if child.type in ("extends_clause", "implements_clause"):
-                for sub in child.children:
-                    if sub.type in (
-                        "identifier",
-                        "type_identifier",
-                        "nested_identifier",
-                    ):
-                        bases.append(sub.text.decode("utf-8", errors="replace"))
-        return bases
+            if child.type != "base_list":
+                continue
+            names = self._get_direct_type_names(child)
+            for index, name in enumerate(names):
+                if node.type == "interface_declaration":
+                    kind = "INHERITS"
+                elif node.type == "struct_declaration":
+                    kind = "IMPLEMENTS"
+                elif name in declared_interfaces or index > 0:
+                    kind = "IMPLEMENTS"
+                else:
+                    kind = "INHERITS"
+                relationships.append((kind, name))
+        return relationships
+
+    def _get_bases_php(self, node) -> list[tuple[str, str]]:
+        relationships: list[tuple[str, str]] = []
+        for child in node.children:
+            if child.type == "base_clause":
+                kind = "INHERITS"
+            elif child.type == "class_interface_clause":
+                kind = "IMPLEMENTS"
+            else:
+                continue
+            relationships.extend(
+                (kind, name) for name in self._get_direct_type_names(child)
+            )
+        return relationships
+
+    def _get_name_rust_impl(self, node) -> str | None:
+        target = node.child_by_field_name("type")
+        if target is None:
+            return None
+        names = self._get_direct_type_names(target)
+        if names:
+            return self._short_type_name(names[0])
+        return self._short_type_name(target.text.decode("utf-8", errors="replace"))
+
+    def _get_bases_rust(self, node) -> list[tuple[str, str]]:
+        trait = node.child_by_field_name("trait")
+        if trait is None:
+            return []
+        names = self._get_direct_type_names(trait)
+        if not names:
+            text = trait.text.decode("utf-8", errors="replace")
+            names = [text] if text else []
+        return [("IMPLEMENTS", name) for name in names]
 
     def _get_bases_solidity(self, node) -> list[str]:
         bases = []
@@ -1770,20 +2053,45 @@ class CodeParser:
                                         )
         return bases
 
-    def _get_bases(self, node, language: str, source: bytes) -> list[str]:
+    def _get_bases(
+        self,
+        node,
+        language: str,
+        source: bytes,
+        *,
+        python_abstract_contracts: set[str] | None = None,
+        declared_interfaces: set[str] | None = None,
+    ) -> list[tuple[str, str]]:
         """Extract base classes / implemented interfaces."""
         if language == "python":
-            return self._get_bases_python(node)
-        if language in ("java", "csharp", "kotlin"):
+            contracts = python_abstract_contracts or set()
+            return [
+                (
+                    "IMPLEMENTS"
+                    if self._short_type_name(base) in contracts
+                    else "INHERITS",
+                    base,
+                )
+                for base in self._get_bases_python(node)
+            ]
+        if language == "java":
             return self._get_bases_jvm_like(node)
+        if language == "kotlin":
+            return self._get_bases_kotlin(node, declared_interfaces or set())
+        if language == "csharp":
+            return self._get_bases_csharp(node, declared_interfaces or set())
+        if language == "php":
+            return self._get_bases_php(node)
         if language == "cpp":
-            return self._get_bases_cpp(node)
+            return [("INHERITS", base) for base in self._get_bases_cpp(node)]
         if language in ("typescript", "javascript", "tsx"):
             return self._get_bases_web(node)
+        if language == "rust":
+            return self._get_bases_rust(node)
         if language == "solidity":
-            return self._get_bases_solidity(node)
+            return [("INHERITS", base) for base in self._get_bases_solidity(node)]
         if language == "go":
-            return self._get_bases_go(node)
+            return [("INHERITS", base) for base in self._get_bases_go(node)]
         return []
 
     def _extract_import(self, node, language: str, source: bytes) -> list[str]:
