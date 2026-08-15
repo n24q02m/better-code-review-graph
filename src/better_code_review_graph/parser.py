@@ -1173,8 +1173,20 @@ class CodeParser:
         defined_names: set[str] | None,
     ) -> bool:
         call_name = self._get_call_name(node, language, source)
-        if call_name and enclosing_func:
-            caller = self._qualify(enclosing_func, file_path, enclosing_class)
+        if call_name:
+            # Attribute calls on the module/IIFE toplevel have no enclosing
+            # function. File-level init code — e.g. JavaScript IIFE bodies,
+            # ``document.addEventListener('click', handler)`` wiring, or a
+            # Python module calling helpers at import time — still *uses*
+            # the referenced symbols, so the edges are attributed to the
+            # File node (qualified name = file path) instead of being
+            # dropped. This keeps callers_of/dead-code from reporting
+            # handlers registered by toplevel init code as unreferenced.
+            caller = (
+                self._qualify(enclosing_func, file_path, enclosing_class)
+                if enclosing_func
+                else file_path
+            )
             target = self._resolve_call_target(
                 call_name,
                 file_path,
@@ -1192,13 +1204,36 @@ class CodeParser:
                     line=line,
                 )
             )
+            # Function references passed as arguments — e.g. JS
+            # ``el.addEventListener('click', handler)`` or Python
+            # ``deferred.addCallback(handler)`` — are a real use of the
+            # referenced symbol, but the argument identifier itself is not
+            # a call expression, so they previously produced no CALLS edge
+            # and dead-code analysis reported the handler as unreferenced.
+            # Emit CALLS edges for argument identifiers that resolve to a
+            # file-scope definition or an import, so callers_of(handler)
+            # finds the registering function.
+            self._emit_argument_reference_edges(
+                node,
+                source,
+                language,
+                file_path,
+                edges,
+                caller,
+                call_name,
+                import_map,
+                defined_names,
+            )
             # TESTED_BY means "called directly by a test", NOT "properly
             # tested". A test calls its subject, but it also calls helpers,
             # builders and assertion utilities, and no static rule separates
             # intent from incidental use. Consumers must read the edge with
             # that meaning -- see _is_test_file for the one exclusion applied.
-            if _is_test_function(enclosing_func, file_path) and not _is_test_file(
-                target
+            # Toplevel/file-level calls have no test function to attribute.
+            if (
+                enclosing_func
+                and _is_test_function(enclosing_func, file_path)
+                and not _is_test_file(target)
             ):
                 edges.append(
                     EdgeInfo(
@@ -1210,6 +1245,87 @@ class CodeParser:
                     )
                 )
         return False
+
+    def _emit_argument_reference_edges(
+        self,
+        node,
+        source: bytes,
+        language: str,
+        file_path: str,
+        edges: list[EdgeInfo],
+        caller: str,
+        call_name: str | None,
+        import_map: dict[str, str] | None,
+        defined_names: set[str] | None,
+    ) -> None:
+        """Emit CALLS edges for function references passed as call arguments.
+
+        Tree-sitter grammars expose call arguments under a field named
+        ``arguments`` (JavaScript/TypeScript ``arguments``, Python
+        ``arguments``, Go ``arguments``, Java ``argument_list``). This
+        helper walks that subtree, collects bare identifiers, and for
+        each one that resolves to a file-scope definition or an imported
+        symbol, records a CALLS edge from the enclosing function to the
+        resolved target. This keeps dead-code analysis from flagging
+        callback-style references (``el.addEventListener('click',
+        handler)``) as unreferenced.
+        """
+        args_node = node.child_by_field_name("arguments")
+        if args_node is None:
+            return
+
+        seen: set[str] = set()
+        for ident in self._iter_argument_identifiers(args_node):
+            name = ident.text.decode("utf-8", errors="replace")
+            if not name or name in seen or name == call_name:
+                continue
+            seen.add(name)
+            resolved = self._resolve_call_target(
+                name,
+                file_path,
+                language,
+                import_map or {},
+                defined_names or set(),
+            )
+            # Only emit when the identifier actually resolved somewhere
+            # (same-file definition or import). Unresolvable bare names
+            # stay untouched — the enclosing call edge already exists.
+            if resolved == name:
+                continue
+            edges.append(
+                EdgeInfo(
+                    kind="CALLS",
+                    source=caller,
+                    target=resolved,
+                    file_path=file_path,
+                    line=ident.start_point[0] + 1,
+                )
+            )
+
+    @staticmethod
+    def _iter_argument_identifiers(args_node):
+        """Yield identifier nodes within an arguments subtree.
+
+        Nested call expressions inside arguments are skipped: their own
+        call nodes are visited by the main tree walk and emitting edges
+        here would duplicate them.
+        """
+        stack = [args_node]
+        while stack:
+            current = stack.pop()
+            for child in current.children:
+                if child.type == "identifier":
+                    yield child
+                elif child.type in (
+                    "call_expression",
+                    "new_expression",
+                    "function_expression",
+                    "arrow_function",
+                    "lambda",
+                ):
+                    continue
+                else:
+                    stack.append(child)
 
     def _handle_solidity_emit_statement(
         self,
@@ -1468,6 +1584,26 @@ class CodeParser:
             # Collect import mappings: imported_name → module_path
             if node_type in import_types:
                 self._collect_import_names(child, language, source, import_map)
+
+        # JS-family files are commonly wrapped in IIFEs or load callbacks,
+        # so their "file scope" functions are nested one or more levels
+        # deep ((function () { function handler() {...} ... })()). Those
+        # nested declarations still produce Function nodes qualified as
+        # ``<file>::<name>``, so their names must be resolvable — otherwise
+        # a reference like ``el.addEventListener('input', handler)`` inside
+        # the same wrapper cannot resolve and dead-code analysis flags the
+        # handler as unreferenced. Only named ``function_declaration`` nodes
+        # are collected: method definitions resolve through their class
+        # (``<file>::Class.method``) and arrow functions are anonymous or
+        # variable-assigned, so a bare-name resolution for them would be
+        # wrong.
+        if language in ("javascript", "typescript", "tsx"):
+            func_decl = {"function_declaration"}
+            for sub in self._iter_tree_nodes(root):
+                if sub.type in func_decl:
+                    name = self._get_name(sub, language, "function")
+                    if name:
+                        defined_names.add(name)
 
         return import_map, defined_names
 
