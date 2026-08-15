@@ -13,7 +13,7 @@ modules_to_mock = [
     "mcp.server",
     "mcp.server.fastmcp",
     "fastmcp",
-    "qwen3_embed",
+    "fastretrieval",
     "cohere",
     "google.genai",
     "openai",

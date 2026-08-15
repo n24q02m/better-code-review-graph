@@ -732,9 +732,9 @@ class TestListGraphStats:
 
 
 def _stub_local_model():
-    """Build a stub qwen3-embed model that returns deterministic vectors.
+    """Build a stub local model that returns deterministic vectors.
 
-    Mirrors the ``mock_qwen_inference`` fixture in test_embeddings.py so the
+    Mirrors the local inference fixture in test_embeddings.py so the
     local-backend path runs without downloading the ONNX model from HuggingFace.
     """
     model = MagicMock()
@@ -754,7 +754,7 @@ class TestEmbedGraph:
 
     def test_embed_graph(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             result = embed_graph(repo_root=str(repo_with_graph))
@@ -921,7 +921,7 @@ class TestSemanticSearchWithEmbeddings:
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
         with patch(
-            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_result = embed_graph(repo_root=str(repo_with_graph))
@@ -936,7 +936,7 @@ class TestSemanticSearchWithEmbeddings:
 
     def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model",
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))

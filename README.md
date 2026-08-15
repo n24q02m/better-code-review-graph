@@ -37,7 +37,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 | [jules-task-archiver](https://github.com/n24q02m/jules-task-archiver) | Chrome Extension for bulk operations on Jules tasks via batchexecute API -- a... | Tooling |
 | [mcp-core](https://github.com/n24q02m/mcp-core) | Shared foundation for building MCP servers -- Streamable HTTP transport, OAut... | MCP |
 | [mnemo-mcp](https://github.com/n24q02m/mnemo-mcp) | Persistent AI memory with hybrid search and embedded sync. Open, free, unlimi... | MCP |
-| [qwen3-embed](https://github.com/n24q02m/qwen3-embed) | Lightweight Qwen3 text embedding and reranking via ONNX Runtime and GGUF | Library |
+| [fastretrieval](https://github.com/n24q02m/fastretrieval) | Fast multi-model retrieval runtime for ONNX and GGUF embeddings, reranking, and model contracts | Library |
 | [skret](https://github.com/n24q02m/skret) | Secrets without the server. | CLI |
 | [tacet](https://github.com/n24q02m/tacet) | A self-distilling neuro-symbolic cascade that amortises LLM cost across knowl... | Tooling |
 | [web-core](https://github.com/n24q02m/web-core) | Shared web infrastructure package for search, scraping, HTTP security, and st... | Library |
@@ -51,7 +51,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
   <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph/badge" alt="better-code-review-graph MCP server" />
 </a>
 
-An MCP server that parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters instead of the whole tree. Semantic search runs on a local ONNX embedding model by default (zero config, no API key), with an optional cloud embedding chain. Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with fixed multi-word search, qualified call resolution, dual-mode embeddings, output pagination, and production CI/CD.
+An MCP server that parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters instead of the whole tree. Semantic search runs through the local ONNX model registry from [fastretrieval](https://github.com/n24q02m/fastretrieval) by default (zero config, no API key), with an optional cloud embedding chain. Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with fixed multi-word search, qualified call resolution, dual-mode embeddings, output pagination, and production CI/CD.
 
 ## v2.0 migration (BREAKING)
 
@@ -133,10 +133,12 @@ startCommand:
 ## Configuration
 
 Everything works **out of the box with zero configuration** -- semantic search
-uses a local [qwen3-embed](https://github.com/n24q02m/qwen3-embed) ONNX model
-(`Qwen3-Embedding-0.6B`, ~570 MB downloaded on first `graph embed`). All
-environment variables below are optional and only needed for cloud embeddings
-or LLM summaries.
+uses the local ONNX registry from [fastretrieval](https://github.com/n24q02m/fastretrieval)
+(`Qwen3-Embedding-0.6B` is the current built-in reference entry, ~570 MB
+downloaded on first `graph embed`). This reference entry is not a Qwen-only
+boundary: any built-in registry ID or valid non-Qwen artifact manifest follows
+the same resolver. All environment variables below are optional and only needed
+for cloud embeddings, LLM summaries, or an explicit BYO local artifact.
 
 ### Model chains
 
@@ -147,7 +149,7 @@ prefix, so the matching `<PROVIDER>_API_KEY` is all you need to add.
 
 | Variable | Purpose | Empty (default) |
 |---|---|---|
-| `EMBEDDING_MODELS` | Cloud embedding chain, e.g. `jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001` | Local ONNX (qwen3-embed) |
+| `EMBEDDING_MODELS` | Cloud embedding chain, e.g. `jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001` | Local fastretrieval registry |
 | `SUMMARY_MODELS` | Summarizer chain for `graph(action="summarize")`, e.g. `gemini/gemini-2.5-flash,openai/gpt-4o-mini` | Summaries disabled |
 
 All vectors are stored at a fixed 768 dimensions (MRL truncation), so the
@@ -179,8 +181,18 @@ its standard `<PROVIDER>_API_KEY`.
 | `EMBEDDING_API_BASE` | Custom OpenAI-compatible base URL for cloud embedding (SSRF-guarded) |
 | `LLM_API_BASE` | Custom OpenAI-compatible base URL for the summarizer (SSRF-guarded) |
 | `DISABLE_LOCAL_EMBED` | Skip the local ONNX download; embedding is unavailable unless a cloud chain is configured |
+| `LOCAL_EMBEDDING_MODEL` | Built-in fastretrieval model ID, or a local directory containing `fastretrieval-manifest.json` | Built-in default |
+| `LOCAL_EMBEDDING_DIM` | Required dimension for an external model ID without a manifest | `0` |
+| `LOCAL_EMBEDDING_MODEL_FILE` | ONNX file path inside a manifest-backed artifact directory | `onnx/model.onnx` |
+| `LOCAL_EMBEDDING_POOLING` | Explicit pooling for an external ID without a manifest: `CLS`, `MEAN`, `LAST_TOKEN`, or `DISABLED` | `MEAN` |
+| `LOCAL_EMBEDDING_NORMALIZE` | Explicit L2 normalization for an external ID without a manifest | `true` |
 | `CRG_DATA_DIR` | Override the per-user data directory (default `~/.crg`) used for per-user graphs and credentials in HTTP multi-user mode |
 | `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` / `SUMMARY_MODEL` | **Deprecated** singular vars, honored one release with a warning -- migrate to the `*_MODELS` chains |
+
+CRG intentionally exposes no local reranker settings because this server has
+no local reranker path. A custom external embedding ID without a manifest must
+provide `LOCAL_EMBEDDING_DIM`; a local artifact directory must provide a valid
+`fastretrieval-manifest.json`, otherwise startup fails closed.
 
 ### Example -- cloud embeddings + summaries
 
@@ -353,7 +365,7 @@ What this fork fixes versus the upstream [code-review-graph](https://github.com/
 |:--------|:------------------|:-------------------------|
 | Multi-word search | Broken (literal substring) | AND-logic word splitting |
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
-| Embedding | sentence-transformers + torch (1.1 GB) | qwen3-embed ONNX + cloud (200 MB), dual-mode |
+| Embedding | sentence-transformers + torch (1.1 GB) | fastretrieval ONNX + cloud (200 MB), dual-mode |
 | Output size | Unbounded (500K+ chars) | Paginated (max_results, truncated flag) |
 | Tool design | 9 individual tools | 7 grouped tools: graph + query + review + config + security + help + config__open_relay |
 | Plugin hooks | Invalid PostEdit/PostGit | Valid PostToolUse |
@@ -367,7 +379,7 @@ How better-code-review-graph stacks up against direct competitors in each pillar
 | Codebase knowledge graph | Yes (Tree-sitter, 14 langs, SQLite) | Yes (functions/classes/deps) | Yes (precise code indexing) | Yes (Tree-sitter, 20+ langs, SQLite) |
 | Persistent incremental updates | Yes (git-diff + file-hash re-parse) | ? | Yes (continuous indexing) | Yes (OS file-watcher debounced) |
 | Qualified call resolution (callers/callees) | Yes (same-file bare-call resolution + fallback) | ? | Yes (go-to-def / find-references) | Yes (callers / callees / impact) |
-| Semantic search / embeddings | Yes (qwen3 ONNX local + cloud Jina/Gemini/OpenAI/Cohere) | ? | Yes (semantic + keyword + regex) | No (FTS5 full-text only) |
+| Semantic search / embeddings | Yes (fastretrieval local registry + cloud Jina/Gemini/OpenAI/Cohere) | ? | Yes (semantic + keyword + regex) | No (FTS5 full-text only) |
 | Token-optimized review context | Yes (`review` tool, git-diff scoped) | Yes (PR review comments) | No (code-context assistant) | No (context layer, not review) |
 | Security scanning | Yes (Semgrep `p/auto` + 3-rule overlay, SARIF) | ? | ? | No |
 | Self-hostable | Yes (stdio default, machine-bound) | Yes (Docker / K8s / air-gapped) | Yes (self-hosted instance) | Yes (100% local, no API keys) |

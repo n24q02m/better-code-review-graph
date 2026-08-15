@@ -8,16 +8,19 @@ Run as: better-code-review-graph serve
 from __future__ import annotations
 
 import json
+import logging
 import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 from mcp_core.relay.tool_helpers import register_open_relay_tool
 
+from .config import settings
 from .embeddings import EmbeddingStore, resolve_backend
 from .incremental import get_db_path
 from .tools import (
@@ -77,6 +80,109 @@ def _resolve_version() -> str:
 
 
 _pkg_version = _resolve_version()
+
+logger = logging.getLogger(__name__)
+
+
+def _register_spec(**kwargs: Any) -> None:
+    """Đăng ký spec embedding qua public API của fastretrieval."""
+    from fastretrieval import CustomModelSpec
+
+    CustomModelSpec(**kwargs).register()
+
+
+def _built_in_model_ids() -> set[str]:
+    """Đọc các model built-in từ registry, không suy luận theo tên."""
+    from fastretrieval import TextEmbedding
+
+    model_ids: set[str] = set()
+    for item in TextEmbedding.list_supported_models():
+        model_id = (
+            item.get("model")
+            if isinstance(item, dict)
+            else getattr(item, "model", None)
+        )
+        if isinstance(model_id, str):
+            model_ids.add(model_id)
+    return model_ids
+
+
+def _maybe_register_custom_embed(local_model: str) -> None:
+    """Đăng ký model embedding local theo registry hoặc manifest hợp lệ.
+
+    ID built-in được lấy từ registry của fastretrieval. Thư mục artifact phải
+    có manifest đầy đủ; ID bên ngoài không có manifest chỉ được đăng ký khi
+    người dùng khai báo rõ dimension, pooling và normalization qua LOCAL_*.
+    """
+    local_model = local_model.strip()
+    if not local_model:
+        return
+
+    built_in_ids = {model_id.casefold() for model_id in _built_in_model_ids()}
+    if local_model.casefold() in built_in_ids:
+        return
+
+    model_dir = Path(local_model).expanduser()
+    if model_dir.exists() and not model_dir.is_dir():
+        raise ValueError(
+            f"Custom local embedding path {model_dir} must be a model ID or directory"
+        )
+
+    manifest_path = model_dir / "fastretrieval-manifest.json"
+    if model_dir.is_dir():
+        if not manifest_path.is_file():
+            raise ValueError(
+                f"Custom local embedding directory {model_dir} requires "
+                "fastretrieval-manifest.json"
+            )
+
+        from fastretrieval.contract import ModelContract
+
+        contract = ModelContract.from_manifest(manifest_path)
+        if contract.model_id.casefold() in built_in_ids:
+            return
+        _register_spec(
+            **contract.to_custom_model_spec_kwargs(
+                model_file=settings.local_embedding_model_file,
+                hf=contract.source,
+            )
+        )
+        logger.info(
+            "Registered manifest-backed local embedding model %r (dim=%s, pooling=%s)",
+            contract.model_id,
+            contract.output_dim,
+            contract.pooling,
+        )
+        return
+
+    if settings.local_embedding_dim <= 0:
+        logger.error(
+            "Custom local embedding model %r requires a valid manifest or "
+            "LOCAL_EMBEDDING_DIM > 0; skipping registration.",
+            local_model,
+        )
+        return
+
+    try:
+        _register_spec(
+            model_id=local_model,
+            hf=local_model,
+            model_file=settings.local_embedding_model_file,
+            dim=settings.local_embedding_dim,
+            pooling=settings.local_embedding_pooling.strip().upper(),
+            normalization=settings.local_embedding_normalize,
+        )
+        logger.info(
+            "Registered custom local embedding model %r (dim=%s, pooling=%s)",
+            local_model,
+            settings.local_embedding_dim,
+            settings.local_embedding_pooling,
+        )
+    except ValueError as exc:
+        # Chỉ duplicate registration là idempotent; config invalid phải fail closed.
+        if "already registered" not in str(exc).lower():
+            raise
+        logger.debug("Custom embedding registration skipped: %s", exc)
 
 
 mcp = FastMCP(
@@ -663,7 +769,7 @@ def _config_status(repo_root: str | None) -> dict[str, Any]:
             db_path = get_db_path(root)
             # Counting stored embeddings is a pure SQL op (SELECT COUNT(*)).
             # Do NOT init_backend() here: constructing the local backend loads
-            # the qwen3-embed ONNX model, which can block/hang the status call
+            # the local fastretrieval ONNX model, which can block/hang the status call
             # on Windows under stdio. Open the store without a backend; the
             # backend name is reported separately via resolve_backend().
             emb_store = EmbeddingStore(db_path)
@@ -1022,7 +1128,7 @@ def serve_main(repo_root: str | None = None) -> None:
 
     # Stdio mode (default): run FastMCP stdio server directly. No bridge
     # layer. Cloud API keys come from env vars only -- CRG has a local
-    # fallback (qwen3-embed ONNX) so missing cloud creds is non-fatal.
+    # fastretrieval local fallback so missing cloud creds is non-fatal.
     mcp.run(transport="stdio")
 
 

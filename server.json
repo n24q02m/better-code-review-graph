@@ -28,6 +28,36 @@
           "name": "EMBEDDING_MODELS"
         },
         {
+          "description": "Built-in fastretrieval model ID or local directory with fastretrieval-manifest.json",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_EMBEDDING_MODEL"
+        },
+        {
+          "description": "Required positive output dimension for an external local embedding ID without a manifest",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_EMBEDDING_DIM"
+        },
+        {
+          "description": "ONNX file path inside a manifest-backed local embedding directory",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_EMBEDDING_MODEL_FILE"
+        },
+        {
+          "description": "Explicit pooling for an external local embedding ID without a manifest",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_EMBEDDING_POOLING"
+        },
+        {
+          "description": "Explicit L2 normalization for an external local embedding ID without a manifest",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_EMBEDDING_NORMALIZE"
+        },
+        {
           "description": "Ordered summarizer model chain; empty = summaries disabled",
           "isRequired": false,
           "isSecret": false,

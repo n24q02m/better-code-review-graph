@@ -3,7 +3,7 @@
 State machine: awaiting_setup -> (configured | local)
 Reset: configured/local -> awaiting_setup (via setup tool).
 
-CRG has a local fallback (qwen3-embed ONNX) so all tools work without
+CRG has a local fallback through fastretrieval so all tools work without
 cloud credentials. Cloud keys are optional enhancements.
 
 After the stdio-pure + http-multi-user split (spec
