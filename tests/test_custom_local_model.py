@@ -1,9 +1,32 @@
 """Kiểm tra resolver model embedding local theo contract generic."""
 
+import base64
 import json
 from types import SimpleNamespace
 
 import pytest
+
+_NON_QWEN_ONNX_B64 = (
+    "CAkSEGNyZy10ZXN0LWZpeHR1cmU62QMKHwoJaW5wdXRfaWRzEgtpbnB1dF9zaGFwZSIFU2hhcGUKKxIE"
+    "YXhlcyIIQ29uc3RhbnQqGQoFdmFsdWUqDQgBEAc6AQJCBGF4ZXOgAQQKLxIGaGlkZGVuIghDb25zdGFu"
+    "dCobCgV2YWx1ZSoPCAEQBzoBBEIGaGlkZGVuoAEECicKCWlucHV0X2lkcxIJaWRzX2Zsb2F0IgRDYXN0"
+    "KgkKAnRvGAGgAQIKKgoJaWRzX2Zsb2F0CgRheGVzEgxpZHNfZXhwYW5kZWQiCVVuc3F1ZWV6ZQo4Cgtp"
+    "bnB1dF9zaGFwZQoGaGlkZGVuEgx0YXJnZXRfc2hhcGUiBkNvbmNhdCoLCgRheGlzGACgAQIKNwoMaWRz"
+    "X2V4cGFuZGVkCgx0YXJnZXRfc2hhcGUSEWxhc3RfaGlkZGVuX3N0YXRlIgZFeHBhbmQSEG5vbl9xd2Vu"
+    "X2ZpeHR1cmVaIwoJaW5wdXRfaWRzEhYKFAgHEhAKBxIFYmF0Y2gKBRIDc2VxWigKDmF0dGVudGlvbl9t"
+    "YXNrEhYKFAgHEhAKBxIFYmF0Y2gKBRIDc2VxYi8KEWxhc3RfaGlkZGVuX3N0YXRlEhoKGAgBEhQKBxIF"
+    "YmF0Y2gKBRIDc2VxCgIIBEIECgAQEQ=="
+)
+_NON_QWEN_TOKENIZER_B64 = (
+    "eyJ2ZXJzaW9uIjoiMS4wIiwidHJ1bmNhdGlvbiI6bnVsbCwicGFkZGluZyI6eyJzdHJh"
+    "dGVneSI6eyJGaXhlZCI6NH0sImRpcmVjdGlvbiI6IlJpZ2h0IiwicGFkX3RvX211bHRpcGxl"
+    "X29mIjpudWxsLCJwYWRfaWQiOjAsInBhZF90eXBlX2lkIjowLCJwYWRfdG9rZW4iOiJbUE"
+    "FEXSJ9LCJhZGRlZF90b2tlbnMiOltdLCJub3JtYWxpemVyIjpudWxsLCJwcmVfdG9rZW5p"
+    "emVyIjp7InR5cGUiOiJXaGl0ZXNwYWNlIn0sInBvc3RfcHJvY2Vzc29yIjpudWxsLCJkZWNv"
+    "ZGVyIjpudWxsLCJtb2RlbCI6eyJ0eXBlIjoiV29yZExldmVsIiwidm9jYWIiOnsiW1BBRF0i"
+    "OjAsIltVTktdIjoxLCJoZWxsbyI6Miwid29ybGQiOjMsImN1c3RvbSI6NCwibW9kZWwiOjV9"
+    "LCJ1bmtfdG9rZW4iOiJbVU5LXSJ9fQ=="
+)
 
 
 def _manifest_payload() -> dict:
@@ -31,6 +54,21 @@ def _manifest_payload() -> dict:
         "quantization": None,
         "exporter_version": "test",
     }
+
+
+def _non_qwen_manifest_payload() -> dict:
+    payload = _manifest_payload()
+    payload.update(
+        {
+            "model_id": "acme/tiny-e5-runtime",
+            "source": "acme/tiny-e5-runtime",
+            "model_family": "bert",
+            "output_dim": 4,
+            "output_shape": [4],
+            "tokenizer_files": ["tokenizer.json"],
+        }
+    )
+    return payload
 
 
 def test_empty_plugin_values_use_local_embedding_defaults(monkeypatch):
@@ -345,6 +383,51 @@ def test_custom_model_is_registered_with_every_declared_field(monkeypatch):
     assert spec["model_file"] == "onnx/model.onnx"
     assert spec["pooling"] == "MEAN"
     assert spec["normalization"] is True
+
+
+def test_non_qwen_manifest_loads_real_fastretrieval_runtime(tmp_path, monkeypatch):
+    """Exercise a non-Qwen ONNX artifact through the public runtime facade."""
+    from fastretrieval.text.custom_text_embedding import CustomTextEmbedding
+
+    from better_code_review_graph import server
+    from better_code_review_graph.config import settings
+    from better_code_review_graph.embeddings import init_backend
+
+    model_dir = tmp_path / "tiny-e5-runtime"
+    (model_dir / "onnx").mkdir(parents=True)
+    (model_dir / "onnx" / "model.onnx").write_bytes(
+        base64.b64decode(_NON_QWEN_ONNX_B64)
+    )
+    (model_dir / "tokenizer.json").write_bytes(
+        base64.b64decode(_NON_QWEN_TOKENIZER_B64)
+    )
+    (model_dir / "config.json").write_text(
+        json.dumps({"pad_token_id": 0}),
+        encoding="utf-8",
+    )
+    (model_dir / "tokenizer_config.json").write_text(
+        json.dumps({"model_max_length": 4, "pad_token": "[PAD]"}),
+        encoding="utf-8",
+    )
+    (model_dir / "fastretrieval-manifest.json").write_text(
+        json.dumps(_non_qwen_manifest_payload()),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(settings, "local_embedding_model", str(model_dir))
+    monkeypatch.setattr(settings, "local_embedding_model_file", "onnx/model.onnx")
+    monkeypatch.setattr(server, "_built_in_model_ids", lambda: set())
+
+    try:
+        backend = init_backend(mode="local")
+        vectors = backend.embed_texts(["hello custom"], dimensions=4)
+        query_vector = backend.embed_single_query("world", dimensions=4)
+
+        assert len(vectors) == 1
+        assert len(vectors[0]) == 4
+        assert len(query_vector) == 4
+    finally:
+        CustomTextEmbedding._SUPPORTED.pop("acme/tiny-e5-runtime", None)
 
 
 def test_registering_twice_is_not_fatal(monkeypatch):
