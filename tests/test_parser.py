@@ -139,6 +139,44 @@ class TestCodeParser:
         ]
         assert len(resolved) == 1
 
+    def test_calls_edge_argument_reference(self):
+        """Function references passed as call arguments produce CALLS edges.
+
+        ``document.addEventListener('click', onEvent)`` never *calls*
+        onEvent directly, but the reference keeps onEvent alive —
+        dead-code analysis must see a CALLS edge from setupUI.
+        """
+        _, edges = self.parser.parse_file(FIXTURES / "callback_refs.js")
+        calls = [e for e in edges if e.kind == "CALLS"]
+        file_path = str(FIXTURES / "callback_refs.js")
+
+        handler_edges = [
+            e for e in calls if e.target == f"{file_path}::onEvent"
+        ]
+        # addEventListener + setTimeout from setupUI, addEventListener
+        # from the IIFE toplevel.
+        assert len(handler_edges) == 3
+        assert all("setupUI" in e.source for e in handler_edges[:2])
+
+    def test_calls_edge_toplevel_registration(self):
+        """Callback registration in IIFE/module toplevel attributes to File.
+
+        Calls with no enclosing function (IIFE body, module init code)
+        previously produced no CALLS edge at all. They must now be
+        attributed to the File node so the referenced handler is not
+        reported as unreferenced by dead-code analysis.
+        """
+        _, edges = self.parser.parse_file(FIXTURES / "callback_refs.js")
+        calls = [e for e in edges if e.kind == "CALLS"]
+        file_path = str(FIXTURES / "callback_refs.js")
+
+        toplevel = [
+            e
+            for e in calls
+            if e.target == f"{file_path}::onEvent" and e.source == file_path
+        ]
+        assert len(toplevel) == 1
+
     def test_multiple_calls_to_same_function(self):
         """Multiple calls to the same function on different lines should each produce an edge."""
         _, edges = self.parser.parse_file(FIXTURES / "multi_call_example.py")
