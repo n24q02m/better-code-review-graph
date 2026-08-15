@@ -1,12 +1,42 @@
 {
   "name": "better-code-review-graph",
   "description": "Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.",
-  "version": "3.21.0",
+  "version": "3.22.0-beta.1",
   "userConfig": {
     "EMBEDDING_MODELS": {
       "type": "string",
       "title": "Embedding model chain (optional)",
-      "description": "CSV 'provider/model,provider/model' (order = litellm fallback); provider inferred from prefix. Empty = local ONNX (qwen3-embed). Example: jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+      "description": "CSV 'provider/model,provider/model' (order = litellm fallback); provider inferred from prefix. Empty = local fastretrieval registry. Example: jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+      "required": false
+    },
+    "LOCAL_EMBEDDING_MODEL": {
+      "type": "string",
+      "title": "Local embedding model (optional)",
+      "description": "Built-in fastretrieval model ID, or a local directory containing fastretrieval-manifest.json. External IDs require LOCAL_EMBEDDING_DIM.",
+      "required": false
+    },
+    "LOCAL_EMBEDDING_DIM": {
+      "type": "number",
+      "title": "Local embedding dimension",
+      "description": "Required output dimension for an external LOCAL_EMBEDDING_MODEL ID without a manifest.",
+      "required": false
+    },
+    "LOCAL_EMBEDDING_MODEL_FILE": {
+      "type": "string",
+      "title": "Local embedding model file",
+      "description": "ONNX file path inside a manifest-backed local artifact directory.",
+      "required": false
+    },
+    "LOCAL_EMBEDDING_POOLING": {
+      "type": "string",
+      "title": "Local embedding pooling",
+      "description": "Explicit pooling for an external ID without a manifest: CLS, MEAN, LAST_TOKEN, or DISABLED.",
+      "required": false
+    },
+    "LOCAL_EMBEDDING_NORMALIZE": {
+      "type": "boolean",
+      "title": "Normalize local embeddings",
+      "description": "Apply explicit L2 normalization for an external ID without a manifest.",
       "required": false
     },
     "SUMMARY_MODELS": {
@@ -60,6 +90,11 @@
       "env": {
         "MCP_TRANSPORT": "stdio",
         "EMBEDDING_MODELS": "${user_config.EMBEDDING_MODELS}",
+        "LOCAL_EMBEDDING_MODEL": "${user_config.LOCAL_EMBEDDING_MODEL}",
+        "LOCAL_EMBEDDING_DIM": "${user_config.LOCAL_EMBEDDING_DIM}",
+        "LOCAL_EMBEDDING_MODEL_FILE": "${user_config.LOCAL_EMBEDDING_MODEL_FILE}",
+        "LOCAL_EMBEDDING_POOLING": "${user_config.LOCAL_EMBEDDING_POOLING}",
+        "LOCAL_EMBEDDING_NORMALIZE": "${user_config.LOCAL_EMBEDDING_NORMALIZE}",
         "SUMMARY_MODELS": "${user_config.SUMMARY_MODELS}",
         "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
         "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",

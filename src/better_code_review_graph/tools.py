@@ -2685,7 +2685,7 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
 def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
-    Uses dual-mode embedding: local ONNX (qwen3-embed, default) or cloud via litellm passthrough.
+    Uses dual-mode embedding: local fastretrieval ONNX by default or cloud via litellm passthrough.
     Fixed 768-dim storage via MRL truncation.
 
     Only embeds nodes that don't already have up-to-date embeddings.

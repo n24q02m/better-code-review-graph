@@ -1,8 +1,9 @@
 """Dual-mode embedding: local ONNX (default) + cloud (litellm passthrough).
 
 Supports two backends:
-- **local**: Local inference via qwen3-embed ONNX. Zero-config, ~570MB model
-  download on first use. Default backend.
+- **local**: Local inference through the ``fastretrieval`` model registry.
+  Zero-config for the built-in reference model; custom artifacts use the
+  explicit LOCAL_* configuration in ``config.py``.
 - **cloud**: Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
   Supports Jina, Gemini, OpenAI, Cohere, or any litellm ``provider/model``.
   Models come from the ``EMBEDDING_MODELS`` chain (ordered ``provider/model``
@@ -172,38 +173,53 @@ class EmbeddingBackend(Protocol):  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# Qwen3EmbedBackend (local ONNX)
+# LocalEmbeddingBackend (local ONNX)
 # ---------------------------------------------------------------------------
 
 
-class Qwen3EmbedBackend:
-    """Local ONNX embedding via qwen3-embed (Qwen3-Embedding-0.6B).
+class LocalEmbeddingBackend:
+    """Local ONNX embedding through ``fastretrieval.TextEmbedding``.
 
-    Uses last-token pooling with instruction-aware queries.
-    Model is downloaded on first use (~0.57GB).
-    Batch size is forced to 1 (static ONNX graph).
+    The default model is a built-in registry entry. A custom model can be
+    registered by the server and loaded from a local artifact directory.
     """
 
-    DEFAULT_MODEL = "n24q02m/Qwen3-Embedding-0.6B-ONNX"
-
-    def __init__(self, model_name: str | None = None):
-        self._model_name = model_name or self.DEFAULT_MODEL
+    def __init__(self, model_name: str | None = None, model_path: str | None = None):
+        self._model_name = model_name
+        self._model_path = model_path
         self._model = None
 
     @property
     def name(self) -> str:
-        return f"local:{self._model_name}"
+        return f"local:{self._model_name or 'registry'}"
 
     def _get_model(self):
         """Lazy-load the embedding model.
 
-        On first call, downloads the ONNX model (~570 MB) from HuggingFace
-        if not already cached.
+        The runtime resolves built-in IDs and custom registrations through its
+        public ``TextEmbedding`` facade. A manifest-backed artifact is pinned
+        to its local directory with ``specific_model_path``.
         """
         if self._model is None:
-            from qwen3_embed import TextEmbedding
+            from fastretrieval import TextEmbedding
 
-            self._model = TextEmbedding(model_name=self._model_name)
+            if self._model_name is None:
+                for item in TextEmbedding.list_supported_models():
+                    model_id = (
+                        item.get("model")
+                        if isinstance(item, dict)
+                        else getattr(item, "model", None)
+                    )
+                    if isinstance(model_id, str) and model_id:
+                        self._model_name = model_id
+                        break
+                if self._model_name is None:
+                    raise ValueError("fastretrieval TextEmbedding registry is empty")
+
+            self._model = TextEmbedding(
+                model_name=self._model_name,
+                specific_model_path=self._model_path,
+            )
         return self._model
 
     def embed_texts(
@@ -545,7 +561,7 @@ def resolve_backend() -> str:
 
     3-way resolution via the shared mcp-core primitive: 'cloud' (non-empty
     EMBEDDING_MODELS chain), 'local' (empty chain + local leg enabled), or
-    'unavailable' (empty chain + DISABLE_LOCAL_EMBED set -> the local qwen3 ONNX
+    'unavailable' (empty chain + DISABLE_LOCAL_EMBED set -> the local ONNX
     download is skipped and no cloud chain is configured, so embedding is
     gracefully unavailable, NOT forced). Legacy ``EMBEDDING_BACKEND`` is honored
     one release (warning).
@@ -575,13 +591,54 @@ def init_backend(mode: str | None = None) -> EmbeddingBackend:
     if mode in ("cloud", "litellm"):
         return CloudEmbeddingBackend()
     if mode == "local":
-        return Qwen3EmbedBackend()
+        from .config import settings
+
+        configured_model = settings.local_embedding_model.strip()
+        if not configured_model:
+            return LocalEmbeddingBackend()
+
+        from .server import _maybe_register_custom_embed
+
+        _maybe_register_custom_embed(configured_model)
+        model_name, model_path = _resolve_local_model_source(configured_model)
+        if model_path is None:
+            from .server import _built_in_model_ids
+
+            built_in_ids = {model_id.casefold() for model_id in _built_in_model_ids()}
+            if (
+                configured_model.casefold() not in built_in_ids
+                and settings.local_embedding_dim <= 0
+            ):
+                raise ValueError(
+                    f"Custom local embedding model {configured_model!r} requires "
+                    "LOCAL_EMBEDDING_DIM > 0 or a manifest-backed directory"
+                )
+        return LocalEmbeddingBackend(model_name=model_name, model_path=model_path)
     if mode == "unavailable":
         raise ValueError(
             "Embedding unavailable: DISABLE_LOCAL_EMBED is set but no EMBEDDING_MODELS cloud "
             "chain is configured. Set EMBEDDING_MODELS + a provider key, or unset DISABLE_LOCAL_EMBED."
         )
     raise ValueError(f"Unknown backend type: {mode}")
+
+
+def _resolve_local_model_source(local_model: str) -> tuple[str, str | None]:
+    """Resolve a configured model ID or manifest-backed local directory."""
+    model_dir = Path(local_model).expanduser()
+    if not model_dir.is_dir():
+        return local_model, None
+
+    manifest_path = model_dir / "fastretrieval-manifest.json"
+    if not manifest_path.is_file():
+        raise ValueError(
+            f"Custom local embedding directory {model_dir} requires "
+            "fastretrieval-manifest.json"
+        )
+
+    from fastretrieval.contract import ModelContract
+
+    contract = ModelContract.from_manifest(manifest_path)
+    return contract.model_id, str(model_dir.resolve())
 
 
 # ---------------------------------------------------------------------------

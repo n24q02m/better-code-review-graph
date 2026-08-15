@@ -12,7 +12,7 @@ from better_code_review_graph.embeddings import (
     _DEFAULT_DIMS,
     CloudEmbeddingBackend,
     EmbeddingStore,
-    Qwen3EmbedBackend,
+    LocalEmbeddingBackend,
     _cosine_similarity,
     _decode_vector,
     _detect_embedding_provider,
@@ -28,10 +28,10 @@ from better_code_review_graph.graph import GraphNode, GraphStore
 
 
 @pytest.fixture(autouse=True)
-def mock_qwen_inference():
-    """Mock Qwen3EmbedBackend model to avoid real downloads and inference."""
+def mock_local_inference():
+    """Mock local model inference to avoid downloads and real inference."""
     with patch(
-        "better_code_review_graph.embeddings.Qwen3EmbedBackend._get_model"
+        "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model"
     ) as mock_get:
         mock_model = MagicMock()
         mock_get.return_value = mock_model
@@ -349,7 +349,7 @@ class TestInitBackend:
     def test_local_backend(self):
         with patch.dict(os.environ, {"EMBEDDING_BACKEND": "local"}, clear=True):
             backend = init_backend()
-            assert isinstance(backend, Qwen3EmbedBackend)
+            assert isinstance(backend, LocalEmbeddingBackend)
 
     def test_cloud_backend(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test"}, clear=True):
@@ -359,7 +359,7 @@ class TestInitBackend:
     def test_auto_detect_local(self):
         with patch.dict(os.environ, {}, clear=True):
             backend = init_backend()
-            assert isinstance(backend, Qwen3EmbedBackend)
+            assert isinstance(backend, LocalEmbeddingBackend)
 
     def test_invalid_mode(self):
         with pytest.raises(ValueError, match="Unknown backend type"):
@@ -367,31 +367,31 @@ class TestInitBackend:
 
 
 # ---------------------------------------------------------------------------
-# Qwen3EmbedBackend (local ONNX)
+# LocalEmbeddingBackend (local ONNX)
 # ---------------------------------------------------------------------------
 
 
-class TestQwen3EmbedBackend:
+class TestLocalEmbeddingBackend:
     def test_embed_produces_768_dim(self):
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         vectors = backend.embed_texts(["hello world"], dimensions=768)
         assert len(vectors) == 1
         assert len(vectors[0]) == 768
 
     def test_embed_multiple_texts(self):
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         vectors = backend.embed_texts(["hello", "world"], dimensions=768)
         assert len(vectors) == 2
         for v in vectors:
             assert len(v) == 768
 
     def test_embed_empty_list(self):
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         vectors = backend.embed_texts([])
         assert vectors == []
 
     def test_embed_single(self):
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         vector = backend.embed_single("hello world", dimensions=768)
         assert len(vector) == 768
 
@@ -588,7 +588,7 @@ class TestCloudEmbeddingBackend:
 class TestEmbeddingStore:
     def test_store_initializes(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             assert store.count() == 0
@@ -597,7 +597,7 @@ class TestEmbeddingStore:
 
     def test_embed_nodes_and_count(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [
@@ -620,7 +620,7 @@ class TestEmbeddingStore:
 
     def test_embed_nodes_skips_files(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [
@@ -633,7 +633,7 @@ class TestEmbeddingStore:
 
     def test_embed_nodes_deduplicates(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [
@@ -649,7 +649,7 @@ class TestEmbeddingStore:
 
     def test_search(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [
@@ -675,7 +675,7 @@ class TestEmbeddingStore:
 
     def test_remove_node(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [_make_node(name="foo", qualified_name="a.py::foo")]
@@ -689,7 +689,7 @@ class TestEmbeddingStore:
 
     def test_search_returns_empty_when_no_embeddings(self, tmp_path):
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             results = store.search("anything")
@@ -700,7 +700,7 @@ class TestEmbeddingStore:
     def test_fixed_768_dim_storage(self, tmp_path):
         """All embeddings should be stored at fixed 768 dimensions."""
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [_make_node(name="foo", qualified_name="a.py::foo")]
@@ -759,7 +759,7 @@ class TestEmbeddingStore:
     def test_re_embeds_on_backend_change(self, tmp_path):
         """Changing backend name should trigger re-embedding."""
         db = tmp_path / "graph.db"
-        backend = Qwen3EmbedBackend()
+        backend = LocalEmbeddingBackend()
         store = EmbeddingStore(db, backend)
         try:
             nodes = [_make_node(name="foo", qualified_name="a.py::foo")]
@@ -825,7 +825,7 @@ class TestEmbedAllNodes:
         try:
             _insert_file_and_functions(graph_store, "test.py", ["hello"])
 
-            backend = Qwen3EmbedBackend()
+            backend = LocalEmbeddingBackend()
             emb_store = EmbeddingStore(db_path, backend)
             try:
                 count = embed_all_nodes(graph_store, emb_store)
@@ -847,7 +847,7 @@ class TestSemanticSearch:
                 graph_store, "app.py", ["auth_handler", "payment_process", "user_login"]
             )
 
-            backend = Qwen3EmbedBackend()
+            backend = LocalEmbeddingBackend()
             emb_store = EmbeddingStore(db_path, backend)
             try:
                 embed_all_nodes(graph_store, emb_store)
@@ -870,7 +870,7 @@ class TestSemanticSearch:
         try:
             _insert_file_and_functions(graph_store, "test.py", ["my_function"])
 
-            backend = Qwen3EmbedBackend()
+            backend = LocalEmbeddingBackend()
             emb_store = EmbeddingStore(db_path, backend)
             try:
                 # Don't embed -- should fallback to keyword

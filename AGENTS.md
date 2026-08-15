@@ -12,7 +12,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `parser.py` -- Tree-sitter parsing (14 langs) + call target resolution
   - `graph.py` -- SQLite GraphStore, search, impact radius, NetworkX cache
   - `incremental.py` -- Git integration, file watching, incremental updates
-  - `embeddings.py` -- Dual-mode embedding: ONNX local (qwen3-embed) + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
+  - `embeddings.py` -- Dual-mode embedding: local ONNX through the fastretrieval registry + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
   - `cli.py` -- CLI: starts MCP server (pure entry point)
   - `__init__.py` -- Version export
@@ -57,7 +57,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
 - **Graph** (graph.py): SQLite with WAL mode. Multi-word AND-logic search. GraphNode/GraphEdge dataclasses.
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
-- **Embeddings** (embeddings.py): Dual-mode -- local ONNX (qwen3-embed, default, zero-config) or cloud via the `EMBEDDING_MODELS` chain (litellm passthrough, `mcp_core.llm`; order = fallback, empty = local). Fixed 768-dim storage.
+- **Embeddings** (embeddings.py): Dual-mode -- local ONNX through the fastretrieval registry (default, zero-config) or cloud via the `EMBEDDING_MODELS` chain (litellm passthrough, `mcp_core.llm`; order = fallback, empty = local). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
 - **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions/spot_check/renamed_in_diff/diff), review, config, security, help, config__open_relay (mcp-core relay helper). Returns JSON strings.
 
@@ -69,8 +69,8 @@ provider SDKs are imported directly.
 
 Per-task model chains, CSV `provider/model,provider/model`, order = litellm fallback. Provider is inferred from the model prefix.
 
-- `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX (qwen3-embed).
-- **Local (default)**: `qwen3-embed` ONNX -- zero-config, ~570MB download on first use, 768-dim MRL truncation
+- `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX from the fastretrieval built-in registry.
+- **Local (default)**: fastretrieval ONNX registry -- zero-config, ~570MB download on first use, 768-dim MRL truncation
 - API key follows the litellm convention `<PROVIDER>_API_KEY`. The 7 providers the server suggests:
 
   | model prefix | key env var | get it at |
@@ -88,6 +88,18 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 - `DISABLE_LOCAL_EMBED` -- skip the local ONNX download; embedding is `unavailable` unless a cloud chain is configured (`resolve_backend` 3-way: cloud / local / unavailable)
 - Fixed 768-dim storage keeps the table schema valid across providers. Switching embedding MODEL changes the vector space; embeddings are tagged per provider (`embeddings.provider` column) and `EmbeddingStore.search` restricts the cosine scan to the active provider, so a provider switch just re-embeds rather than mixing incomparable vectors.
 - Deprecated (honored one release with a warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend is now inferred from whether the chain is empty). The old "Jina > Gemini > OpenAI > Cohere" auto-detect router is gone.
+
+### BYO local embedding
+
+- `LOCAL_EMBEDDING_MODEL` -- built-in fastretrieval model ID, or a local directory containing `fastretrieval-manifest.json`.
+- `LOCAL_EMBEDDING_DIM` -- required positive dimension for an external model ID without a manifest.
+- `LOCAL_EMBEDDING_MODEL_FILE` -- ONNX file path inside a manifest-backed artifact, default `onnx/model.onnx`.
+- `LOCAL_EMBEDDING_POOLING` -- explicit `CLS`, `MEAN`, `LAST_TOKEN`, or `DISABLED` value for an external ID without a manifest.
+- `LOCAL_EMBEDDING_NORMALIZE` -- explicit L2 normalization for an external ID without a manifest, default `true`.
+
+CRG không có đường reranker cục bộ nên không có cấu hình reranker local.
+Directory artifact thiếu manifest hoặc model ID ngoài registry thiếu dimension sẽ bị từ
+chối, không tự rơi về model mặc định.
 
 ### Manual config example
 
@@ -136,7 +148,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 
 ## Luu y quan trong
 
-- Lazy imports cho heavy deps (tree-sitter, qwen3-embed, litellm via `mcp_core.llm`, numpy) -- tranh startup cost
+- Lazy imports cho heavy deps (tree-sitter, fastretrieval, litellm via `mcp_core.llm`, numpy) -- tranh startup cost
 - MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`

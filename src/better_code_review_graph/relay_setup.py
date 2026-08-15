@@ -4,7 +4,7 @@ Resolution order (relay only when ALL local sources are empty):
 1. ENV VARS          -- User explicitly set (highest priority, skip everything)
 2. RELAY CONFIG      -- Saved from previous setup (PerPluginStore, ~/.better-code-review-graph-mcp/config.json)
 3. RELAY SETUP       -- Interactive, ONLY when steps 1-2 are ALL empty (30s timeout)
-4. LOCAL MODE        -- Fallback (qwen3-embed ONNX)
+4. LOCAL MODE        -- Fallback through fastretrieval
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ async def ensure_config() -> dict[str, str] | None:
     print(
         f"\nConfigure cloud embedding (optional, 30s timeout):"
         f"\n{session.relay_url}"
-        f"\nSkip to use local mode (qwen3-embed ONNX).\n",
+        f"\nSkip to use local mode through fastretrieval.\n",
         file=sys.stderr,
         flush=True,
     )

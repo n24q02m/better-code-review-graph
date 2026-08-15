@@ -2,6 +2,193 @@
 
 <!-- version list -->
 
+## v3.22.0-beta.1 (2026-08-15)
+
+### Bug Fixes
+
+- Batch incremental-update hash checks to prevent N+1 queries
+  ([`24153b3`](https://github.com/n24q02m/better-code-review-graph/commit/24153b3a486e86caa9e085d8007b35654a934eb5))
+
+- Bump mcp-core to 1.20.0 ([#894](https://github.com/n24q02m/better-code-review-graph/pull/894),
+  [`f3747f1`](https://github.com/n24q02m/better-code-review-graph/commit/f3747f1f53dc8e5a0fb640c39b5c1dfd9b312384))
+
+- Bump mcp-core to 1.21.0 ([#896](https://github.com/n24q02m/better-code-review-graph/pull/896),
+  [`93b1638`](https://github.com/n24q02m/better-code-review-graph/commit/93b16386917ce95a4adcbc9de0819a6c306690b1))
+
+- Correct bot ledger dates and record rejected proposals
+  ([#893](https://github.com/n24q02m/better-code-review-graph/pull/893),
+  [`bc1d3ce`](https://github.com/n24q02m/better-code-review-graph/commit/bc1d3ceb50122274a1423b942bd00ce7f6964878))
+
+- Derive TESTED_BY edges from calls made inside test functions
+  ([#906](https://github.com/n24q02m/better-code-review-graph/pull/906),
+  [`946cbc2`](https://github.com/n24q02m/better-code-review-graph/commit/946cbc2236b3336dbe66e0e995bc218242d8cb6b))
+
+- Drop bot persona labels from source comments
+  ([#910](https://github.com/n24q02m/better-code-review-graph/pull/910),
+  [`23a7091`](https://github.com/n24q02m/better-code-review-graph/commit/23a70913f5909fa5bc582546c441c4e5863a9213))
+
+- Drop rangeStrategy from update-type package rules
+  ([#889](https://github.com/n24q02m/better-code-review-graph/pull/889),
+  [`d88a334`](https://github.com/n24q02m/better-code-review-graph/commit/d88a33464fc10c134e241844ba42c5ab5525a372))
+
+- Gate opencode issue automation by repository permission
+  ([#948](https://github.com/n24q02m/better-code-review-graph/pull/948),
+  [`58f12a0`](https://github.com/n24q02m/better-code-review-graph/commit/58f12a013cf5495262f1a706a009b4a7b766cb64))
+
+- Isolate test HOME so the suite cannot write to the developer's real home
+  ([#928](https://github.com/n24q02m/better-code-review-graph/pull/928),
+  [`5814f92`](https://github.com/n24q02m/better-code-review-graph/commit/5814f92ba47931269571d7d76ba7984bad86132d))
+
+- Keep a test's own helpers out of TESTED_BY and state what the edge means
+  ([#909](https://github.com/n24q02m/better-code-review-graph/pull/909),
+  [`fe0e439`](https://github.com/n24q02m/better-code-review-graph/commit/fe0e43929ecc11e0da93433c114907c218649718))
+
+- Make the decision logs a declared exception to the AI-traces ignore
+  ([#899](https://github.com/n24q02m/better-code-review-graph/pull/899),
+  [`95e73f8`](https://github.com/n24q02m/better-code-review-graph/commit/95e73f812af7cff31558b23996870851d1997792))
+
+- Move the fork guard to the job condition
+  ([#903](https://github.com/n24q02m/better-code-review-graph/pull/903),
+  [`c16dcf8`](https://github.com/n24q02m/better-code-review-graph/commit/c16dcf8e38ab7afd8f877154fc74263d721482d5))
+
+- Move this repo to Apache-2.0, keeping the upstream MIT terms
+  ([#926](https://github.com/n24q02m/better-code-review-graph/pull/926),
+  [`1900029`](https://github.com/n24q02m/better-code-review-graph/commit/19000298e817f746b3f56020f207c873bbd4fc3f))
+
+- Negotiate a supported output_dimension for Cohere embeddings
+  ([#905](https://github.com/n24q02m/better-code-review-graph/pull/905),
+  [`97d5166`](https://github.com/n24q02m/better-code-review-graph/commit/97d516681ed12c298af42b50707b4410053db332))
+
+- Never run bot governance on pull requests from forks
+  ([#900](https://github.com/n24q02m/better-code-review-graph/pull/900),
+  [`44bc44e`](https://github.com/n24q02m/better-code-review-graph/commit/44bc44e6fc87bdd19a411ef0520eac14cd615f20))
+
+- Pin dev-group tooling so the lockfile cannot outrun the cooldown
+  ([#902](https://github.com/n24q02m/better-code-review-graph/pull/902),
+  [`f879b70`](https://github.com/n24q02m/better-code-review-graph/commit/f879b70ac34c88578e010e211b9012c8d0b58df0))
+
+- Pin GitHub Action references to commit SHAs
+  ([#883](https://github.com/n24q02m/better-code-review-graph/pull/883),
+  [`518c600`](https://github.com/n24q02m/better-code-review-graph/commit/518c600435aa999ea711e49d59620a2190827b72))
+
+- Pin the tree-sitter grammar cache so the HOME redirect cannot move it
+  ([#928](https://github.com/n24q02m/better-code-review-graph/pull/928),
+  [`5814f92`](https://github.com/n24q02m/better-code-review-graph/commit/5814f92ba47931269571d7d76ba7984bad86132d))
+
+- Produce implements edges during parsing
+  ([#949](https://github.com/n24q02m/better-code-review-graph/pull/949),
+  [`cf410af`](https://github.com/n24q02m/better-code-review-graph/commit/cf410afd8ffa93702efe7b0e9fea43b37edd760c))
+
+- Raise instead of parsing zero nodes when a grammar cannot load
+  ([#929](https://github.com/n24q02m/better-code-review-graph/pull/929),
+  [`8515ddb`](https://github.com/n24q02m/better-code-review-graph/commit/8515ddbf54c10733dfb9bfb1ae88ffa501b0e401))
+
+- Remove redundant orphan-tag shell guard (better-semantic-release @v1 has a built-in one)
+  ([#881](https://github.com/n24q02m/better-code-review-graph/pull/881),
+  [`14a8eb6`](https://github.com/n24q02m/better-code-review-graph/commit/14a8eb68d098a64136103390951d213d0df39c58))
+
+- Report an unreadable credential store instead of "not configured"
+  ([#930](https://github.com/n24q02m/better-code-review-graph/pull/930),
+  [`e4c6308`](https://github.com/n24q02m/better-code-review-graph/commit/e4c630857e62ecf4a114a1f064d9ba6951a93fad))
+
+- Report unknown as null instead of faking zeroes in query responses
+  ([#931](https://github.com/n24q02m/better-code-review-graph/pull/931),
+  [`5167bde`](https://github.com/n24q02m/better-code-review-graph/commit/5167bdec3c47471de8c5aca50d0468bf462bb798))
+
+- Run CodeQL on dependabot and renovate pull requests
+  ([#897](https://github.com/n24q02m/better-code-review-graph/pull/897),
+  [`f3cddd0`](https://github.com/n24q02m/better-code-review-graph/commit/f3cddd0eb88f43e762f5d34220aeba7ba7f05aaa))
+
+- Stop review-delta swallowing the new grammar error
+  ([#929](https://github.com/n24q02m/better-code-review-graph/pull/929),
+  [`8515ddb`](https://github.com/n24q02m/better-code-review-graph/commit/8515ddbf54c10733dfb9bfb1ae88ffa501b0e401))
+
+- Support Dart parser files ([#951](https://github.com/n24q02m/better-code-review-graph/pull/951),
+  [`0aebffe`](https://github.com/n24q02m/better-code-review-graph/commit/0aebffe9da05628b7b0d88b108db2d5a43555b38))
+
+- Use exact-match edge lookup to avoid redundant name filtering
+  ([`062a62e`](https://github.com/n24q02m/better-code-review-graph/commit/062a62e8b604837a9d6f6217aa26eed0d93da3de))
+
+- Widen the Cohere embedding width only for models that support it
+  ([#907](https://github.com/n24q02m/better-code-review-graph/pull/907),
+  [`a964a66`](https://github.com/n24q02m/better-code-review-graph/commit/a964a66f4521e0015e4732bcfc8cfcc1a78980d9))
+
+- **deps**: Update actions/checkout action to v7.0.1
+  ([#919](https://github.com/n24q02m/better-code-review-graph/pull/919),
+  [`25ad041`](https://github.com/n24q02m/better-code-review-graph/commit/25ad041f5ed8536c4363ae8b66182b9293a45a2c))
+
+- **deps**: Update fastmcp to >=3.4.4,<4
+  ([#901](https://github.com/n24q02m/better-code-review-graph/pull/901),
+  [`65d5b9f`](https://github.com/n24q02m/better-code-review-graph/commit/65d5b9f2c26d4c4fe32e1c9d91de4fcb61645281))
+
+- **deps**: Update github/codeql-action action to v4
+  ([#853](https://github.com/n24q02m/better-code-review-graph/pull/853),
+  [`ecf0a99`](https://github.com/n24q02m/better-code-review-graph/commit/ecf0a99a33d779f60c014ce17aa0a3d0325b5bdb))
+
+- **deps**: Update minor dependencies
+  ([#852](https://github.com/n24q02m/better-code-review-graph/pull/852),
+  [`1650f50`](https://github.com/n24q02m/better-code-review-graph/commit/1650f50d7a44f32a265f9acb8bccd75184f4145f))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to 9d7f287
+  ([#890](https://github.com/n24q02m/better-code-review-graph/pull/890),
+  [`4df60ca`](https://github.com/n24q02m/better-code-review-graph/commit/4df60ca488316e108e5a67b1ad5674ce0d46c6c8))
+
+- **deps**: Update tree-sitter-language-pack to v1
+  ([#854](https://github.com/n24q02m/better-code-review-graph/pull/854),
+  [`335b805`](https://github.com/n24q02m/better-code-review-graph/commit/335b805c7bfa3bf0230b38aa1e92b693f6a91da2))
+
+- **deps**: Update watchdog to v6
+  ([#857](https://github.com/n24q02m/better-code-review-graph/pull/857),
+  [`2238804`](https://github.com/n24q02m/better-code-review-graph/commit/2238804e32c148e5fdc43f81207e11313f9641be))
+
+### Features
+
+- Add bot PR governance workflow
+  ([#898](https://github.com/n24q02m/better-code-review-graph/pull/898),
+  [`dc359f7`](https://github.com/n24q02m/better-code-review-graph/commit/dc359f79eadc2d4b18e807620ba3ee47bf4aacc0))
+
+- Add fastretrieval BYO embedding support to crg
+  ([#952](https://github.com/n24q02m/better-code-review-graph/pull/952),
+  [`c9ef014`](https://github.com/n24q02m/better-code-review-graph/commit/c9ef014c9e5f05a9d8d2300b8e90ce36a36397f6))
+
+- Collect names bound at Python module level
+  ([#912](https://github.com/n24q02m/better-code-review-graph/pull/912),
+  [`a40cd8d`](https://github.com/n24q02m/better-code-review-graph/commit/a40cd8d76f2312e245a5378f6f96dc86aaa6c571))
+
+- Complete the plugin trinity with three skills and two lifecycle hooks
+  ([#904](https://github.com/n24q02m/better-code-review-graph/pull/904),
+  [`6abc2e1`](https://github.com/n24q02m/better-code-review-graph/commit/6abc2e17ce68e1c81c9fe70c5d87019173e66480))
+
+- Derive a stable subject from the workspace username
+  ([#886](https://github.com/n24q02m/better-code-review-graph/pull/886),
+  [`f49355a`](https://github.com/n24q02m/better-code-review-graph/commit/f49355ab71b9b19b1c21f4e9f95ae66c48707ba9))
+
+- Link writers of module-level state to its readers
+  ([#912](https://github.com/n24q02m/better-code-review-graph/pull/912),
+  [`a40cd8d`](https://github.com/n24q02m/better-code-review-graph/commit/a40cd8d76f2312e245a5378f6f96dc86aaa6c571))
+
+- Pin the tree-sitter shape module-level assignments parse to
+  ([#912](https://github.com/n24q02m/better-code-review-graph/pull/912),
+  [`a40cd8d`](https://github.com/n24q02m/better-code-review-graph/commit/a40cd8d76f2312e245a5378f6f96dc86aaa6c571))
+
+- Record module-level state sharing between Python functions
+  ([#912](https://github.com/n24q02m/better-code-review-graph/pull/912),
+  [`a40cd8d`](https://github.com/n24q02m/better-code-review-graph/commit/a40cd8d76f2312e245a5378f6f96dc86aaa6c571))
+
+- Separate reads from rebinds when a function touches module state
+  ([#912](https://github.com/n24q02m/better-code-review-graph/pull/912),
+  [`a40cd8d`](https://github.com/n24q02m/better-code-review-graph/commit/a40cd8d76f2312e245a5378f6f96dc86aaa6c571))
+
+- Sync cross-promo section ([#918](https://github.com/n24q02m/better-code-review-graph/pull/918),
+  [`fca64df`](https://github.com/n24q02m/better-code-review-graph/commit/fca64df2cbc2e072e504f25fe538f095eb643493))
+
+### Testing
+
+- Cover fastretrieval local backend paths
+  ([#952](https://github.com/n24q02m/better-code-review-graph/pull/952),
+  [`c9ef014`](https://github.com/n24q02m/better-code-review-graph/commit/c9ef014c9e5f05a9d8d2300b8e90ce36a36397f6))
+
+
 ## v3.21.0 (2026-07-18)
 
 

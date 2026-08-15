@@ -300,7 +300,7 @@ class TestConfigTool:
     async def test_status_does_not_load_embedding_model(self, tmp_path):
         """config(status) must NOT init the embedding backend.
 
-        Constructing the local backend loads the qwen3-embed ONNX model, which
+        Constructing the local backend loads the fastretrieval ONNX model, which
         can block/hang the status call on Windows under stdio. embeddings_count
         is a pure SQL COUNT(*), so no model is needed. Patch init_backend to
         explode if it is ever called from the status path.
