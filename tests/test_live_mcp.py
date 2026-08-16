@@ -135,10 +135,10 @@ class TestLiveMCP:
         )
 
     # ------------------------------------------------------------------
-    # 1. Tool listing — 5 canonical tools + config__open_relay helper
+    # 1. Tool listing — 6 canonical tools + config__open_relay helper
     # ------------------------------------------------------------------
     async def test_list_tools(self):
-        """Server exposes the 5 canonical tools plus ``config__open_relay``."""
+        """Server exposes the 6 canonical tools plus ``config__open_relay``."""
         async with stdio_client(self._server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -149,6 +149,7 @@ class TestLiveMCP:
                     "query",
                     "review",
                     "config",
+                    "security",
                     "help",
                     "config__open_relay",
                 }
