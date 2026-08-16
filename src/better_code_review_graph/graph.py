@@ -1507,7 +1507,9 @@ class GraphStore:
             is_test=bool(row["is_test"]),
             file_hash=row["file_hash"],
             # OPTIMIZATION: Short-circuit JSON parsing for empty dictionaries to avoid Python-to-C overhead
-            extra=json.loads(row["extra"]) if row["extra"] and row["extra"] != "{}" else {},
+            extra=json.loads(row["extra"])
+            if row["extra"] and row["extra"] != "{}"
+            else {},
         )
 
     def _row_to_edge(self, row: sqlite3.Row) -> GraphEdge:
@@ -1519,7 +1521,9 @@ class GraphStore:
             file_path=row["file_path"],
             line=row["line"],
             # OPTIMIZATION: Short-circuit JSON parsing for empty dictionaries to avoid Python-to-C overhead
-            extra=json.loads(row["extra"]) if row["extra"] and row["extra"] != "{}" else {},
+            extra=json.loads(row["extra"])
+            if row["extra"] and row["extra"] != "{}"
+            else {},
         )
 
 
