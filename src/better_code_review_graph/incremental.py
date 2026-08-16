@@ -236,6 +236,7 @@ def get_changed_files(repo_root: Path, base: str = "HEAD~1") -> list[str]:
                 text=True,
                 cwd=str(repo_root),
                 timeout=_GIT_TIMEOUT,
+                stdin=subprocess.DEVNULL,
             )
         files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
         return files
