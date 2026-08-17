@@ -1492,6 +1492,10 @@ class GraphStore:
         return f"{node.file_path}::{node.name}"
 
     def _row_to_node(self, row: sqlite3.Row) -> GraphNode:
+        # Optimization: short-circuiting empty JSON "{}" string bypasses Python-to-C
+        # parsing overhead, significantly improving materialization time for large row iterations.
+        node_extra = row["extra"]
+        parsed_extra = {} if not node_extra or node_extra == "{}" else json.loads(node_extra)
         return GraphNode(
             id=row["id"],
             kind=row["kind"],
@@ -1506,10 +1510,14 @@ class GraphStore:
             return_type=row["return_type"],
             is_test=bool(row["is_test"]),
             file_hash=row["file_hash"],
-            extra=json.loads(row["extra"]) if row["extra"] else {},
+            extra=parsed_extra,
         )
 
     def _row_to_edge(self, row: sqlite3.Row) -> GraphEdge:
+        # Optimization: short-circuiting empty JSON "{}" string bypasses Python-to-C
+        # parsing overhead, significantly improving materialization time for large row iterations.
+        edge_extra = row["extra"]
+        parsed_extra = {} if not edge_extra or edge_extra == "{}" else json.loads(edge_extra)
         return GraphEdge(
             id=row["id"],
             kind=row["kind"],
@@ -1517,7 +1525,7 @@ class GraphStore:
             target_qualified=row["target_qualified"],
             file_path=row["file_path"],
             line=row["line"],
-            extra=json.loads(row["extra"]) if row["extra"] else {},
+            extra=parsed_extra,
         )
 
 
