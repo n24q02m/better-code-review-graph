@@ -1495,7 +1495,9 @@ class GraphStore:
         # Optimization: short-circuiting empty JSON "{}" string bypasses Python-to-C
         # parsing overhead, significantly improving materialization time for large row iterations.
         node_extra = row["extra"]
-        parsed_extra = {} if not node_extra or node_extra == "{}" else json.loads(node_extra)
+        parsed_extra = (
+            {} if not node_extra or node_extra == "{}" else json.loads(node_extra)
+        )
         return GraphNode(
             id=row["id"],
             kind=row["kind"],
@@ -1517,7 +1519,9 @@ class GraphStore:
         # Optimization: short-circuiting empty JSON "{}" string bypasses Python-to-C
         # parsing overhead, significantly improving materialization time for large row iterations.
         edge_extra = row["extra"]
-        parsed_extra = {} if not edge_extra or edge_extra == "{}" else json.loads(edge_extra)
+        parsed_extra = (
+            {} if not edge_extra or edge_extra == "{}" else json.loads(edge_extra)
+        )
         return GraphEdge(
             id=row["id"],
             kind=row["kind"],
