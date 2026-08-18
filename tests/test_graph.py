@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
@@ -96,6 +97,48 @@ class TestGraphStore:
         assert len(edges) == 1
         assert edges[0].kind == "CALLS"
         assert edges[0].target_qualified == "/test/file.py::func_b"
+
+    def test_empty_json_extra_skips_deserialization(self):
+        node = self._make_file_node()
+        edge = EdgeInfo(
+            kind="CONTAINS",
+            source="/test/file.py",
+            target="/test/file.py::my_func",
+            file_path="/test/file.py",
+        )
+        self.store.upsert_node(node)
+        self.store.upsert_edge(edge)
+        self.store.commit()
+
+        with patch("better_code_review_graph.graph.json.loads") as loads:
+            result = self.store.get_node("/test/file.py")
+            edges = self.store.get_edges_by_source("/test/file.py")
+
+        assert result is not None
+        assert result.extra == {}
+        assert edges[0].extra == {}
+        loads.assert_not_called()
+
+    def test_non_empty_json_extra_is_deserialized(self):
+        node = self._make_file_node()
+        node.extra = {"origin": "parser"}
+        edge = EdgeInfo(
+            kind="CONTAINS",
+            source="/test/file.py",
+            target="/test/file.py::my_func",
+            file_path="/test/file.py",
+            extra={"confidence": 1},
+        )
+        self.store.upsert_node(node)
+        self.store.upsert_edge(edge)
+        self.store.commit()
+
+        result = self.store.get_node("/test/file.py")
+        edges = self.store.get_edges_by_source("/test/file.py")
+
+        assert result is not None
+        assert result.extra == {"origin": "parser"}
+        assert edges[0].extra == {"confidence": 1}
 
     def test_remove_file_data(self):
         node = self._make_file_node()
