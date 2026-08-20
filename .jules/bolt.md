@@ -88,3 +88,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-08-18 - Push SQL filters down in find_dependents
+
+**Anchor:** `bab769d` (Note: Update to new PR commit hash once merged)
+
+**Learning:** When retrieving edges from the database, retrieving all edges and then filtering them by `kind` in Python (using a `for` loop and `if e.kind == ...`) requires materializing every irrelevant database row into a Python object (e.g. `GraphEdge`). This is particularly inefficient for functions like `find_dependents` which might inspect many edges.
+
+**Action:** Add a `kind` parameter to aggregate query methods like `get_edges_by_targets`, just like `get_edges_by_target` has, so the `_kind_filter` logic can construct an SQL `AND kind IN (...)` clause. By pushing the filter down into SQLite, the database avoids returning irrelevant rows and Python avoids materializing unneeded objects, preventing N+1 materialization.
