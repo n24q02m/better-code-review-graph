@@ -1292,10 +1292,19 @@ class GraphStore:
         # Defensive re-filter (qualified_name set above is already
         # repo-scoped, but get_nodes_by_qualified_names is repo-blind).
         if repo:
-            changed_nodes = [n for n in changed_nodes if self._node_repo_id(n) == repo]
-            impacted_nodes = [
-                n for n in impacted_nodes if self._node_repo_id(n) == repo
+            all_node_ids = [n.id for n in changed_nodes] + [
+                n.id for n in impacted_nodes
             ]
+            valid_ids: set[int] = set()
+            if all_node_ids:
+                cursor = self._conn.execute(
+                    "SELECT id FROM nodes "
+                    "WHERE repo_id = ? AND id IN (SELECT value FROM json_each(?))",
+                    (repo, json.dumps(all_node_ids)),
+                )
+                valid_ids = {row["id"] for row in cursor}
+            changed_nodes = [n for n in changed_nodes if n.id in valid_ids]
+            impacted_nodes = [n for n in impacted_nodes if n.id in valid_ids]
 
         impacted_files = list({n.file_path for n in impacted_nodes})
 
