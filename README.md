@@ -76,9 +76,30 @@ v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + ed
 
 ## Install
 
-The server runs over **stdio** by default and works with any MCP client. The
-recommended launcher is [`uvx`](https://docs.astral.sh/uv/) (no install step --
-it fetches and runs the published package in an isolated environment):
+For OMP and other local coding harnesses, the primary surface is the package CLI
+plus the bundled `skills/` workflows. The skills invoke the CLI directly and do
+not require an MCP server mapping.
+
+```bash
+# Run without a persistent install
+uvx --python 3.13 better-code-review-graph graph build --full-rebuild \
+  --repo-root /path/to/repo
+uvx --python 3.13 better-code-review-graph graph stats \
+  --repo-root /path/to/repo
+
+# Or install the console script
+pip install better-code-review-graph
+better-code-review-graph query search --search-query "authentication" \
+  --repo-root /path/to/repo
+```
+
+The optional Semgrep engine for deeper security scans is a separate extra:
+
+```bash
+pip install 'better-code-review-graph[security]'
+```
+
+MCP stdio remains a secondary protocol adapter for clients that require it:
 
 ```json
 {
@@ -92,26 +113,12 @@ it fetches and runs the published package in an isolated environment):
 }
 ```
 
-Or install it as a Python package:
-
-```bash
-uvx better-code-review-graph        # run without installing
-pip install better-code-review-graph
-```
-
-The optional Semgrep engine for deeper security scans is a separate extra:
-
-```bash
-pip install 'better-code-review-graph[security]'
-```
-
 **Install with an AI agent** -- paste this to your AI coding agent:
 
-> Install MCP server `better-code-review-graph` following the steps at
+> Install `better-code-review-graph` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-code-review-graph/setup-with-agent.md
 
-Full per-client setup (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, raw
-`mcp.json`) is at
+Full CLI usage is in [CLI](#cli). Optional per-client MCP setup is at
 **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**.
 
 ## Local-first boundary

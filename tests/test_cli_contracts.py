@@ -468,3 +468,14 @@ def test_bundled_skills_use_local_cli_without_mcp_tool_calls():
         assert "better-code-review-graph" in content, skill_file
         assert not mcp_call.findall(content), skill_file
         assert not bare_subcommand.findall(content), skill_file
+
+
+def test_readme_installs_local_cli_before_optional_mcp_adapter():
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    local_cli = readme.index("For OMP and other local coding harnesses")
+    optional_mcp = readme.index("MCP stdio remains a secondary protocol adapter")
+    assert local_cli < optional_mcp
+    assert re.search(r"do\s+not require an MCP server mapping", readme)
