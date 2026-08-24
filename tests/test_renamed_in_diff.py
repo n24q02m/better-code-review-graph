@@ -76,3 +76,8 @@ def test_renamed_in_diff_no_changes_returns_empty(tmp_path):
     result = renamed_in_diff(base="HEAD~1", repo_root=str(repo))
     assert result["status"] == "ok"
     assert result["shifts"] == []
+
+
+def test_renamed_in_diff_rejects_argument_injection(shifted_repo):
+    with pytest.raises(ValueError, match="Invalid git ref"):
+        renamed_in_diff(base="-e", repo_root=str(shifted_repo))

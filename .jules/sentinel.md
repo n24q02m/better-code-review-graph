@@ -61,3 +61,8 @@ With the guard present git refuses to parse the value as an option at all. A `st
 - Before calling a baked-in identifier a leaked secret, check whether it is public by design.
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`.
+
+## 2026-08-24 - Prevent command injection in git show
+**Vulnerability:** The `base` argument (a git ref) was passed unsanitized into a `subprocess.run` call executing `git show` in `_get_git_content` (`src/better_code_review_graph/tools.py`). While `--end-of-options` was used, git refs starting with a hyphen (like `-e`) could bypass this if they are treated as options before `--end-of-options` or if they trick the `git show` path resolution depending on git version. This is the same pattern as previously fixed in `git diff` and `git cat-file`.
+**Learning:** All git subcommands accepting user-controlled refs must validate the ref format, specifically rejecting refs starting with `-`, even when `--end-of-options` is used, to prevent argument injection vulnerabilities.
+**Prevention:** Always implement explicit format validation (`if ref.startswith("-")`) before passing dynamic git refs to `subprocess.run`, and always include tests specifically asserting this behavior.
