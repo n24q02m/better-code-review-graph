@@ -104,6 +104,7 @@ async def _run_cli(*args: str) -> tuple[int, str, str]:
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 
+@pytest.mark.timeout(120)
 @pytest.mark.asyncio
 async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
     """Test full MCP stdio protocol and assert parity with CLI subcommands."""
