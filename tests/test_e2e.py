@@ -46,6 +46,7 @@ async def test_all_tools(tmp_path):
                 "review",
                 "config",
                 "help",
+                "security",
                 "config__open_relay",
             }
             d = json.loads(
@@ -151,6 +152,19 @@ async def test_all_tools(tmp_path):
                 )
                 > 10
             )
+            security_result = json.loads(
+                (
+                    await s.call_tool(
+                        "security",
+                        {"action": "scan", "engine": "heuristic", "repo_root": rp},
+                    )
+                )
+                .content[0]
+                .text
+            )
+            assert security_result["engine"] == "heuristic"
+            assert isinstance(security_result["total"], int)
+            assert isinstance(security_result["tags_by_node"], dict)
             assert json.loads(
                 (await s.call_tool("config", {"action": "status", "repo_root": rp}))
                 .content[0]
