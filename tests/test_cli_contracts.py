@@ -10,7 +10,9 @@ Tests cover:
 from __future__ import annotations
 
 import json
+import re
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 from better_code_review_graph.cli import main
@@ -452,3 +454,17 @@ class TestCLISecurityContract:
 
         assert rc == 1
         assert "Repository not found" in capsys.readouterr().out
+
+
+def test_bundled_skills_use_local_cli_without_mcp_tool_calls():
+    skills_root = Path(__file__).resolve().parents[1] / "skills"
+    skill_files = sorted(skills_root.glob("*/SKILL.md"))
+
+    assert len(skill_files) == 6
+    mcp_call = re.compile(r"`(?:graph|query|review|security|help)\([^`]*\)`")
+    bare_subcommand = re.compile(r"`(?:graph|query|review|security|config)\s")
+    for skill_file in skill_files:
+        content = skill_file.read_text(encoding="utf-8")
+        assert "better-code-review-graph" in content, skill_file
+        assert not mcp_call.findall(content), skill_file
+        assert not bare_subcommand.findall(content), skill_file
