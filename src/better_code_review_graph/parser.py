@@ -853,6 +853,7 @@ class CodeParser:
         enclosing_func: str | None = None,
         import_map: dict[str, str] | None = None,
         defined_names: set[str] | None = None,
+        local_defined_names: set[str] | None = None,
         python_abstract_contracts: set[str] | None = None,
         declared_interfaces: set[str] | None = None,
     ) -> None:
@@ -877,6 +878,7 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    local_defined_names,
                     python_abstract_contracts,
                     declared_interfaces,
                 )
@@ -895,6 +897,7 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    local_defined_names,
                     python_abstract_contracts,
                     declared_interfaces,
                 )
@@ -913,6 +916,7 @@ class CodeParser:
                     enclosing_func,
                     import_map,
                     defined_names,
+                    local_defined_names,
                 )
 
             if not processed and language == "solidity":
@@ -942,6 +946,7 @@ class CodeParser:
                 enclosing_func=enclosing_func,
                 import_map=import_map,
                 defined_names=defined_names,
+                local_defined_names=local_defined_names,
                 python_abstract_contracts=python_abstract_contracts,
                 declared_interfaces=declared_interfaces,
             )
@@ -957,6 +962,7 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
         python_abstract_contracts: set[str] | None,
         declared_interfaces: set[str] | None,
     ) -> bool:
@@ -1026,6 +1032,7 @@ class CodeParser:
             enclosing_func=None,
             import_map=import_map,
             defined_names=defined_names,
+            local_defined_names=local_defined_names,
             python_abstract_contracts=python_abstract_contracts,
             declared_interfaces=declared_interfaces,
         )
@@ -1042,12 +1049,17 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
         python_abstract_contracts: set[str] | None = None,
         declared_interfaces: set[str] | None = None,
     ) -> bool:
         name = self._get_name(node, language, "function")
         if not name:
             return False
+
+        nested_names = self._collect_nested_function_names(node, language)
+        visible_local_names = set(local_defined_names or ())
+        visible_local_names.update(nested_names)
 
         is_test = _is_test_function(name, file_path)
         kind = "Test" if is_test else "Function"
@@ -1128,6 +1140,7 @@ class CodeParser:
             enclosing_func=name,
             import_map=import_map,
             defined_names=defined_names,
+            local_defined_names=visible_local_names or None,
             python_abstract_contracts=python_abstract_contracts,
             declared_interfaces=declared_interfaces,
         )
@@ -1171,6 +1184,7 @@ class CodeParser:
         enclosing_func: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
     ) -> bool:
         call_name = self._get_call_name(node, language, source)
         if call_name:
@@ -1193,6 +1207,8 @@ class CodeParser:
                 language,
                 import_map or {},
                 defined_names or set(),
+                enclosing_class=enclosing_class,
+                local_defined_names=local_defined_names,
             )
             line = node.start_point[0] + 1
             edges.append(
@@ -1220,9 +1236,11 @@ class CodeParser:
                 file_path,
                 edges,
                 caller,
+                enclosing_class,
                 call_name,
                 import_map,
                 defined_names,
+                local_defined_names,
             )
             # TESTED_BY means "called directly by a test", NOT "properly
             # tested". A test calls its subject, but it also calls helpers,
@@ -1254,9 +1272,11 @@ class CodeParser:
         file_path: str,
         edges: list[EdgeInfo],
         caller: str,
+        enclosing_class: str | None,
         call_name: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
     ) -> None:
         """Emit CALLS edges for function references passed as call arguments.
 
@@ -1264,9 +1284,9 @@ class CodeParser:
         ``arguments`` (JavaScript/TypeScript ``arguments``, Python
         ``arguments``, Go ``arguments``, Java ``argument_list``). This
         helper walks that subtree, collects bare identifiers, and for
-        each one that resolves to a file-scope definition or an imported
-        symbol, records a CALLS edge from the enclosing function to the
-        resolved target. This keeps dead-code analysis from flagging
+        each one that resolves to a visible file/local definition or an
+        imported symbol, records a CALLS edge from the enclosing function to
+        the resolved target. This keeps dead-code analysis from flagging
         callback-style references (``el.addEventListener('click',
         handler)``) as unreferenced.
         """
@@ -1275,22 +1295,36 @@ class CodeParser:
             return
 
         seen: set[str] = set()
-        for ident in self._iter_argument_identifiers(args_node):
+        call_types = _CALL_TYPES.get(language, ())
+        import_names = import_map or {}
+        definition_names = defined_names or set()
+        local_names = local_defined_names or set()
+        for ident in self._iter_argument_identifiers(args_node, call_types):
             name = ident.text.decode("utf-8", errors="replace")
             if not name or name in seen or name == call_name:
                 continue
             seen.add(name)
+            # Match direct-call resolution: an imported name remains a valid
+            # reference even when its module is external or not indexed, so
+            # _resolve_call_target may intentionally return the bare name.
+            if (
+                name not in definition_names
+                and name not in local_names
+                and name not in import_names
+            ):
+                continue
             resolved = self._resolve_call_target(
                 name,
                 file_path,
                 language,
-                import_map or {},
-                defined_names or set(),
+                import_names,
+                definition_names,
+                enclosing_class=enclosing_class,
+                local_defined_names=local_names,
             )
-            # Only emit when the identifier actually resolved somewhere
-            # (same-file definition or import). Unresolvable bare names
-            # stay untouched — the enclosing call edge already exists.
-            if resolved == name:
+            # Only emit identifiers that resolve to a same-file definition or
+            # an import. Unknown bare names stay untouched.
+            if resolved == name and name not in import_names:
                 continue
             edges.append(
                 EdgeInfo(
@@ -1303,26 +1337,25 @@ class CodeParser:
             )
 
     @staticmethod
-    def _iter_argument_identifiers(args_node):
-        """Yield identifier nodes within an arguments subtree.
+    def _iter_argument_identifiers(args_node, call_types=()):
+        """Yield identifiers in an arguments subtree.
 
-        Nested call expressions inside arguments are skipped: their own
-        call nodes are visited by the main tree walk and emitting edges
-        here would duplicate them.
+        Nested calls are skipped because their own call nodes are visited by
+        the main tree walk and emit their own edges. ``call_types`` is
+        language-specific: grammars use different node names for calls.
         """
+        nested_callable_types = (
+            "function_expression",
+            "arrow_function",
+            "lambda",
+        )
         stack = [args_node]
         while stack:
             current = stack.pop()
             for child in current.children:
                 if child.type == "identifier":
                     yield child
-                elif child.type in (
-                    "call_expression",
-                    "new_expression",
-                    "function_expression",
-                    "arrow_function",
-                    "lambda",
-                ):
+                elif child.type in call_types or child.type in nested_callable_types:
                     continue
                 else:
                     stack.append(child)
@@ -1585,27 +1618,70 @@ class CodeParser:
             if node_type in import_types:
                 self._collect_import_names(child, language, source, import_map)
 
-        # JS-family files are commonly wrapped in IIFEs or load callbacks,
-        # so their "file scope" functions are nested one or more levels
-        # deep ((function () { function handler() {...} ... })()). Those
-        # nested declarations still produce Function nodes qualified as
-        # ``<file>::<name>``, so their names must be resolvable — otherwise
-        # a reference like ``el.addEventListener('input', handler)`` inside
-        # the same wrapper cannot resolve and dead-code analysis flags the
-        # handler as unreferenced. Only named ``function_declaration`` nodes
-        # are collected: method definitions resolve through their class
-        # (``<file>::Class.method``) and arrow functions are anonymous or
-        # variable-assigned, so a bare-name resolution for them would be
-        # wrong.
+        # Anonymous JS wrappers (IIFEs/load callbacks) are flattened by the
+        # parser: calls inside them are attributed to the File node, and named
+        # declarations in that wrapper use file-qualified names. Do not fold
+        # declarations under a named function or class into file scope.
         if language in ("javascript", "typescript", "tsx"):
-            func_decl = {"function_declaration"}
-            for sub in self._iter_tree_nodes(root):
-                if sub.type in func_decl:
-                    name = self._get_name(sub, language, "function")
-                    if name:
-                        defined_names.add(name)
+            defined_names.update(self._collect_iife_function_names(root, language))
 
         return import_map, defined_names
+
+    def _collect_iife_function_names(self, root, language: str) -> set[str]:
+        """Collect declarations flattened into JS anonymous-wrapper scope."""
+        if language not in ("javascript", "typescript", "tsx"):
+            return set()
+
+        names: set[str] = set()
+
+        def visit(current, scope_kind: str) -> None:
+            for child in current.children:
+                if child.type == "function_declaration":
+                    if scope_kind in {"module", "anonymous"}:
+                        name = self._get_name(child, language, "function")
+                        if name:
+                            names.add(name)
+                    # A named function introduces a lexical scope of its own.
+                    continue
+                if child.type in (
+                    "class_declaration",
+                    "class",
+                    "method_definition",
+                ):
+                    continue
+                if child.type in ("function_expression", "arrow_function"):
+                    visit(child, "anonymous")
+                else:
+                    visit(child, scope_kind)
+
+        visit(root, "module")
+        return names
+
+    def _collect_nested_function_names(self, node, language: str) -> set[str]:
+        """Collect named declarations visible inside one function body."""
+        if language not in ("javascript", "typescript", "tsx"):
+            return set()
+
+        names: set[str] = set()
+
+        def visit(current) -> None:
+            for child in current.children:
+                if child.type == "function_declaration":
+                    name = self._get_name(child, language, "function")
+                    if name:
+                        names.add(name)
+                    # Declarations below this child belong to its scope.
+                    continue
+                if child.type in (
+                    "class_declaration",
+                    "class",
+                    "method_definition",
+                ):
+                    continue
+                visit(child)
+
+        visit(node)
+        return names
 
     @staticmethod
     def _iter_tree_nodes(root):
@@ -1856,8 +1932,14 @@ class CodeParser:
         language: str,
         import_map: dict[str, str],
         defined_names: set[str],
+        *,
+        enclosing_class: str | None = None,
+        local_defined_names: set[str] | None = None,
     ) -> str:
-        """Resolve a bare call name to a qualified target, with fallback."""
+        """Resolve a bare call name to a scoped qualified target."""
+        local_names = local_defined_names or set()
+        if call_name in local_names:
+            return self._qualify(call_name, file_path, enclosing_class)
         if call_name in defined_names:
             return self._qualify(call_name, file_path, None)
         if call_name in import_map:

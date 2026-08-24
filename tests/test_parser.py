@@ -150,9 +150,7 @@ class TestCodeParser:
         calls = [e for e in edges if e.kind == "CALLS"]
         file_path = str(FIXTURES / "callback_refs.js")
 
-        handler_edges = [
-            e for e in calls if e.target == f"{file_path}::onEvent"
-        ]
+        handler_edges = [e for e in calls if e.target == f"{file_path}::onEvent"]
         # addEventListener + setTimeout from setupUI, addEventListener
         # from the IIFE toplevel.
         assert len(handler_edges) == 3
@@ -176,6 +174,151 @@ class TestCodeParser:
             if e.target == f"{file_path}::onEvent" and e.source == file_path
         ]
         assert len(toplevel) == 1
+
+    def test_calls_edge_argument_reference_external_import(self, tmp_path):
+        """Imported callbacks stay visible when the module is not indexed."""
+        js_file = tmp_path / "external_callback.js"
+        js_file.write_text(
+            "import { onEvent } from 'external-widget';\n"
+            "function setup() {\n"
+            "  register(onEvent);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(js_file)
+        callback_edges = [
+            edge
+            for edge in edges
+            if (
+                edge.kind == "CALLS"
+                and edge.source == f"{js_file}::setup"
+                and edge.target == "onEvent"
+            )
+        ]
+        assert len(callback_edges) == 1
+
+    def test_argument_reference_nested_calls_are_not_duplicated(self, tmp_path):
+        """Nested non-JS call nodes are emitted only by the main tree walk."""
+        py_file = tmp_path / "nested_callbacks.py"
+        py_file.write_text(
+            "def callback():\n"
+            "    pass\n\n"
+            "def inner(fn):\n"
+            "    pass\n\n"
+            "def outer():\n"
+            "    wrapper(inner(callback))\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(py_file)
+        callback_edges = [
+            edge
+            for edge in edges
+            if (
+                edge.kind == "CALLS"
+                and edge.source == f"{py_file}::outer"
+                and edge.target == f"{py_file}::callback"
+            )
+        ]
+        assert len(callback_edges) == 1
+
+    def test_iife_nested_function_reference_resolves_at_file_scope(self, tmp_path):
+        """Named declarations in anonymous wrappers keep file attribution."""
+        js_file = tmp_path / "iife_nested.js"
+        js_file.write_text(
+            "(function () {\n"
+            "  function localHandler() {}\n"
+            "  register(localHandler);\n"
+            "})();\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(js_file)
+        target = f"{js_file}::localHandler"
+        assert any(
+            edge.kind == "CALLS"
+            and edge.source == str(js_file)
+            and edge.target == target
+            for edge in edges
+        )
+
+    def test_nested_callback_function_reference_stays_in_outer_scope(self, tmp_path):
+        """Anonymous callback bodies inherit the enclosing function scope."""
+        js_file = tmp_path / "callback_nested_scope.js"
+        js_file.write_text(
+            "function outer() {\n"
+            "  register(() => {\n"
+            "    function localHandler() {}\n"
+            "    register(localHandler);\n"
+            "  });\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(js_file)
+        target = f"{js_file}::localHandler"
+        assert any(
+            edge.kind == "CALLS"
+            and edge.source == f"{js_file}::outer"
+            and edge.target == target
+            for edge in edges
+        )
+
+    def test_nested_function_reference_does_not_escape_named_scope(self, tmp_path):
+        """A helper nested in one function is not visible from its sibling."""
+        js_file = tmp_path / "nested_scope.js"
+        js_file.write_text(
+            "function outer() {\n"
+            "  function localHandler() {}\n"
+            "  register(localHandler);\n"
+            "}\n"
+            "function sibling() {\n"
+            "  register(localHandler);\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(js_file)
+        target = f"{js_file}::localHandler"
+        assert any(
+            edge.kind == "CALLS"
+            and edge.source == f"{js_file}::outer"
+            and edge.target == target
+            for edge in edges
+        )
+        assert not any(
+            edge.kind == "CALLS"
+            and edge.source == f"{js_file}::sibling"
+            and edge.target == target
+            for edge in edges
+        )
+
+    def test_class_method_nested_function_keeps_class_attribution(self, tmp_path):
+        """Nested helpers in class methods resolve to Class.helper nodes."""
+        js_file = tmp_path / "class_nested_scope.js"
+        js_file.write_text(
+            "class Widget {\n"
+            "  setup() {\n"
+            "    function localHandler() {}\n"
+            "    register(localHandler);\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
+
+        _, edges = self.parser.parse_file(js_file)
+        class_target = f"{js_file}::Widget.localHandler"
+        file_target = f"{js_file}::localHandler"
+        assert any(
+            edge.kind == "CALLS"
+            and edge.source == f"{js_file}::Widget.setup"
+            and edge.target == class_target
+            for edge in edges
+        )
+        assert not any(
+            edge.kind == "CALLS" and edge.target == file_target for edge in edges
+        )
 
     def test_multiple_calls_to_same_function(self):
         """Multiple calls to the same function on different lines should each produce an edge."""
