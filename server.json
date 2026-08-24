@@ -88,22 +88,6 @@
           "name": "SUMMARY_MODEL"
         }
       ]
-    },
-    {
-      "registryType": "oci",
-      "identifier": "docker.io/n24q02m/better-code-review-graph:latest",
-      "runtimeHint": "docker",
-      "transport": {
-        "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
-          "isRequired": false,
-          "isSecret": false,
-          "name": "EMBEDDING_BACKEND"
-        }
-      ]
     }
   ]
 }
