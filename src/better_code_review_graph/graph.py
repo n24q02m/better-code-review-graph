@@ -1339,18 +1339,6 @@ class GraphStore:
 
     def get_stats(self) -> GraphStats:
         """Return aggregate statistics about the graph."""
-        # Optimize by combining simple COUNT queries to eliminate N+1 roundtrips
-        counts = self._conn.execute(
-            "SELECT "
-            "(SELECT COUNT(*) FROM nodes), "
-            "(SELECT COUNT(*) FROM edges), "
-            "(SELECT COUNT(*) FROM nodes WHERE kind = 'File')"
-        ).fetchone()
-
-        total_nodes = counts[0]
-        total_edges = counts[1]
-        files_count = counts[2]
-
         nodes_by_kind: dict[str, int] = {}
         for row in self._conn.execute(
             "SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind"
@@ -1362,6 +1350,13 @@ class GraphStore:
             "SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind"
         ):
             edges_by_kind[row["kind"]] = row["cnt"]
+
+        # Optimize: Derive absolute totals from the grouped dictionary values rather
+        # than executing redundant COUNT(*) subqueries, significantly reducing
+        # database I/O overhead.
+        total_nodes = sum(nodes_by_kind.values())
+        total_edges = sum(edges_by_kind.values())
+        files_count = nodes_by_kind.get("File", 0)
 
         languages = [
             r["language"]
