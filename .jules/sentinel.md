@@ -61,3 +61,8 @@ With the guard present git refuses to parse the value as an option at all. A `st
 - Before calling a baked-in identifier a leaked secret, check whether it is public by design.
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`.
+
+## 2025-02-25 - Fix YAML parsing comment truncation
+**Vulnerability:** A simplistic YAML parser for security rules (`_parse_simple_yaml` in `heuristic.py`) blindly truncated lines at the first `#` character. This caused heuristic rules containing regexes with a literal `#` (e.g., matching URL fragments or comments) to be silently truncated, leading to false negatives in security scanning.
+**Learning:** Homegrown, "simple" parsers for structured formats like YAML often miss critical edge cases like quotes. When dealing with security configuration parsing, ignoring string boundaries allows rule logic to be unintentionally neutered.
+**Prevention:** Avoid writing custom, simplistic text parsers for standard formats. If required to avoid dependencies, ensure the parser properly accounts for string quoting when stripping comments.
