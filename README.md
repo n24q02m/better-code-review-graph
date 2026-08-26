@@ -8,7 +8,6 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 [![CI](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/better-code-review-graph/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/better-code-review-graph/graph/badge.svg)](https://codecov.io/gh/n24q02m/better-code-review-graph)
 [![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
-[![Docker](https://img.shields.io/docker/v/n24q02m/better-code-review-graph?label=docker&logo=docker&logoColor=white&sort=semver)](https://hub.docker.com/r/n24q02m/better-code-review-graph)
 [![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
 
 <!-- Badge Row 2: Tech -->
@@ -131,8 +130,10 @@ CRG is local-first for coding workflows:
   services; it does not maintain a separate graph implementation.
 - Graph state stays in `<repo>/.code-review-graph/graph.db` unless an explicit
   multi-user/self-host configuration selects another data directory.
-- PyPI, OCI, CI, security scanning, and release maintenance remain active.
-  CRG has no hosted Cloudflare runtime in the target topology.
+- PyPI, CI, security scanning, GitHub releases, and eligible stable MCP Registry
+  publication remain active. Historical public OCI tags are retained, but new
+  public Docker Hub/GHCR images are no longer published.
+- CRG has no hosted Cloudflare runtime in the target topology.
 
 ## Smithery
 

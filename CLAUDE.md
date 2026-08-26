@@ -31,8 +31,9 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - MCP stdio is a secondary protocol adapter; it must not duplicate graph logic.
 - Graph state is local at `<repo>/.code-review-graph/graph.db` unless explicit
   self-host/multi-user configuration changes the data directory.
-- CRG has no hosted Cloudflare runtime in the target topology; package, OCI,
-  CI, security, and release lifecycle remain active.
+- CRG has no hosted Cloudflare runtime in the target topology. PyPI, CI,
+  security, GitHub releases, and eligible stable MCP Registry publication remain
+  active. Historical OCI tags remain available; new public OCI images do not.
 
 ## Lenh thuong dung
 
@@ -139,8 +140,9 @@ chối, không tự rơi về model mặc định.
 ## Release & Deploy
 
 - Conventional Commits. Tag format: `v{version}`
-- CD: PSR v10 -> PyPI (uv publish) -> Docker multi-arch (amd64 + arm64) -> MCP Registry
-- Docker images: `n24q02m/better-code-review-graph`
+- CD: PSR v10 -> PyPI; eligible stable releases -> MCP Registry
+- No new public OCI publication. Historical tags remain; the Dockerfile supports
+  source-built self-hosting only.
 
 ## Pre-commit hooks
 

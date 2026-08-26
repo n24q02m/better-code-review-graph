@@ -203,7 +203,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "litellm", specifier = ">=1.93.0" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.21.0,<2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.23.0,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
