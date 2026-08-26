@@ -76,9 +76,30 @@ v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + ed
 
 ## Install
 
-The server runs over **stdio** by default and works with any MCP client. The
-recommended launcher is [`uvx`](https://docs.astral.sh/uv/) (no install step --
-it fetches and runs the published package in an isolated environment):
+For OMP and other local coding harnesses, the primary surface is the package CLI
+plus the bundled `skills/` workflows. The skills invoke the CLI directly and do
+not require an MCP server mapping.
+
+```bash
+# Run without a persistent install
+uvx --python 3.13 better-code-review-graph graph build --full-rebuild \
+  --repo-root /path/to/repo
+uvx --python 3.13 better-code-review-graph graph stats \
+  --repo-root /path/to/repo
+
+# Or install the console script
+pip install better-code-review-graph
+better-code-review-graph query search --search-query "authentication" \
+  --repo-root /path/to/repo
+```
+
+The optional Semgrep engine for deeper security scans is a separate extra:
+
+```bash
+pip install 'better-code-review-graph[security]'
+```
+
+MCP stdio remains a secondary protocol adapter for clients that require it:
 
 ```json
 {
@@ -92,27 +113,26 @@ it fetches and runs the published package in an isolated environment):
 }
 ```
 
-Or install it as a Python package:
-
-```bash
-uvx better-code-review-graph        # run without installing
-pip install better-code-review-graph
-```
-
-The optional Semgrep engine for deeper security scans is a separate extra:
-
-```bash
-pip install 'better-code-review-graph[security]'
-```
-
 **Install with an AI agent** -- paste this to your AI coding agent:
 
-> Install MCP server `better-code-review-graph` following the steps at
+> Install `better-code-review-graph` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-code-review-graph/setup-with-agent.md
 
-Full per-client setup (Claude Code, Codex, Gemini CLI, Cursor, Windsurf, raw
-`mcp.json`) is at
+Full CLI usage is in [CLI](#cli). Optional per-client MCP setup is at
 **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**.
+
+## Local-first boundary
+
+CRG is local-first for coding workflows:
+
+- **CLI and bundled Skills are the primary surfaces** for graph build/query,
+  impact analysis, review context, security scans, and repository onboarding.
+- **MCP stdio is the secondary protocol adapter** over the same local domain
+  services; it does not maintain a separate graph implementation.
+- Graph state stays in `<repo>/.code-review-graph/graph.db` unless an explicit
+  multi-user/self-host configuration selects another data directory.
+- PyPI, OCI, CI, security scanning, and release maintenance remain active.
+  CRG has no hosted Cloudflare runtime in the target topology.
 
 ## Smithery
 
@@ -326,36 +346,47 @@ browser setup form (e.g. after credential expiry); in stdio mode it returns
 ## CLI
 
 Running `better-code-review-graph` with **no arguments** starts the MCP server
-over stdio (this is what an MCP client launches). A leading positional argument
-routes to a subcommand instead -- handy for building or embedding the graph
-directly from a shell or CI step, before any MCP client connects. Run these with
+over stdio. A leading positional argument routes to a local CLI subcommand
+that calls the same domain services used by the MCP adapter. Run these with
 `uvx` (or `uv run` from a source checkout):
 
 ```bash
 # Start the MCP server over stdio (default -- no subcommand)
 uvx better-code-review-graph
 
-# Build (or incrementally update) the graph for the current repo
+# Build, inspect, and embed the local graph
 uvx better-code-review-graph graph build
-
-# Full re-parse of every file instead of a git-diff incremental
-uvx better-code-review-graph graph build --full-rebuild
-
-# Compute embeddings for semantic search (local ONNX by default)
+uvx better-code-review-graph graph stats
 uvx better-code-review-graph graph embed
+
+# Query relationships and impact
+uvx better-code-review-graph query query \
+  --pattern callers_of --target "path/to/module.py::function"
+uvx better-code-review-graph query search --search-query "authentication"
+uvx better-code-review-graph query impact --changed-files src/app.py
+
+# Produce review context and run a local security scan
+uvx better-code-review-graph review context --base HEAD~1
+uvx better-code-review-graph security scan --engine heuristic
 ```
 
 | Command | Description |
 |:--------|:------------|
-| `graph build` | Full or incremental graph build. `--full-rebuild` re-parses every file; `--base <ref>` sets the git ref for the incremental diff (default `HEAD~1`); `--repo-root <path>` overrides the auto-detected repo root. |
-| `graph embed` | Compute vector embeddings for the current graph (local ONNX or the configured cloud chain). Accepts `--repo-root`. |
-| `config status` / `config delete` | Show or remove the stored credential config (`--yes` skips the delete confirmation). |
-| `doctor` | Environment self-check: Python version, credential backend, store-dir writability, config and relay state. |
-| `relay status` / `relay open` / `relay reset` | Inspect, open, or clear the browser relay setup session (HTTP mode). |
+| `graph build` | Full or incremental graph build. `--full-rebuild` re-parses every file; `--base <ref>` sets the incremental diff ref; `--repo-root <path>` overrides auto-detection. |
+| `graph embed` | Compute vector embeddings using local ONNX or the configured cloud chain. |
+| `graph stats` / `graph export` / `graph import` / `graph summarize` | Inspect, export/import a portable `crg` graph, or summarize functions. |
+| `query query` / `query search` | Run relationship patterns or keyword/semantic search. |
+| `query impact` / `query large_functions` | Analyze changed-file blast radius or find oversized nodes. |
+| `query spot_check` / `query renamed_in_diff` / `query diff` | Inspect callsites, line shifts, or commit-to-commit graph changes. |
+| `review context` / `review delta` | Generate review context or diff buckets for a code change. |
+| `security scan` / `security report` / `security suppress` / `security rule_list` | Run and manage heuristic/Semgrep security findings. |
+| `config status` / `config delete` | Show or remove stored credential config (`--yes` skips confirmation). |
+| `doctor` | Environment self-check from shared `mcp-core` CLI. |
+| `relay status` / `relay open` / `relay reset` | Inspect, open, or clear the relay setup session. |
 
-The `graph build` and `graph embed` subcommands print a JSON result and exit
-non-zero on error. The `config`, `doctor`, and `relay` subcommands come from the
-shared [mcp-core](https://github.com/n24q02m/mcp-core) CLI.
+CLI subcommands print structured JSON and exit non-zero on an error. The
+`config`, `doctor`, and `relay` subcommands come from shared `mcp-core`.
+
 
 ## Features
 
