@@ -408,3 +408,43 @@ def test_server_security_tool_invalid_action_returns_error() -> None:
     payload = security_tool(action="bogus")
     assert "error" in payload
     assert "bogus" in payload["error"]
+
+
+def test_parse_simple_yaml_with_hash_in_quotes():
+    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+
+    yaml_text = """
+id: regex-with-hash
+severity: LOW
+pattern: 'abc#def'
+message: "Test message"
+"""
+    result = _parse_simple_yaml(yaml_text)
+    assert result["pattern"] == "abc#def"
+
+
+def test_parse_simple_yaml_with_colon_in_quotes():
+    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+
+    yaml_text = """
+id: regex-with-colon
+severity: LOW
+pattern: 'http://'
+message: "Insecure http link: please update to https:// :)"
+"""
+    result = _parse_simple_yaml(yaml_text)
+    assert result["pattern"] == "http://"
+    assert result["message"] == "Insecure http link: please update to https:// :)"
+
+
+def test_parse_simple_yaml_with_comment():
+    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+
+    yaml_text = """
+id: regex-with-comment
+severity: LOW
+pattern: 'abc#def' # this is a comment
+message: "Test message"
+"""
+    result = _parse_simple_yaml(yaml_text)
+    assert result["pattern"] == "abc#def"

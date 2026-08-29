@@ -1889,6 +1889,10 @@ def _get_git_content(root: Path, base: str, rel_path: str) -> bytes | None:
     import shutil
     import subprocess
 
+    # SECURITY: Prevent argument injection if base starts with a hyphen
+    if base.startswith("-"):
+        return None
+
     try:
         git_bin = shutil.which("git") or "git"
         proc = subprocess.run(

@@ -1047,18 +1047,23 @@ class GraphStore:
         return f" AND kind IN ({placeholders})", tuple(kind)
 
     def get_edges_by_targets(
-        self, qualified_names: list[str], *, as_of: str = ""
+        self,
+        qualified_names: list[str],
+        kind: str | tuple[str, ...] | None = None,
+        *,
+        as_of: str = "",
     ) -> list[GraphEdge]:
-        """Batch fetch edges by their target qualified names to prevent N+1 queries."""
+        """Batch fetch edges by target names with an optional kind filter."""
         if not qualified_names:
             return []
 
         unique_qns = list(set(qualified_names))
         frag, frag_params = self._temporal_filter(as_of)
+        kind_frag, kind_params = self._kind_filter(kind)
         cursor = self._conn.execute(
             "SELECT * FROM edges WHERE target_qualified IN "  # noqa: S608
-            f"(SELECT value FROM json_each(?)){frag}",
-            (json.dumps(unique_qns), *frag_params),
+            f"(SELECT value FROM json_each(?)){kind_frag}{frag}",
+            (json.dumps(unique_qns), *kind_params, *frag_params),
         )
         return [self._row_to_edge(r) for r in cursor]
 
@@ -1339,19 +1344,9 @@ class GraphStore:
 
     def get_stats(self) -> GraphStats:
         """Return aggregate statistics about the graph."""
-        # Optimize by combining simple COUNT queries to eliminate N+1 roundtrips
-        counts = self._conn.execute(
-            "SELECT "
-            "(SELECT COUNT(*) FROM nodes), "
-            "(SELECT COUNT(*) FROM edges), "
-            "(SELECT COUNT(*) FROM nodes WHERE kind = 'File')"
-        ).fetchone()
-
-        total_nodes = counts[0]
-        total_edges = counts[1]
-        files_count = counts[2]
-
         nodes_by_kind: dict[str, int] = {}
+        # Avoid redundant COUNT(*) subqueries by calculating total metrics dynamically
+        # from the grouped results in Python, reducing database I/O overhead.
         for row in self._conn.execute(
             "SELECT kind, COUNT(*) as cnt FROM nodes GROUP BY kind"
         ):
@@ -1362,6 +1357,10 @@ class GraphStore:
             "SELECT kind, COUNT(*) as cnt FROM edges GROUP BY kind"
         ):
             edges_by_kind[row["kind"]] = row["cnt"]
+
+        total_nodes = sum(nodes_by_kind.values())
+        total_edges = sum(edges_by_kind.values())
+        files_count = nodes_by_kind.get("File", 0)
 
         languages = [
             r["language"]
