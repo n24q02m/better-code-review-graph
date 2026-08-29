@@ -96,6 +96,38 @@ def test_get_edges_by_targets_basic(store):
     assert sources == {"s1", "s3"}
 
 
+def test_get_edges_by_targets_kind_filter(store):
+    store.upsert_edge(
+        EdgeInfo(
+            kind="CALLS", source="caller", target="shared", file_path="a.py", line=1
+        )
+    )
+    store.upsert_edge(
+        EdgeInfo(
+            kind="CONTAINS", source="file", target="shared", file_path="a.py", line=2
+        )
+    )
+    store.upsert_edge(
+        EdgeInfo(
+            kind="INHERITS", source="child", target="base", file_path="b.py", line=3
+        )
+    )
+    store.commit()
+
+    calls = store.get_edges_by_targets(["shared", "base"], kind="CALLS")
+    assert {(edge.kind, edge.target_qualified) for edge in calls} == {
+        ("CALLS", "shared")
+    }
+
+    structural = store.get_edges_by_targets(
+        ["shared", "base"], kind=("CONTAINS", "INHERITS")
+    )
+    assert {(edge.kind, edge.target_qualified) for edge in structural} == {
+        ("CONTAINS", "shared"),
+        ("INHERITS", "base"),
+    }
+
+
 def test_get_edges_by_targets_large_batch(store):
     # Create 500 edges to exceed batch_size=450
     target_qns = []

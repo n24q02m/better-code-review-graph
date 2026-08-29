@@ -47,6 +47,14 @@ Every landed entry is anchored to a commit. If an entry cannot be located in
 
 **Action:** Replace looped individual lookups with batched SQLite queries utilizing `search_edges_by_source_names` or `search_edges_by_target_names`, which process multiple node identifiers in a single roundtrip via `json_each`.
 
+### 2026-08-26 - Calculate aggregate graph statistics in Python
+
+**Anchor:** `551501b`
+
+**Learning:** When generating aggregate statistics across the entire graph, executing multiple scalar subqueries (like `(SELECT COUNT(*) FROM nodes)`) per call incurs unnecessary database I/O overhead. Since grouped aggregates (`SELECT kind, COUNT(*) ... GROUP BY kind`) are already fetched, overall totals can be calculated in Python.
+
+**Action:** To optimize querying aggregate graph statistics in `GraphStore` (e.g., `get_stats` in `src/better_code_review_graph/graph.py`), derive absolute totals (`total_nodes`, `total_edges`, `files_count`) in Python by summing the values of grouped queries (`sum(nodes_by_kind.values())`) rather than executing redundant `COUNT(*)` subqueries, reducing database roundtrips.
+
 ## Rejected
 
 Proposals that were evaluated with measurements and declined. The reasoning is
@@ -88,3 +96,8 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-07-26 - Push edge kind filtering to SQLite in batch queries
+
+**Learning:** When fetching dependent edges via `get_edges_by_targets` and `get_edges_by_target`, filtering by edge kind in Python (e.g. `if e.kind == "IMPORTS_FROM"`) forces SQLite to materialize and return thousands of irrelevant rows, creating a significant memory overhead and serialization bottleneck.
+**Action:** Always push the `kind` filter directly down to the database using the existing `_kind_filter` helper so the database engine only returns the relevant subsets of graph edges, preventing unnecessary Python-side object materialization.

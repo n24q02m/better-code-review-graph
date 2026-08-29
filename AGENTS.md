@@ -14,7 +14,8 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
   - `incremental.py` -- Git integration, file watching, incremental updates
   - `embeddings.py` -- Dual-mode embedding: local ONNX through the fastretrieval registry + cloud chain (`EMBEDDING_MODELS`) via litellm passthrough (`mcp_core.llm`)
   - `docs/` -- Help tool documentation (graph.md, query.md, review.md, config.md)
-  - `cli.py` -- CLI: starts MCP server (pure entry point)
+- `cli.py` -- local CLI: no args starts MCP stdio; positional subcommands expose graph/query/review/security over the same domain services
+
   - `__init__.py` -- Version export
   - `__main__.py` -- `python -m` entry (calls cli.main)
   - `py.typed` -- PEP 561 marker
@@ -22,6 +23,16 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 - `skills/` -- Claude Code skills (impact-audit, onboard-repo, refactor-check, review-delta, review-pr, security-sweep)
 - `hooks/` -- SessionStart + UserPromptSubmit + PostToolUse hooks
 - `.claude-plugin/` -- Plugin manifest + marketplace metadata
+
+## Local-first boundary
+
+- CLI and bundled Skills are the primary coding-harness surfaces.
+- MCP stdio is a secondary protocol adapter; it must not duplicate graph logic.
+- Graph state is local at `<repo>/.code-review-graph/graph.db` unless explicit
+  self-host/multi-user configuration changes the data directory.
+- CRG has no hosted Cloudflare runtime in the target topology. PyPI, CI,
+  security, GitHub releases, and eligible stable MCP Registry publication remain
+  active. Historical OCI tags remain available; new public OCI images do not.
 
 ## Lenh thuong dung
 
@@ -51,7 +62,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
                                           |
                                      Embedding store --> Semantic search
                                           |
-                                     FastMCP server --> 7 tools (graph + query + review + config + security + help + config__open_relay)
+                                     FastMCP server --> secondary MCP adapter (7 tools: graph + query + review + config + security + help + config__open_relay)
 ```
 
 - **Parser** (parser.py): Tree-sitter extracts nodes (File, Class, Function, Type, Test) and edges (CALLS, IMPORTS_FROM, INHERITS, IMPLEMENTS, CONTAINS, TESTED_BY, DEPENDS_ON). Resolves same-file bare call targets to qualified names.
@@ -59,7 +70,7 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 - **Incremental** (incremental.py): Git diff detection, file hash tracking, re-parses only changed files.
 - **Embeddings** (embeddings.py): Dual-mode -- local ONNX through the fastretrieval registry (default, zero-config) or cloud via the `EMBEDDING_MODELS` chain (litellm passthrough, `mcp_core.llm`; order = fallback, empty = local). Fixed 768-dim storage.
 - **Tools** (tools.py): Implementation layer for all graph operations. Output pagination via max_results.
-- **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions/spot_check/renamed_in_diff/diff), review, config, security, help, config__open_relay (mcp-core relay helper). Returns JSON strings.
+- **Server** (server.py): 7 tools — graph (build/update/stats/embed/export/summarize), query (query/search/impact/large_functions/spot_check/renamed_in_diff/diff), review, config, security, help, config__open_relay (mcp-core relay helper). Returns structured dict payloads over MCP; the CLI serializes them as JSON.
 
 ## Embedding backends
 
@@ -136,8 +147,9 @@ chối, không tự rơi về model mặc định.
 ## Release & Deploy
 
 - Conventional Commits. Tag format: `v{version}`
-- CD: PSR v10 -> PyPI (uv publish) -> Docker multi-arch (amd64 + arm64) -> MCP Registry
-- Docker images: `n24q02m/better-code-review-graph`
+- CD: PSR v10 -> PyPI; eligible stable releases -> MCP Registry
+- No new public OCI publication. Historical tags remain; the Dockerfile supports
+  source-built self-hosting only.
 
 ## Pre-commit hooks
 
@@ -149,7 +161,7 @@ chối, không tự rơi về model mặc định.
 ## Luu y quan trong
 
 - Lazy imports cho heavy deps (tree-sitter, fastretrieval, litellm via `mcp_core.llm`, numpy) -- tranh startup cost
-- MCP tools return error strings (`return "Error: ..."`) -- KHONG raise exceptions
+- MCP tools return structured error payloads (`{"error": ...}`) and close local resources on every path.
 - GraphStore.upsert_edge takes EdgeInfo (fields: source, target), GraphEdge uses source_qualified/target_qualified
 - `_make_qualified()` builds qualified names as `file_path::name` or `file_path::parent.name`
 - Supported languages: Python, TypeScript, JavaScript, Go, Rust, Java, C#, Ruby, Kotlin, Swift, PHP, C/C++, Solidity

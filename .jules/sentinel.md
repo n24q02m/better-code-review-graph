@@ -61,3 +61,8 @@ With the guard present git refuses to parse the value as an option at all. A `st
 - Before calling a baked-in identifier a leaked secret, check whether it is public by design.
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`.
+
+## 2026-08-26 - Prevent Option Injection in git show
+**Vulnerability:** The `_get_git_content` function in `src/better_code_review_graph/tools.py` interpolated caller-supplied git refs (`base`) into pathspecs for `git show` (e.g., `f"{base}:{rel_path}"`) without explicitly rejecting inputs starting with a hyphen.
+**Learning:** Even when utilizing `--end-of-options` to delimit options from positional arguments, Git subcommand arguments constructed dynamically by interpolating refs into custom syntaxes (like tree-ish pathspecs) should proactively reject hyphens to provide defense-in-depth against complex argument injection vectors across different Git versions.
+**Prevention:** Always validate that dynamically provided git refs, SHAs, or branch names do not start with `-` before passing them to `subprocess.run`, regardless of argument separators.

@@ -78,8 +78,26 @@ def _parse_simple_yaml(text: str) -> dict[str, Any]:
 
     result: dict[str, Any] = {}
     for raw_line in text.splitlines():
-        line = raw_line.split("#", 1)[0].rstrip()
-        if not line.strip() or ":" not in line:
+        line = raw_line.strip()
+
+        # Handle comments, but only if they are not inside quotes
+        if "#" in line:
+            in_single_quote = False
+            in_double_quote = False
+            hash_idx = -1
+            for i, char in enumerate(line):
+                if char == "'" and not in_double_quote:
+                    in_single_quote = not in_single_quote
+                elif char == '"' and not in_single_quote:
+                    in_double_quote = not in_double_quote
+                elif char == "#" and not in_single_quote and not in_double_quote:
+                    hash_idx = i
+                    break
+
+            if hash_idx != -1:
+                line = line[:hash_idx].rstrip()
+
+        if not line or ":" not in line:
             continue
         key, _, value = line.partition(":")
         key = key.strip()
