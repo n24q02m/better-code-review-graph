@@ -1053,7 +1053,7 @@ class GraphStore:
         *,
         as_of: str = "",
     ) -> list[GraphEdge]:
-        """Batch fetch edges by their target qualified names to prevent N+1 queries."""
+        """Batch fetch edges by target names with an optional kind filter."""
         if not qualified_names:
             return []
 
