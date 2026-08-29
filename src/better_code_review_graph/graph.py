@@ -1235,7 +1235,19 @@ class GraphStore:
         # When ``repo`` is set, drop seed nodes that don't belong to it.
         seed_nodes = self.get_nodes_by_files(changed_files, as_of=as_of)
         if repo:
-            seed_nodes = [n for n in seed_nodes if self._node_repo_id(n) == repo]
+            # JSON numbers are untyped to SQLite. Cast once in the static batch query
+            # instead of issuing one repo_id lookup per seed node.
+            seed_ids = [n.id for n in seed_nodes]
+            valid_seed_ids: set[int] = set()
+            if seed_ids:
+                cursor = self._conn.execute(
+                    "SELECT id FROM nodes "
+                    "WHERE repo_id = ? AND id IN "
+                    "(SELECT CAST(value AS INTEGER) FROM json_each(?))",
+                    (repo, json.dumps(seed_ids)),
+                )
+                valid_seed_ids = {row["id"] for row in cursor}
+            seed_nodes = [n for n in seed_nodes if n.id in valid_seed_ids]
         seeds = {n.qualified_name for n in seed_nodes}
 
         # Pre-compute the set of qualified_names belonging to ``repo`` so
@@ -1304,7 +1316,8 @@ class GraphStore:
             if all_node_ids:
                 cursor = self._conn.execute(
                     "SELECT id FROM nodes "
-                    "WHERE repo_id = ? AND id IN (SELECT value FROM json_each(?))",
+                    "WHERE repo_id = ? AND id IN "
+                    "(SELECT CAST(value AS INTEGER) FROM json_each(?))",
                     (repo, json.dumps(all_node_ids)),
                 )
                 valid_ids = {row["id"] for row in cursor}
@@ -1327,21 +1340,6 @@ class GraphStore:
             "truncated": truncated,
             "total_impacted": total_impacted,
         }
-
-    def _node_repo_id(self, node: GraphNode) -> str:
-        """Look up a GraphNode's persisted ``repo_id`` (column not on dataclass).
-
-        ``GraphNode`` is the public dataclass, frozen at the v1.6 shape;
-        the federation column lives on the SQL row only. This is a
-        cheap fallback used by the repo-filter helpers — single-row
-        lookup keyed by ``id`` so it stays O(1) even on large graphs.
-        """
-        row = self._conn.execute(
-            "SELECT repo_id FROM nodes WHERE id = ?", (node.id,)
-        ).fetchone()
-        if row is None:
-            return ""
-        return row["repo_id"] or ""
 
     def get_subgraph(self, qualified_names: list[str]) -> dict[str, Any]:
         """Extract a subgraph containing the specified nodes and their connecting edges."""
