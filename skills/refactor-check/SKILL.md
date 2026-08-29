@@ -8,18 +8,22 @@ argument-hint: "<function or class name> [intended change]"
 
 Analyze whether a refactoring is safe BEFORE making changes. Produces a verdict with specific risks and mitigation steps.
 
+**Command surface:** run the local CLI through the coding harness shell. Examples
+use the installed `better-code-review-graph` command; from a source checkout,
+prefix it with `uv run`. No MCP mapping is required.
+
 ## Steps
 
 1. **Get the full dependency graph** for the target:
-   - `graph(action="update")` to ensure graph is current
-   - `query(action="query", pattern="callers_of", target="<name>")` -- who calls this
-   - `query(action="query", pattern="callees_of", target="<name>")` -- what this calls
-   - `query(action="query", pattern="imports_of", target="<name>")` -- what this imports
-   - If it is a class: `query(action="query", pattern="inheritors_of", target="<name>")` and `query(action="query", pattern="children_of", target="<name>")`
+   - `better-code-review-graph graph build --base HEAD --repo-root "<path>"` to index current working changes
+   - `better-code-review-graph query query --pattern callers_of --target "<name>" --repo-root "<path>"` -- who calls this
+   - use `--pattern callees_of` to see what this calls
+   - use `--pattern imports_of` to see what this imports
+   - If it is a class, also query `--pattern inheritors_of` and `--pattern children_of`
 
 2. **Identify test coverage**:
-   - `query(action="query", pattern="tests_for", target="<name>")` -- direct tests
-   - For each caller, also check `tests_for` to see if callers have integration tests covering this function indirectly
+   - `better-code-review-graph query query --pattern tests_for --target "<name>" --repo-root "<path>"` -- direct tests
+   - For each caller, also query `tests_for` to see if callers have integration tests covering this function indirectly
    - Record: number of direct tests, number of callers with tests, number of callers without tests
 
 3. **Flag public API exposure**:
@@ -29,7 +33,7 @@ Analyze whether a refactoring is safe BEFORE making changes. Produces a verdict 
    - Public API = any function/class importable by external consumers
 
 4. **Estimate blast radius**:
-   - `query(action="impact", target="<name>")` -- full impact analysis
+   - `better-code-review-graph query impact --changed-files "<target-file>" --repo-root "<path>"` -- file-level impact analysis around the target
    - Count: total impacted files, total impacted functions, depth of dependency chain
    - Identify any impacted files outside the immediate package/module
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.incremental import full_build, get_db_path
-from better_code_review_graph.parser import CodeParser
+from better_code_review_graph.parser import CodeParser, _is_test_file
 from better_code_review_graph.tools import (
     _compute_untested_functions,
     query_graph,
@@ -167,6 +167,42 @@ class TestTestedByScope:
 
         targets = {e.target for e in edges if e.kind == "TESTED_BY"}
         assert not any(t.endswith("::add") for t in targets)
+
+
+class TestIsTestFileNamingConventions:
+    """The exclusion recognises a test file by name across languages.
+
+    The patterns split across two forms: ``_test$`` / ``_spec$`` anchor on the
+    stem, while ``.test.`` / ``.spec.`` only match with the extension still
+    attached. Checking one form alone silently misses the other family.
+    """
+
+    def test_recognises_conventions_from_several_languages(self):
+        for path in (
+            "test_calculator.py",
+            "calculator_test.go",
+            "widget.test.ts",
+            "widget.spec.tsx",
+            "model_spec.rb",
+        ):
+            assert _is_test_file(path), path
+
+    def test_ordinary_modules_are_not_test_files(self):
+        for path in ("support.py", "calculator.py", "contest.py"):
+            assert not _is_test_file(path), path
+
+    def test_accepts_a_qualified_name_as_well_as_a_path(self):
+        assert _is_test_file("pkg/widget.spec.ts::helper")
+        assert not _is_test_file("pkg/widget.ts::helper")
+
+    def test_a_module_merely_named_like_a_test_is_treated_as_one(self):
+        """Documented limitation, asserted so it is not mistaken for a bug.
+
+        Detection is by filename, so a data module called Testimonial.py is
+        excluded too. docs/graph.md tells readers to check the filename when
+        a function keeps showing up as untested.
+        """
+        assert _is_test_file("Testimonial.py")
 
 
 class TestTestsForFindsUnconventionallyNamedTests:

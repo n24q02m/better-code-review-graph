@@ -199,11 +199,11 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.18.5,<2" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastmcp", specifier = ">=3.4.4,<4" },
-    { name = "fastretrieval", specifier = ">=1.0.1" },
+    { name = "fastretrieval", specifier = ">=1.1.0b1,<2" },
     { name = "httpx" },
     { name = "litellm", specifier = ">=1.93.0" },
     { name = "mcp", specifier = ">=1.28.1,<2" },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.21.0,<2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.23.0,<2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.20.0" },
@@ -216,14 +216,14 @@ provides-extras = ["security"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "bandit", specifier = ">=1.9.4" },
-    { name = "pytest", specifier = ">=9.1.1,<10" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "bandit", specifier = "==1.9.4" },
+    { name = "pytest", specifier = "==9.1.1" },
+    { name = "pytest-asyncio", specifier = "==1.4.0" },
     { name = "pytest-cov" },
     { name = "pytest-timeout" },
-    { name = "ruff", specifier = ">=0.15.20" },
+    { name = "ruff", specifier = "==0.16.3" },
     { name = "syrupy" },
-    { name = "ty", specifier = ">=0.0.56" },
+    { name = "ty", specifier = "==0.0.72" },
 ]
 
 [[package]]
@@ -592,7 +592,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.0.1"
+version = "1.1.0b1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -603,9 +603,9 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/35/2a91b42d6b9784ee620d4c75bd2abadbcbd3cf304dcb0a41f5a3a22ee0ba/fastretrieval-1.0.1.tar.gz", hash = "sha256:a1d766e1c1471347ba830c4a7f280ed7b0ff86fbc48425ac457b7b9d8d0e5783", size = 330230, upload-time = "2026-08-14T16:58:25.577Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/2b/00cccf6ead62dc473fb3eccfccd222ca9f481dc85acacb568f49700d159e/fastretrieval-1.1.0b1.tar.gz", hash = "sha256:f5d0609d8255bb66647b65071c802af7401840ba6fedd0d39f93b477fba9722e", size = 330569, upload-time = "2026-08-22T12:47:25.801Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/94/28ba6e0d86b4b8bb0f2a687d5669bd3c6adb7c3346d6e80431fb66ba6c2d/fastretrieval-1.0.1-py3-none-any.whl", hash = "sha256:902851b02c6b1ffefc66aa63c7976a2226696d7ea2b43b9ec471029e97e58892", size = 144199, upload-time = "2026-08-14T16:58:24.195Z" },
+    { url = "https://files.pythonhosted.org/packages/51/df/bc661390b5a1f06ec476ee23e0e9e848f865b3e80543fcb74e5bf0a254b5/fastretrieval-1.1.0b1-py3-none-any.whl", hash = "sha256:a741bb849e7324d0e11d07b23237b278e45b294c1770ef9a036a77310ebb6bad", size = 144434, upload-time = "2026-08-22T12:47:24.442Z" },
 ]
 
 [[package]]
