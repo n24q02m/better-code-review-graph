@@ -861,6 +861,7 @@ class CodeParser:
         enclosing_func: str | None = None,
         import_map: dict[str, str] | None = None,
         defined_names: set[str] | None = None,
+        local_defined_names: set[str] | None = None,
         python_abstract_contracts: set[str] | None = None,
         declared_interfaces: set[str] | None = None,
     ) -> None:
@@ -885,6 +886,7 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    local_defined_names,
                     python_abstract_contracts,
                     declared_interfaces,
                 )
@@ -903,6 +905,7 @@ class CodeParser:
                     enclosing_class,
                     import_map,
                     defined_names,
+                    local_defined_names,
                     python_abstract_contracts,
                     declared_interfaces,
                 )
@@ -921,6 +924,7 @@ class CodeParser:
                     enclosing_func,
                     import_map,
                     defined_names,
+                    local_defined_names,
                 )
 
             if not processed and language == "solidity":
@@ -950,6 +954,7 @@ class CodeParser:
                 enclosing_func=enclosing_func,
                 import_map=import_map,
                 defined_names=defined_names,
+                local_defined_names=local_defined_names,
                 python_abstract_contracts=python_abstract_contracts,
                 declared_interfaces=declared_interfaces,
             )
@@ -965,6 +970,7 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
         python_abstract_contracts: set[str] | None,
         declared_interfaces: set[str] | None,
     ) -> bool:
@@ -1034,6 +1040,7 @@ class CodeParser:
             enclosing_func=None,
             import_map=import_map,
             defined_names=defined_names,
+            local_defined_names=local_defined_names,
             python_abstract_contracts=python_abstract_contracts,
             declared_interfaces=declared_interfaces,
         )
@@ -1050,12 +1057,17 @@ class CodeParser:
         enclosing_class: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
         python_abstract_contracts: set[str] | None = None,
         declared_interfaces: set[str] | None = None,
     ) -> bool:
         name = self._get_name(node, language, "function")
         if not name:
             return False
+
+        nested_names = self._collect_nested_function_names(node, language)
+        visible_local_names = set(local_defined_names or ())
+        visible_local_names.update(nested_names)
 
         is_test = _is_test_function(name, file_path)
         kind = "Test" if is_test else "Function"
@@ -1136,6 +1148,7 @@ class CodeParser:
             enclosing_func=name,
             import_map=import_map,
             defined_names=defined_names,
+            local_defined_names=visible_local_names or None,
             python_abstract_contracts=python_abstract_contracts,
             declared_interfaces=declared_interfaces,
         )
@@ -1179,16 +1192,31 @@ class CodeParser:
         enclosing_func: str | None,
         import_map: dict[str, str] | None,
         defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
     ) -> bool:
         call_name = self._get_call_name(node, language, source)
-        if call_name and enclosing_func:
-            caller = self._qualify(enclosing_func, file_path, enclosing_class)
+        if call_name:
+            # Attribute calls on the module/IIFE toplevel have no enclosing
+            # function. File-level init code — e.g. JavaScript IIFE bodies,
+            # ``document.addEventListener('click', handler)`` wiring, or a
+            # Python module calling helpers at import time — still *uses*
+            # the referenced symbols, so the edges are attributed to the
+            # File node (qualified name = file path) instead of being
+            # dropped. This keeps callers_of/dead-code from reporting
+            # handlers registered by toplevel init code as unreferenced.
+            caller = (
+                self._qualify(enclosing_func, file_path, enclosing_class)
+                if enclosing_func
+                else file_path
+            )
             target = self._resolve_call_target(
                 call_name,
                 file_path,
                 language,
                 import_map or {},
                 defined_names or set(),
+                enclosing_class=enclosing_class,
+                local_defined_names=local_defined_names,
             )
             line = node.start_point[0] + 1
             edges.append(
@@ -1200,13 +1228,38 @@ class CodeParser:
                     line=line,
                 )
             )
+            # Function references passed as arguments — e.g. JS
+            # ``el.addEventListener('click', handler)`` or Python
+            # ``deferred.addCallback(handler)`` — are a real use of the
+            # referenced symbol, but the argument identifier itself is not
+            # a call expression, so they previously produced no CALLS edge
+            # and dead-code analysis reported the handler as unreferenced.
+            # Emit CALLS edges for argument identifiers that resolve to a
+            # file-scope definition or an import, so callers_of(handler)
+            # finds the registering function.
+            self._emit_argument_reference_edges(
+                node,
+                source,
+                language,
+                file_path,
+                edges,
+                caller,
+                enclosing_class,
+                call_name,
+                import_map,
+                defined_names,
+                local_defined_names,
+            )
             # TESTED_BY means "called directly by a test", NOT "properly
             # tested". A test calls its subject, but it also calls helpers,
             # builders and assertion utilities, and no static rule separates
             # intent from incidental use. Consumers must read the edge with
             # that meaning -- see _is_test_file for the one exclusion applied.
-            if _is_test_function(enclosing_func, file_path) and not _is_test_file(
-                target
+            # Toplevel/file-level calls have no test function to attribute.
+            if (
+                enclosing_func
+                and _is_test_function(enclosing_func, file_path)
+                and not _is_test_file(target)
             ):
                 edges.append(
                     EdgeInfo(
@@ -1218,6 +1271,102 @@ class CodeParser:
                     )
                 )
         return False
+
+    def _emit_argument_reference_edges(
+        self,
+        node,
+        source: bytes,
+        language: str,
+        file_path: str,
+        edges: list[EdgeInfo],
+        caller: str,
+        enclosing_class: str | None,
+        call_name: str | None,
+        import_map: dict[str, str] | None,
+        defined_names: set[str] | None,
+        local_defined_names: set[str] | None,
+    ) -> None:
+        """Emit CALLS edges for function references passed as call arguments.
+
+        Tree-sitter grammars expose call arguments under a field named
+        ``arguments`` (JavaScript/TypeScript ``arguments``, Python
+        ``arguments``, Go ``arguments``, Java ``argument_list``). This
+        helper walks that subtree, collects bare identifiers, and for
+        each one that resolves to a visible file/local definition or an
+        imported symbol, records a CALLS edge from the enclosing function to
+        the resolved target. This keeps dead-code analysis from flagging
+        callback-style references (``el.addEventListener('click',
+        handler)``) as unreferenced.
+        """
+        args_node = node.child_by_field_name("arguments")
+        if args_node is None:
+            return
+
+        seen: set[str] = set()
+        call_types = _CALL_TYPES.get(language, ())
+        import_names = import_map or {}
+        definition_names = defined_names or set()
+        local_names = local_defined_names or set()
+        for ident in self._iter_argument_identifiers(args_node, call_types):
+            name = ident.text.decode("utf-8", errors="replace")
+            if not name or name in seen or name == call_name:
+                continue
+            seen.add(name)
+            # Match direct-call resolution: an imported name remains a valid
+            # reference even when its module is external or not indexed, so
+            # _resolve_call_target may intentionally return the bare name.
+            if (
+                name not in definition_names
+                and name not in local_names
+                and name not in import_names
+            ):
+                continue
+            resolved = self._resolve_call_target(
+                name,
+                file_path,
+                language,
+                import_names,
+                definition_names,
+                enclosing_class=enclosing_class,
+                local_defined_names=local_names,
+            )
+            # Only emit identifiers that resolve to a same-file definition or
+            # an import. Unknown bare names stay untouched.
+            if resolved == name and name not in import_names:
+                continue
+            edges.append(
+                EdgeInfo(
+                    kind="CALLS",
+                    source=caller,
+                    target=resolved,
+                    file_path=file_path,
+                    line=ident.start_point[0] + 1,
+                )
+            )
+
+    @staticmethod
+    def _iter_argument_identifiers(args_node, call_types=()):
+        """Yield identifiers in an arguments subtree.
+
+        Nested calls are skipped because their own call nodes are visited by
+        the main tree walk and emit their own edges. ``call_types`` is
+        language-specific: grammars use different node names for calls.
+        """
+        nested_callable_types = (
+            "function_expression",
+            "arrow_function",
+            "lambda",
+        )
+        stack = [args_node]
+        while stack:
+            current = stack.pop()
+            for child in current.children:
+                if child.type == "identifier":
+                    yield child
+                elif child.type in call_types or child.type in nested_callable_types:
+                    continue
+                else:
+                    stack.append(child)
 
     def _handle_solidity_emit_statement(
         self,
@@ -1477,7 +1626,70 @@ class CodeParser:
             if node_type in import_types:
                 self._collect_import_names(child, language, source, import_map)
 
+        # Anonymous JS wrappers (IIFEs/load callbacks) are flattened by the
+        # parser: calls inside them are attributed to the File node, and named
+        # declarations in that wrapper use file-qualified names. Do not fold
+        # declarations under a named function or class into file scope.
+        if language in ("javascript", "typescript", "tsx"):
+            defined_names.update(self._collect_iife_function_names(root, language))
+
         return import_map, defined_names
+
+    def _collect_iife_function_names(self, root, language: str) -> set[str]:
+        """Collect declarations flattened into JS anonymous-wrapper scope."""
+        if language not in ("javascript", "typescript", "tsx"):
+            return set()
+
+        names: set[str] = set()
+
+        def visit(current, scope_kind: str) -> None:
+            for child in current.children:
+                if child.type == "function_declaration":
+                    if scope_kind in {"module", "anonymous"}:
+                        name = self._get_name(child, language, "function")
+                        if name:
+                            names.add(name)
+                    # A named function introduces a lexical scope of its own.
+                    continue
+                if child.type in (
+                    "class_declaration",
+                    "class",
+                    "method_definition",
+                ):
+                    continue
+                if child.type in ("function_expression", "arrow_function"):
+                    visit(child, "anonymous")
+                else:
+                    visit(child, scope_kind)
+
+        visit(root, "module")
+        return names
+
+    def _collect_nested_function_names(self, node, language: str) -> set[str]:
+        """Collect named declarations visible inside one function body."""
+        if language not in ("javascript", "typescript", "tsx"):
+            return set()
+
+        names: set[str] = set()
+
+        def visit(current) -> None:
+            for child in current.children:
+                if child.type == "function_declaration":
+                    name = self._get_name(child, language, "function")
+                    if name:
+                        names.add(name)
+                    # Declarations below this child belong to its scope.
+                    continue
+                if child.type in (
+                    "class_declaration",
+                    "class",
+                    "method_definition",
+                ):
+                    continue
+                visit(child)
+
+        visit(node)
+        return names
 
     @staticmethod
     def _iter_tree_nodes(root):
@@ -1728,8 +1940,14 @@ class CodeParser:
         language: str,
         import_map: dict[str, str],
         defined_names: set[str],
+        *,
+        enclosing_class: str | None = None,
+        local_defined_names: set[str] | None = None,
     ) -> str:
-        """Resolve a bare call name to a qualified target, with fallback."""
+        """Resolve a bare call name to a scoped qualified target."""
+        local_names = local_defined_names or set()
+        if call_name in local_names:
+            return self._qualify(call_name, file_path, enclosing_class)
         if call_name in defined_names:
             return self._qualify(call_name, file_path, None)
         if call_name in import_map:
