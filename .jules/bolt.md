@@ -96,3 +96,8 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 - Cite file and symbol names rather than line numbers, which drift as the file changes.
 - PR titles in this repo must start with `fix:` or `feat:`. `perf:` is not accepted — the gate in `ci.yml` enforces the narrower set deliberately, and widening that list to make a title pass is not an acceptable change.
 - Performance PRs must carry a reproducible measurement. Correctness tests and "expected impact" prose are not measurements.
+
+### 2026-07-26 - Push edge kind filtering to SQLite in batch queries
+
+**Learning:** When fetching dependent edges via `get_edges_by_targets` and `get_edges_by_target`, filtering by edge kind in Python (e.g. `if e.kind == "IMPORTS_FROM"`) forces SQLite to materialize and return thousands of irrelevant rows, creating a significant memory overhead and serialization bottleneck.
+**Action:** Always push the `kind` filter directly down to the database using the existing `_kind_filter` helper so the database engine only returns the relevant subsets of graph edges, preventing unnecessary Python-side object materialization.
