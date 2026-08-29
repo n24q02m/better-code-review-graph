@@ -2,6 +2,149 @@
 
 <!-- version list -->
 
+## v3.22.0 (2026-08-29)
+
+### Bug Fixes
+
+- Align code review retrieval contract
+  ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+- Align code review retrieval contract
+  ([#973](https://github.com/n24q02m/better-code-review-graph/pull/973),
+  [`c0eccee`](https://github.com/n24q02m/better-code-review-graph/commit/c0ecceeb97c606d382edbe2cf87462722e8746ec))
+
+- Align live tool list contract
+  ([#959](https://github.com/n24q02m/better-code-review-graph/pull/959),
+  [`823d773`](https://github.com/n24q02m/better-code-review-graph/commit/823d7731080fa003c9588a7cb7afde78f0d2feef))
+
+- Batch impact radius repo filtering
+  ([#970](https://github.com/n24q02m/better-code-review-graph/pull/970),
+  [`ccc94c7`](https://github.com/n24q02m/better-code-review-graph/commit/ccc94c7758be2316db8551e6b7e26cd590ce094d))
+
+- Bolt optimization of get_stats aggregate calculation
+  ([#985](https://github.com/n24q02m/better-code-review-graph/pull/985),
+  [`4be8ec6`](https://github.com/n24q02m/better-code-review-graph/commit/4be8ec6e743f53e6f95c670cbf094ee2373cfcfe))
+
+- Bolt optimization push edge filtering to sqlite in find_dependents
+  ([#971](https://github.com/n24q02m/better-code-review-graph/pull/971),
+  [`fdc030d`](https://github.com/n24q02m/better-code-review-graph/commit/fdc030d6a5bcad9842f0416d22e703f2b7e81090))
+
+- Cover non-qwen runtime and patch dependencies
+  ([#955](https://github.com/n24q02m/better-code-review-graph/pull/955),
+  [`9c661bc`](https://github.com/n24q02m/better-code-review-graph/commit/9c661bc6402e640243257b4a3cee0153e2452013))
+
+- Detach git fallback stdin ([#960](https://github.com/n24q02m/better-code-review-graph/pull/960),
+  [`190554d`](https://github.com/n24q02m/better-code-review-graph/commit/190554d354e49d2a29e16f2d7900b159af4cfcb4))
+
+- Pin workflow actions ([#968](https://github.com/n24q02m/better-code-review-graph/pull/968),
+  [`3793160`](https://github.com/n24q02m/better-code-review-graph/commit/379316018170805707fec6f46bdfd959cdf4324e))
+
+- Preserve callback lexical scope
+  ([#975](https://github.com/n24q02m/better-code-review-graph/pull/975),
+  [`4bd3e63`](https://github.com/n24q02m/better-code-review-graph/commit/4bd3e63db9967dfa4d61b76bcb2a92eed7326a0a))
+
+- Prevent argument injection in _get_git_content
+  ([#984](https://github.com/n24q02m/better-code-review-graph/pull/984),
+  [`ae260da`](https://github.com/n24q02m/better-code-review-graph/commit/ae260da5ad3795208588f92631eb19b7ca31dfd5))
+
+- Push batch edge kind filtering into SQL
+  ([#969](https://github.com/n24q02m/better-code-review-graph/pull/969),
+  [`2624b26`](https://github.com/n24q02m/better-code-review-graph/commit/2624b2662345999e4b09e2e8055fb8e7772e9c22))
+
+- Recognise .test./.spec. filenames when excluding test helpers
+  ([#911](https://github.com/n24q02m/better-code-review-graph/pull/911),
+  [`84b9e18`](https://github.com/n24q02m/better-code-review-graph/commit/84b9e181a456e5ced6661a5d822a75bd810745d1))
+
+- Refresh crg lock metadata ([#955](https://github.com/n24q02m/better-code-review-graph/pull/955),
+  [`9c661bc`](https://github.com/n24q02m/better-code-review-graph/commit/9c661bc6402e640243257b4a3cee0153e2452013))
+
+- Route bundled skills through local cli
+  ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+- Route bundled skills through local cli
+  ([#973](https://github.com/n24q02m/better-code-review-graph/pull/973),
+  [`c0eccee`](https://github.com/n24q02m/better-code-review-graph/commit/c0ecceeb97c606d382edbe2cf87462722e8746ec))
+
+- **deps**: Lock file maintenance
+  ([#916](https://github.com/n24q02m/better-code-review-graph/pull/916),
+  [`818d566`](https://github.com/n24q02m/better-code-review-graph/commit/818d566198770f61304d8a372304b683064490f1))
+
+- **deps**: Patch vulnerable aiohttp and cryptography
+  ([#955](https://github.com/n24q02m/better-code-review-graph/pull/955),
+  [`9c661bc`](https://github.com/n24q02m/better-code-review-graph/commit/9c661bc6402e640243257b4a3cee0153e2452013))
+
+- **deps**: Pin dependencies ([#913](https://github.com/n24q02m/better-code-review-graph/pull/913),
+  [`5574876`](https://github.com/n24q02m/better-code-review-graph/commit/5574876f0d3c46d463bab753f553436f0539cd87))
+
+- **deps**: Update actions/setup-python action to v7
+  ([#914](https://github.com/n24q02m/better-code-review-graph/pull/914),
+  [`7b6b902`](https://github.com/n24q02m/better-code-review-graph/commit/7b6b9022544a45932bc0dbfae5bb80d3c1282821))
+
+- **deps**: Update minor dependencies
+  ([#921](https://github.com/n24q02m/better-code-review-graph/pull/921),
+  [`3878982`](https://github.com/n24q02m/better-code-review-graph/commit/3878982a59ef5243809f44a83033e9b5b3f1d65e))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to c45a22e
+  ([#950](https://github.com/n24q02m/better-code-review-graph/pull/950),
+  [`2d8d72a`](https://github.com/n24q02m/better-code-review-graph/commit/2d8d72ab9239e1224d8f8f322eadb72a9f5e6170))
+
+- **graph**: Skip empty extra JSON parsing
+  ([#962](https://github.com/n24q02m/better-code-review-graph/pull/962),
+  [`bab769d`](https://github.com/n24q02m/better-code-review-graph/commit/bab769d88057ddd5d54f2b3f0a29bc0283ebe6b0))
+
+- **parser**: Emit CALLS edges for callback references and toplevel init calls
+  ([#975](https://github.com/n24q02m/better-code-review-graph/pull/975),
+  [`4bd3e63`](https://github.com/n24q02m/better-code-review-graph/commit/4bd3e63db9967dfa4d61b76bcb2a92eed7326a0a))
+
+- **parser**: Preserve callback lexical scope
+  ([#975](https://github.com/n24q02m/better-code-review-graph/pull/975),
+  [`4bd3e63`](https://github.com/n24q02m/better-code-review-graph/commit/4bd3e63db9967dfa4d61b76bcb2a92eed7326a0a))
+
+- **release**: Sunset public OCI publishing
+  ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+- **security**: Fix yaml comment parsing in heuristic rules (fixes #980)
+  ([#986](https://github.com/n24q02m/better-code-review-graph/pull/986),
+  [`192b712`](https://github.com/n24q02m/better-code-review-graph/commit/192b712274c65c30ae914271625ce920ad30514e))
+
+### Chores
+
+- Bump better-semantic-release to v1.4.0
+  ([#979](https://github.com/n24q02m/better-code-review-graph/pull/979),
+  [`98d0e1e`](https://github.com/n24q02m/better-code-review-graph/commit/98d0e1e8e4de8e42432e29969eeadf0e520dc76f))
+
+- **release**: Sunset public OCI publishing
+  ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+### Documentation
+
+- Lead with local cli installation
+  ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+- Lead with local cli installation
+  ([#973](https://github.com/n24q02m/better-code-review-graph/pull/973),
+  [`c0eccee`](https://github.com/n24q02m/better-code-review-graph/commit/c0ecceeb97c606d382edbe2cf87462722e8746ec))
+
+### Features
+
+- Add crg local cli harness ([#974](https://github.com/n24q02m/better-code-review-graph/pull/974),
+  [`551501b`](https://github.com/n24q02m/better-code-review-graph/commit/551501b0754dde6a0f1440a7ba1d76978346f01f))
+
+- Add CRG local CLI harness ([#973](https://github.com/n24q02m/better-code-review-graph/pull/973),
+  [`c0eccee`](https://github.com/n24q02m/better-code-review-graph/commit/c0ecceeb97c606d382edbe2cf87462722e8746ec))
+
+### Testing
+
+- Exercise non-qwen fastretrieval runtime
+  ([#955](https://github.com/n24q02m/better-code-review-graph/pull/955),
+  [`9c661bc`](https://github.com/n24q02m/better-code-review-graph/commit/9c661bc6402e640243257b4a3cee0153e2452013))
+
+
 ## v3.22.0-beta.1 (2026-08-15)
 
 ### Bug Fixes
