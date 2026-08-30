@@ -224,6 +224,53 @@ class TestLiveMCP:
                 data = _parse_result_text(result)
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert len(data.get("results", [])) > 0
+                assert data.get("search_mode") == "keyword"
+                header = data.get("header")
+                assert isinstance(header, dict), f"Missing response header: {data}"
+                assert header.get("embeddings_count") == 0
+                assert header.get("keyword_only") is True
+
+    async def test_query_search_after_embed(self, sample_repo: Path):
+        """A same-session embed enables semantic query mode."""
+        async with stdio_client(self._server_params()) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await session.call_tool(
+                    "graph",
+                    {
+                        "action": "build",
+                        "full_rebuild": True,
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                embed_result = await session.call_tool(
+                    "graph",
+                    {"action": "embed", "repo_root": str(sample_repo)},
+                )
+                embed_data = _parse_result_text(embed_result)
+                assert isinstance(embed_data, dict), (
+                    f"Unexpected embed response: {embed_data}"
+                )
+                assert embed_data.get("backend") == "local"
+                assert embed_data.get("newly_embedded", 0) > 0
+                assert embed_data.get("total_embeddings", 0) > 0
+
+                result = await session.call_tool(
+                    "query",
+                    {
+                        "action": "search",
+                        "search_query": "calculator",
+                        "repo_root": str(sample_repo),
+                    },
+                )
+                data = _parse_result_text(result)
+                assert isinstance(data, dict), f"Unexpected response: {data}"
+                assert data.get("search_mode") == "semantic"
+                header = data.get("header")
+                assert isinstance(header, dict), f"Missing response header: {data}"
+                assert header.get("embeddings_count", 0) > 0
+                assert header.get("keyword_only") is False
+                assert len(data.get("results", [])) > 0
 
     async def test_query_file_summary(self, sample_repo: Path):
         """query action=query with file_summary pattern."""
