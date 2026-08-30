@@ -15,10 +15,20 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import TextContent
+
+
+def _json_payload(content: object) -> dict[str, Any]:
+    """Decode the text payload returned by the MCP test server."""
+    assert isinstance(content, TextContent)
+    payload = json.loads(content.text)
+    assert isinstance(payload, dict)
+    return payload
 
 
 @pytest.fixture
@@ -147,11 +157,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                 {"action": "build", "full_rebuild": True, "repo_root": repo_str},
             )
             assert len(res_build.content) > 0
-            build_payload = (
-                json.loads(res_build.content[0].text)
-                if hasattr(res_build.content[0], "text")
-                else res_build.content[0]
-            )
+            build_payload = _json_payload(res_build.content[0])
             assert (
                 build_payload.get("status") in ("ok", "success")
                 or "files_parsed" in build_payload
@@ -162,11 +168,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
             res_stats = await session.call_tool(
                 "graph", {"action": "stats", "repo_root": repo_str}
             )
-            stats_mcp = (
-                json.loads(res_stats.content[0].text)
-                if hasattr(res_stats.content[0], "text")
-                else res_stats.content[0]
-            )
+            stats_mcp = _json_payload(res_stats.content[0])
             assert stats_mcp.get("total_nodes", 0) > 0
 
             # 4. query(action="query", pattern="callers_of", target="verify_token")
@@ -179,11 +181,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                     "repo_root": repo_str,
                 },
             )
-            query_mcp = (
-                json.loads(res_query.content[0].text)
-                if hasattr(res_query.content[0], "text")
-                else res_query.content[0]
-            )
+            query_mcp = _json_payload(res_query.content[0])
             assert len(query_mcp.get("results", [])) > 0
             caller_names_mcp = [r.get("name") for r in query_mcp["results"]]
             assert "authenticate_user" in caller_names_mcp
@@ -203,11 +201,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                     "repo_root": repo_str,
                 },
             )
-            error_payload = (
-                json.loads(res_error.content[0].text)
-                if hasattr(res_error.content[0], "text")
-                else res_error.content[0]
-            )
+            error_payload = _json_payload(res_error.content[0])
             assert error_payload["status"] == "error"
             assert "1000" in error_payload["error"]
 
@@ -220,11 +214,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                     "repo_root": repo_str,
                 },
             )
-            search_mcp = (
-                json.loads(res_search.content[0].text)
-                if hasattr(res_search.content[0], "text")
-                else res_search.content[0]
-            )
+            search_mcp = _json_payload(res_search.content[0])
             assert len(search_mcp.get("results", [])) > 0
             assert any(
                 "authenticate_user" in r.get("name", "") for r in search_mcp["results"]
@@ -239,11 +229,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                     "repo_root": repo_str,
                 },
             )
-            rev_mcp = (
-                json.loads(res_rev.content[0].text)
-                if hasattr(res_rev.content[0], "text")
-                else res_rev.content[0]
-            )
+            rev_mcp = _json_payload(res_rev.content[0])
             assert "changed_files" in rev_mcp or "summary" in rev_mcp
 
             # 7. security(action="scan", engine="heuristic")
@@ -255,31 +241,21 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
                     "repo_root": repo_str,
                 },
             )
-            sec_mcp = (
-                json.loads(res_sec.content[0].text)
-                if hasattr(res_sec.content[0], "text")
-                else res_sec.content[0]
-            )
+            sec_mcp = _json_payload(res_sec.content[0])
             assert "total" in sec_mcp
 
             # 8. config(action="status")
             res_cfg = await session.call_tool(
                 "config", {"action": "status", "repo_root": repo_str}
             )
-            cfg_mcp = (
-                json.loads(res_cfg.content[0].text)
-                if hasattr(res_cfg.content[0], "text")
-                else res_cfg.content[0]
-            )
+            cfg_mcp = _json_payload(res_cfg.content[0])
             assert "status" in cfg_mcp or "files_count" in cfg_mcp
 
             # 9. help(topic="graph")
             res_help = await session.call_tool("help", {"topic": "graph"})
-            help_text = (
-                res_help.content[0].text
-                if hasattr(res_help.content[0], "text")
-                else str(res_help.content[0])
-            )
+            help_content = res_help.content[0]
+            assert isinstance(help_content, TextContent)
+            help_text = help_content.text
             assert "graph" in help_text.lower()
     # Run CLI in a clean process after the stdio server has released its DB.
     cli_rc, cli_stdout, cli_stderr = await _run_cli(
