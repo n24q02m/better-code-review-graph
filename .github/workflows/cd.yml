@@ -178,6 +178,9 @@ jobs:
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
+      - name: Validate MCP Registry manifest
+        run: ./mcp-publisher validate server.json
+
       - name: Login to MCP Registry
         run: ./mcp-publisher login github-oidc
 

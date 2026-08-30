@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,30 @@ def test_release_workflow_keeps_packages_without_public_oci_jobs():
     )
 
 
+def _named_run_steps(workflow: str, job: str) -> list[tuple[str, str | None]]:
+    """Return named release steps and their single-line ``run`` commands."""
+    block = _job_block(workflow, job)
+    steps = []
+    for match in re.finditer(
+        r"^      - name: (?P<name>[^\n]+)\n"
+        r"(?P<body>.*?)(?=^      - (?:name|uses):|\Z)",
+        block,
+        flags=re.MULTILINE | re.DOTALL,
+    ):
+        run_match = re.search(
+            r"^        run: (?P<command>[^\n]+)",
+            match.group("body"),
+            flags=re.MULTILINE,
+        )
+        steps.append(
+            (
+                match.group("name"),
+                run_match.group("command") if run_match else None,
+            )
+        )
+    return steps
+
+
 def test_registry_metadata_is_pypi_only():
     metadata = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
 
@@ -42,6 +67,55 @@ def test_registry_metadata_is_pypi_only():
     serialized = json.dumps(metadata)
     assert "docker.io/n24q02m/better-code-review-graph" not in serialized
     assert "ghcr.io/n24q02m/better-code-review-graph" not in serialized
+
+
+def test_registry_description_matches_project_metadata_and_limit():
+    metadata = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]
+
+    description = metadata["description"]
+    assert description == project["description"]
+    assert 0 < len(description) <= 100
+
+
+def test_embedding_dependencies_and_lock_use_stable_releases():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    packages = {package["name"]: package for package in lock["package"]}
+
+    requirements = project["dependencies"]
+    assert "fastretrieval>=1.1.0,<2" in requirements
+    assert "n24q02m-mcp-core[llm]>=1.23.1,<2" in requirements
+    legacy_distribution = "qwen" + "3-embed"
+    assert not any(
+        legacy_distribution in requirement.casefold() for requirement in requirements
+    )
+    assert packages["fastretrieval"]["version"] == "1.1.0"
+    assert packages["n24q02m-mcp-core"]["version"] == "1.23.1"
+    assert legacy_distribution not in packages
+
+
+def test_registry_manifest_validation_precedes_authentication_and_publish():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    steps = _named_run_steps(workflow, "publish-mcp-registry")
+    names = [name for name, _ in steps]
+    commands = dict(steps)
+
+    install = names.index("Install MCP Publisher")
+    validate = names.index("Validate MCP Registry manifest")
+    login = names.index("Login to MCP Registry")
+    publish = names.index("Publish to MCP Registry")
+
+    assert install < validate < login < publish
+    assert commands["Validate MCP Registry manifest"] == (
+        "./mcp-publisher validate server.json"
+    )
+    assert commands["Login to MCP Registry"] == "./mcp-publisher login github-oidc"
+    assert commands["Publish to MCP Registry"] == "./mcp-publisher publish"
 
 
 def test_docs_keep_source_self_hosting_but_mark_public_oci_historical():
