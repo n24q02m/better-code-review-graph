@@ -255,6 +255,35 @@ def test_get_impact_radius_repo_filter(
         assert "repo_b" not in fp, f"repo_b leaked into repo_a-filter: {fp!r}"
 
 
+def test_impact_repo_filter_batches_typed_node_ids(
+    two_repo_setup: dict[str, Any],
+) -> None:
+    store = two_repo_setup["store"]
+    repo_a_id = two_repo_setup["repo_a_id"]
+    repo_a_dir = two_repo_setup["repo_a_dir"]
+    statements: list[str] = []
+    store._conn.set_trace_callback(statements.append)
+    try:
+        result = store.get_impact_radius(
+            [str(repo_a_dir / "a.py")],
+            repo=repo_a_id,
+        )
+    finally:
+        store._conn.set_trace_callback(None)
+
+    assert result["changed_nodes"]
+    typed_batch_queries = [
+        statement
+        for statement in statements
+        if "ID IN (SELECT CAST(VALUE AS INTEGER) FROM JSON_EACH(" in statement.upper()
+    ]
+    assert len(typed_batch_queries) == 2
+    assert not any(
+        "SELECT REPO_ID FROM NODES WHERE ID =" in statement.upper()
+        for statement in statements
+    )
+
+
 # ---------------------------------------------------------------------------
 # 4: semantic_search_nodes repo filter (keyword fallback path)
 # ---------------------------------------------------------------------------
