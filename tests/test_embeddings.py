@@ -18,6 +18,7 @@ from better_code_review_graph.embeddings import (
     _detect_embedding_provider,
     _encode_vector,
     _strip_provider,
+    describe_backend_selection,
     embed_all_nodes,
     init_backend,
     resolve_backend,
@@ -204,6 +205,54 @@ class TestResolveBackend:
         with patch.dict(os.environ, {"DISABLE_LOCAL_EMBED": "true"}, clear=True):
             with pytest.raises(ValueError, match="DISABLE_LOCAL_EMBED"):
                 init_backend()
+
+    def test_describe_local_selection_without_loading_model(self):
+        with (
+            patch.dict(os.environ, {"EMBEDDING_BACKEND": "local"}, clear=True),
+            patch(
+                "better_code_review_graph.embeddings._first_supported_local_model_id",
+                return_value="fastretrieval/reference",
+            ),
+        ):
+            assert describe_backend_selection() == {
+                "backend": "local",
+                "model": "fastretrieval/reference",
+                "dimensions": 768,
+                "fallback": "none",
+            }
+
+    def test_describe_cloud_selection_uses_first_configured_model(self):
+        with patch.dict(
+            os.environ,
+            {
+                "EMBEDDING_BACKEND": "cloud",
+                "EMBEDDING_MODELS": "cohere/embed-v4.0,openai/text-embedding-3-large",
+            },
+            clear=True,
+        ):
+            assert describe_backend_selection() == {
+                "backend": "cloud",
+                "model": "cohere/embed-v4.0",
+                "dimensions": 768,
+                "fallback": "none",
+            }
+
+    def test_describe_legacy_cloud_matches_runtime_default_model(self):
+        with patch.dict(os.environ, {"EMBEDDING_BACKEND": "cloud"}, clear=True):
+            selection = describe_backend_selection()
+            backend = CloudEmbeddingBackend()
+
+        assert selection["model"] == backend.model
+        assert selection["model"]
+
+    def test_describe_unavailable_selection(self):
+        with patch.dict(os.environ, {"DISABLE_LOCAL_EMBED": "true"}, clear=True):
+            assert describe_backend_selection() == {
+                "backend": "unavailable",
+                "model": None,
+                "dimensions": 768,
+                "fallback": "unavailable",
+            }
 
 
 # ---------------------------------------------------------------------------
