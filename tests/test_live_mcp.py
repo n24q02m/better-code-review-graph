@@ -433,6 +433,11 @@ class TestLiveMCP:
                 assert isinstance(data, dict), f"Unexpected response: {data}"
                 assert data.get("status") == "ok"
                 assert "version" in data
+                assert data["embedding_backend"] == "local"
+                assert isinstance(data["embedding_model"], str)
+                assert data["embedding_model"]
+                assert data["embedding_dimensions"] == 768
+                assert data["embedding_fallback"] == "none"
 
     async def test_config_set_log_level(self):
         """config action=set updates log level."""

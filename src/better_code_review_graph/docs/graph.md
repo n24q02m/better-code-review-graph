@@ -56,12 +56,14 @@ Compute vector embeddings for all graph nodes to enable semantic search.
 **Parameters:**
 - `repo_root`: Repository root path (auto-detected)
 
-Dual-mode embedding:
-- **Local (default)**: fastretrieval built-in ONNX registry (~570MB download on first use, zero-config)
-- **Cloud**: Multi-provider (set `JINA_AI_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `COHERE_API_KEY` to activate)
-- **Explicit**: Set `EMBEDDING_BACKEND=local|cloud` to override
+Embedding selection:
+- **Local (default)**: the configured model or first fastretrieval built-in ONNX registry entry (~570MB download on first use, zero-config)
+- **Cloud**: the first `EMBEDDING_MODELS` entry; configured entries after it are not runtime fallbacks
+- **Unavailable**: `DISABLE_LOCAL_EMBED=true` with no cloud model configured
 
-Fixed 768-dim storage. Switching backends does NOT invalidate existing vectors.
+All vectors use fixed 768-dimension storage. Switching backends does not invalidate existing vectors.
+`config(action="status")` reports the selected backend, model, dimensions, and
+`none`/`unavailable` fallback result without loading the model.
 
 **Example:**
 ```json

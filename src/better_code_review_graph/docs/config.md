@@ -5,7 +5,9 @@ Server configuration, status, cache management, and credential setup.
 ## Config Actions
 
 ### status
-Show current server status including graph path, node/edge counts, embedding backend, and last update time.
+Show current server status including graph counts and the selected embedding
+backend, model, fixed storage dimensions, and fallback result. Status resolves
+configuration only; it does not load the embedding model.
 
 **Parameters:**
 - `repo_root`: Repository root path (auto-detected)
@@ -22,6 +24,9 @@ Show current server status including graph path, node/edge counts, embedding bac
   "version": "2.0.0",
   "graph_path": "/path/to/.code-review-graph/graph.db",
   "embedding_backend": "local",
+  "embedding_model": "n24q02m/Qwen3-Embedding-0.6B-ONNX",
+  "embedding_dimensions": 768,
+  "embedding_fallback": "none",
   "total_nodes": 1234,
   "total_edges": 5678,
   "files_count": 42,

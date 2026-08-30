@@ -21,7 +21,7 @@ from mcp.types import ToolAnnotations
 from mcp_core.relay.tool_helpers import register_open_relay_tool
 
 from .config import settings
-from .embeddings import EmbeddingStore, resolve_backend
+from .embeddings import EmbeddingStore, describe_backend_selection
 from .incremental import get_db_path
 from .tools import (
     build_or_update_graph,
@@ -93,18 +93,9 @@ def _register_spec(**kwargs: Any) -> None:
 
 def _built_in_model_ids() -> set[str]:
     """Đọc các model built-in từ registry, không suy luận theo tên."""
-    from fastretrieval import TextEmbedding
+    from .embeddings import _supported_local_model_ids
 
-    model_ids: set[str] = set()
-    for item in TextEmbedding.list_supported_models():
-        model_id = (
-            item.get("model")
-            if isinstance(item, dict)
-            else getattr(item, "model", None)
-        )
-        if isinstance(model_id, str):
-            model_ids.add(model_id)
-    return model_ids
+    return set(_supported_local_model_ids())
 
 
 def _maybe_register_custom_embed(local_model: str) -> None:
@@ -761,6 +752,7 @@ def _config_status(repo_root: str | None) -> dict[str, Any]:
     from .tools import _get_store
 
     version = _pkg_version
+    embedding = describe_backend_selection()
 
     try:
         store, root = _get_store(repo_root)
@@ -771,7 +763,7 @@ def _config_status(repo_root: str | None) -> dict[str, Any]:
             # Do NOT init_backend() here: constructing the local backend loads
             # the local fastretrieval ONNX model, which can block/hang the status call
             # on Windows under stdio. Open the store without a backend; the
-            # backend name is reported separately via resolve_backend().
+            # selection identity is reported separately without model construction.
             emb_store = EmbeddingStore(db_path)
             try:
                 emb_count = emb_store.count()
@@ -782,7 +774,10 @@ def _config_status(repo_root: str | None) -> dict[str, Any]:
                 "status": "ok",
                 "version": version,
                 "graph_path": str(db_path),
-                "embedding_backend": resolve_backend(),
+                "embedding_backend": embedding["backend"],
+                "embedding_model": embedding["model"],
+                "embedding_dimensions": embedding["dimensions"],
+                "embedding_fallback": embedding["fallback"],
                 "total_nodes": stats.total_nodes,
                 "total_edges": stats.total_edges,
                 "files_count": stats.files_count,
@@ -797,7 +792,10 @@ def _config_status(repo_root: str | None) -> dict[str, Any]:
             "status": "ok",
             "version": version,
             "graph_path": None,
-            "embedding_backend": resolve_backend(),
+            "embedding_backend": embedding["backend"],
+            "embedding_model": embedding["model"],
+            "embedding_dimensions": embedding["dimensions"],
+            "embedding_fallback": embedding["fallback"],
             "total_nodes": 0,
             "total_edges": 0,
             "message": "No graph found. Run graph action=build first.",

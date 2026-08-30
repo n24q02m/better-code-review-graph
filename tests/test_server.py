@@ -314,6 +314,10 @@ class TestConfigTool:
         assert result["status"] == "ok"
         assert "embeddings_count" in result
         assert result["embedding_backend"] in ("local", "cloud")
+        assert isinstance(result["embedding_model"], str)
+        assert result["embedding_model"]
+        assert result["embedding_dimensions"] == 768
+        assert result["embedding_fallback"] == "none"
 
     async def test_cache_clear_does_not_load_embedding_model(self, tmp_path):
         """config(cache_clear) only counts + deletes rows: no model load."""

@@ -22,7 +22,7 @@
       },
       "environmentVariables": [
         {
-          "description": "Ordered embedding model chain 'provider/model,...'; empty = local ONNX",
+          "description": "Embedding models in selection order; the current runtime uses the first provider/model entry; empty = local ONNX",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_MODELS"

@@ -161,17 +161,17 @@ boundary: any built-in registry ID or valid non-Qwen artifact manifest follows
 the same resolver. All environment variables below are optional and only needed
 for cloud embeddings, LLM summaries, or an explicit BYO local artifact.
 
-### Model chains
+### Model selection
 
-Embeddings and summaries are each driven by an **ordered model chain** -- a
-CSV of `provider/model` entries where the order is the litellm fallback order
-(first entry is the active model). The provider is inferred from the model
-prefix, so the matching `<PROVIDER>_API_KEY` is all you need to add.
+Embeddings select the first `provider/model` entry in `EMBEDDING_MODELS`; later
+entries are retained as configuration but are not runtime fallbacks. Summaries
+use their ordered `SUMMARY_MODELS` chain. Providers are inferred from model
+prefixes and use the matching `<PROVIDER>_API_KEY`.
 
 | Variable | Purpose | Empty (default) |
 |---|---|---|
-| `EMBEDDING_MODELS` | Cloud embedding chain, e.g. `jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001` | Local fastretrieval registry |
-| `SUMMARY_MODELS` | Summarizer chain for `graph(action="summarize")`, e.g. `gemini/gemini-2.5-flash,openai/gpt-4o-mini` | Summaries disabled |
+| `EMBEDDING_MODELS` | Cloud embedding selection; the first entry is active | Local fastretrieval registry |
+| `SUMMARY_MODELS` | Summarizer fallback chain for `graph(action="summarize")` | Summaries disabled |
 
 All vectors are stored at a fixed 768 dimensions (MRL truncation), so the
 embeddings table schema stays valid across providers. Switching embedding
@@ -421,7 +421,7 @@ Sources: [Greptile](https://www.greptile.com/docs/introduction) · [Greptile pri
 
 ## Security
 
-- **Graceful fallbacks** -- Cloud embedding failure falls back to local ONNX.
+- **Explicit selection** -- Cloud embedding errors are reported; the runtime does not silently switch models or fall back to local ONNX.
 - **Error handling** -- Tools return error strings with fix suggestions, never crash.
 - **Read-only mount** -- Docker mode mounts the repo as `:ro` (read-only).
 - **SSRF-guarded endpoints** -- Custom `EMBEDDING_API_BASE` / `LLM_API_BASE` URLs are validated before any outbound call.

@@ -5,8 +5,8 @@
   "userConfig": {
     "EMBEDDING_MODELS": {
       "type": "string",
-      "title": "Embedding model chain (optional)",
-      "description": "CSV 'provider/model,provider/model' (order = litellm fallback); provider inferred from prefix. Empty = local fastretrieval registry. Example: jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
+      "title": "Embedding model selection (optional)",
+      "description": "CSV 'provider/model,provider/model'; the current runtime selects the first entry and infers its provider from the prefix. Empty = local fastretrieval registry. Example: jina_ai/jina-embeddings-v5-text-small",
       "required": false
     },
     "LOCAL_EMBEDDING_MODEL": {

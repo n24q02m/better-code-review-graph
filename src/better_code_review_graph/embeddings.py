@@ -11,7 +11,7 @@ Supports two backends:
 
 Backend selection:
 - ``EMBEDDING_MODELS`` non-empty -> 'cloud' (first entry is the model).
-- Empty -> 'local' (default ONNX, always available).
+- Empty -> 'local' unless ``DISABLE_LOCAL_EMBED`` makes it unavailable.
 - Default chain keeps only models whose provider key is configured.
 - Legacy ``EMBEDDING_BACKEND`` / ``EMBEDDING_MODEL`` honored one release
   (with a deprecation warning).
@@ -172,6 +172,30 @@ class EmbeddingBackend(Protocol):  # pragma: no cover
         ...
 
 
+def _supported_local_model_ids() -> list[str]:
+    """Return public fastretrieval model IDs without loading a model."""
+    from fastretrieval import TextEmbedding
+
+    model_ids: list[str] = []
+    for item in TextEmbedding.list_supported_models():
+        model_id = (
+            item.get("model")
+            if isinstance(item, dict)
+            else getattr(item, "model", None)
+        )
+        if isinstance(model_id, str) and model_id:
+            model_ids.append(model_id)
+    return model_ids
+
+
+def _first_supported_local_model_id() -> str:
+    """Return the first public fastretrieval registry model ID."""
+    model_ids = _supported_local_model_ids()
+    if not model_ids:
+        raise ValueError("fastretrieval TextEmbedding registry is empty")
+    return model_ids[0]
+
+
 # ---------------------------------------------------------------------------
 # LocalEmbeddingBackend (local ONNX)
 # ---------------------------------------------------------------------------
@@ -204,17 +228,7 @@ class LocalEmbeddingBackend:
             from fastretrieval import TextEmbedding
 
             if self._model_name is None:
-                for item in TextEmbedding.list_supported_models():
-                    model_id = (
-                        item.get("model")
-                        if isinstance(item, dict)
-                        else getattr(item, "model", None)
-                    )
-                    if isinstance(model_id, str) and model_id:
-                        self._model_name = model_id
-                        break
-                if self._model_name is None:
-                    raise ValueError("fastretrieval TextEmbedding registry is empty")
+                self._model_name = _first_supported_local_model_id()
 
             self._model = TextEmbedding(
                 model_name=self._model_name,
@@ -335,9 +349,11 @@ def _key_available(env_var: str) -> bool:
 
 
 def resolve_embedding_chain() -> list[str]:
-    """Ordered embedding chain from EMBEDDING_MODELS (fallback order).
+    """Configured embedding models in selection order.
 
-    Empty -> local ONNX. Legacy EMBEDDING_MODEL honored one release (warning).
+    The current embedding backend selects the first entry; later entries are
+    retained as configuration but are not runtime fallbacks. Empty -> local
+    ONNX. Legacy EMBEDDING_MODEL is honored for one release (warning).
     Default keeps ONLY models whose provider key is configured; none -> empty
     -> local. Not "any key" (that would keep keyless cloud models).
 
@@ -363,6 +379,11 @@ def resolve_embedding_chain() -> list[str]:
     return [m for m in _DEFAULT_EMBEDDING_CHAIN if _key_available(key_env_for_model(m))]
 
 
+def _selected_cloud_model(model: str | None = None) -> str:
+    """Return the model CloudEmbeddingBackend will use."""
+    return model or (resolve_embedding_chain() or [_DEFAULT_EMBEDDING_CHAIN[-1]])[0]
+
+
 class CloudEmbeddingBackend:
     """Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
 
@@ -378,9 +399,7 @@ class CloudEmbeddingBackend:
         model: str | None = None,
         api_key: str | None = None,
     ):
-        self.model = (
-            model or (resolve_embedding_chain() or [_DEFAULT_EMBEDDING_CHAIN[-1]])[0]
-        )
+        self.model = _selected_cloud_model(model)
         self.api_key = api_key
         self._provider = _detect_embedding_provider(self.model)
 
@@ -576,6 +595,30 @@ def resolve_backend() -> str:
         has_cloud_chain=bool(resolve_embedding_chain()),
         local_enabled=local_enabled_from_env("DISABLE_LOCAL_EMBED"),
     ).value
+
+
+def describe_backend_selection() -> dict[str, str | int | None]:
+    """Describe the selected embedding configuration without loading a model."""
+    backend = resolve_backend()
+    model: str | None = None
+
+    if backend == "cloud":
+        model = _selected_cloud_model()
+    elif backend == "local":
+        from .config import settings
+
+        configured_model = settings.local_embedding_model.strip()
+        if configured_model:
+            model, _ = _resolve_local_model_source(configured_model)
+        else:
+            model = _first_supported_local_model_id()
+
+    return {
+        "backend": backend,
+        "model": model,
+        "dimensions": _DEFAULT_DIMS,
+        "fallback": "unavailable" if backend == "unavailable" else "none",
+    }
 
 
 def init_backend(mode: str | None = None) -> EmbeddingBackend:
