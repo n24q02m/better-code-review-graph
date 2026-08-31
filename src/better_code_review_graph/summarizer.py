@@ -312,17 +312,20 @@ def batch_summarize(
     if not api_key and key_env == "GEMINI_API_KEY":
         api_key = config_value_for_current_request("GOOGLE_API_KEY")
 
-    rows = store._conn.execute(
+    # Performance Optimization: iterate over the cursor directly rather than
+    # materializing rows in memory using .fetchall(), which is expensive
+    # because it copies large `source_text` columns.
+    cursor = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
         "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
         (max_nodes,),
-    ).fetchall()
+    )
 
     generated = 0
     cached = 0
     errors = 0
 
-    for row in rows:
+    for row in cursor:
         row_id = row[0]
         src = row[1]
         stored_hash = row[2]
