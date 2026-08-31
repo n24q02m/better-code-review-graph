@@ -89,13 +89,13 @@ def test_embedding_dependencies_and_lock_use_stable_releases():
 
     requirements = project["dependencies"]
     assert "fastretrieval>=1.1.0,<2" in requirements
-    assert "n24q02m-mcp-core[llm]>=1.23.1,<2" in requirements
+    assert "n24q02m-mcp-core[llm]==1.23.2" in requirements
     legacy_distribution = "qwen" + "3-embed"
     assert not any(
         legacy_distribution in requirement.casefold() for requirement in requirements
     )
     assert packages["fastretrieval"]["version"] == "1.1.0"
-    assert packages["n24q02m-mcp-core"]["version"] == "1.23.1"
+    assert packages["n24q02m-mcp-core"]["version"] == "1.23.2"
     assert legacy_distribution not in packages
 
 
