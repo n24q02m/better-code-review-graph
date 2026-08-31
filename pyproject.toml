@@ -18,8 +18,8 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "mcp>=1.28.1,<2",
-    "fastmcp>=3.4.4,<4",
+    "mcp>=1.29.1,<2",
+    "fastmcp>=3.4.7,<4",
     "tree-sitter>=0.26.0,<1",
     "tree-sitter-language-pack>=1.15.8,<2",
     "networkx>=3.6.1,<4",
@@ -43,8 +43,8 @@ dependencies = [
     # crg's optional semgrep extra otherwise pins the resolver to litellm 1.83.0; this
     # floor lifts it (semgrep resolves to 1.79.x, fine for a dev-only SAST tool).
     "litellm>=1.98.0",
-    "Pygments>=2.20.0",
-    "alembic>=1.18.5,<2",
+    "Pygments>=2.21.0",
+    "alembic>=1.19.1,<2",
     "defusedxml>=0.7.1",
 ]
 
@@ -67,9 +67,9 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov",
     "pytest-timeout",
-    "ruff==0.16.3",
+    "ruff==0.16.4",
     "syrupy",
-    "ty==0.0.72",
+    "ty==0.0.74",
 ]
 
 [tool.hatch.build.targets.wheel]
