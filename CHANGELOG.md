@@ -2,6 +2,53 @@
 
 <!-- version list -->
 
+## v3.23.0-beta.1 (2026-08-31)
+
+### Bug Fixes
+
+- Batch repository ID lookups
+  ([`dd61bbe`](https://github.com/n24q02m/better-code-review-graph/commit/dd61bbe0213b56f0dd7a1de3de0b7419d5139cd9))
+
+- Bolt optimization replacing fetchall with cursor iteration
+  ([#1000](https://github.com/n24q02m/better-code-review-graph/pull/1000),
+  [`c2058e5`](https://github.com/n24q02m/better-code-review-graph/commit/c2058e5e11fe82c9a4ceb96057c7b0eaeeb15fc2))
+
+- Cover semantic query metadata
+  ([#995](https://github.com/n24q02m/better-code-review-graph/pull/995),
+  [`9318b49`](https://github.com/n24q02m/better-code-review-graph/commit/9318b490dd1fc5249a04942b4b4dec350be29517))
+
+- Narrow protocol harness text payloads
+  ([#996](https://github.com/n24q02m/better-code-review-graph/pull/996),
+  [`ccd60c9`](https://github.com/n24q02m/better-code-review-graph/commit/ccd60c9fbddd3b31d9b00a639a3469a77dd707da))
+
+- Refresh lock file
+  ([`3da404c`](https://github.com/n24q02m/better-code-review-graph/commit/3da404ca52a8cf72befcd36db38eb2cbfa08ae28))
+
+- Repair registry publication and stable retrieval pins
+  ([`4a1f0cd`](https://github.com/n24q02m/better-code-review-graph/commit/4a1f0cd03c819450f9377c2ee39b6e04e7485a1c))
+
+- **deps**: Lock file maintenance
+  ([#998](https://github.com/n24q02m/better-code-review-graph/pull/998),
+  [`48d6423`](https://github.com/n24q02m/better-code-review-graph/commit/48d64236d76bd684f5c562ae0d32768588b3ee07))
+
+- **deps**: Update astral-sh/setup-uv action to v10
+  ([`24d5735`](https://github.com/n24q02m/better-code-review-graph/commit/24d5735fd0b88dc959cea83b7c4cc8893570e4b8))
+
+- **deps**: Update patch dependencies
+  ([#997](https://github.com/n24q02m/better-code-review-graph/pull/997),
+  [`219520f`](https://github.com/n24q02m/better-code-review-graph/commit/219520f1e2230a02a86f4b8437ee4d2c8b8be2ff))
+
+- **tests**: Prune ignored directories in worktree scan and extend CLI test coverage
+  ([#1001](https://github.com/n24q02m/better-code-review-graph/pull/1001),
+  [`58cd197`](https://github.com/n24q02m/better-code-review-graph/commit/58cd197d4532427d61bc477930d986f68a56afc1))
+
+### Features
+
+- Expose embedding selection metadata
+  ([#999](https://github.com/n24q02m/better-code-review-graph/pull/999),
+  [`719deec`](https://github.com/n24q02m/better-code-review-graph/commit/719deec9eefd4eb385ef85912537236152394fdd))
+
+
 ## v3.22.0 (2026-08-29)
 
 ### Bug Fixes
