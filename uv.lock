@@ -158,7 +158,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.22.0"
+version = "3.23.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -203,7 +203,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "litellm", specifier = ">=1.98.0" },
     { name = "mcp", specifier = ">=1.29.1,<2" },
-    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = ">=1.23.1,<2" },
+    { name = "n24q02m-mcp-core", extras = ["llm"], specifier = "==1.23.2" },
     { name = "networkx", specifier = ">=3.6.1,<4" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.21.0" },
@@ -1223,7 +1223,7 @@ wheels = [
 
 [[package]]
 name = "n24q02m-mcp-core"
-version = "1.23.1"
+version = "1.23.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "authlib" },
@@ -1239,9 +1239,9 @@ dependencies = [
     { name = "starlette" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/ea/060df6d5c00c13a7e5ffe7bf04536bcbbc5577d68180d0533be3b8096f27/n24q02m_mcp_core-1.23.1.tar.gz", hash = "sha256:4408b14f73c16163048988e8b429fd73a02ffe83a4b4b8ffeef312ab843606a9", size = 364418, upload-time = "2026-08-29T12:46:36.993Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/6a/a53c1da697af2e7392d133715965ff1cf7ba4771a857d7c000526a962854/n24q02m_mcp_core-1.23.2.tar.gz", hash = "sha256:ffe32ed36e83015333632837e266746b097344654151aeea18444a24ab663997", size = 368487, upload-time = "2026-08-31T11:13:19.028Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/63/5ab34cca3f47402314622bd61e755d3c19ea4433676433a8536d6c7507df/n24q02m_mcp_core-1.23.1-py3-none-any.whl", hash = "sha256:8feac38084817544a1f9b9d256ec1b1d78584e971ab9967ba5a9526a6bbf01e6", size = 196653, upload-time = "2026-08-29T12:46:35.66Z" },
+    { url = "https://files.pythonhosted.org/packages/34/6e/4008a61ea2b40ece60d5551ea46cf27d8d0da64083743e71677ea59d2673/n24q02m_mcp_core-1.23.2-py3-none-any.whl", hash = "sha256:8e8d611129e15f7e81133355429c153c1fd05d2604b4286edf850d0642c0720d", size = 198270, upload-time = "2026-08-31T11:13:17.745Z" },
 ]
 
 [package.optional-dependencies]
