@@ -161,3 +161,53 @@ class TestGraphSubcommand:
                 main()
 
         assert exc_info.value.code == 2
+
+
+class TestCliCoverageExtensions:
+    def test_version_fallback_on_package_not_found(self):
+        from importlib.metadata import PackageNotFoundError
+
+        from better_code_review_graph.cli import _version
+
+        with patch(
+            "better_code_review_graph.cli.pkg_version",
+            side_effect=PackageNotFoundError("pkg"),
+        ):
+            assert _version() == "dev"
+
+    def test_query_spot_check_and_renamed_in_diff(self, capsys):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["better-code-review-graph", "query", "spot_check", "--n", "5"],
+            ),
+            patch(
+                "better_code_review_graph.tools.spot_check_last_callers",
+                return_value={"status": "ok"},
+            ) as mock_spot,
+        ):
+            rc = main()
+            assert rc == 0
+            mock_spot.assert_called_once()
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "better-code-review-graph",
+                    "query",
+                    "renamed_in_diff",
+                    "--base",
+                    "HEAD~1",
+                ],
+            ),
+            patch(
+                "better_code_review_graph.tools.renamed_in_diff",
+                return_value={"status": "ok"},
+            ) as mock_renamed,
+        ):
+            rc = main()
+            assert rc == 0
+            mock_renamed.assert_called_once()

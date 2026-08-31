@@ -1,5 +1,6 @@
 """Không còn tham chiếu tới tên package cũ ngoài lịch sử CHANGELOG."""
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,23 +19,23 @@ IGNORED_DIRECTORIES = {
 def _worktree_hits(pattern: str) -> list[str]:
     """Scan tracked and untracked text files in the current worktree."""
     hits = []
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(ROOT)
-        if path.name in ALLOWED or any(
-            part in IGNORED_DIRECTORIES for part in relative.parts
-        ):
-            continue
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        hits.extend(
-            f"{relative}:{line_number}:{line}"
-            for line_number, line in enumerate(lines, start=1)
-            if pattern in line
-        )
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRECTORIES]
+        dir_path = Path(dirpath)
+        for filename in filenames:
+            if filename in ALLOWED:
+                continue
+            path = dir_path / filename
+            relative = path.relative_to(ROOT)
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            hits.extend(
+                f"{relative}:{line_number}:{line}"
+                for line_number, line in enumerate(lines, start=1)
+                if pattern in line
+            )
     return hits
 
 
