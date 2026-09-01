@@ -34,6 +34,12 @@
           "name": "LOCAL_EMBEDDING_MODEL"
         },
         {
+          "description": "Fastretrieval TextCrossEncoder model ID; empty = reranking disabled",
+          "isRequired": false,
+          "isSecret": false,
+          "name": "LOCAL_RERANK_MODEL"
+        },
+        {
           "description": "Required positive output dimension for an external local embedding ID without a manifest",
           "isRequired": false,
           "isSecret": false,

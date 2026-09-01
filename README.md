@@ -203,6 +203,7 @@ its standard `<PROVIDER>_API_KEY`.
 | `LLM_API_BASE` | Custom OpenAI-compatible base URL for the summarizer (SSRF-guarded) |
 | `DISABLE_LOCAL_EMBED` | Skip the local ONNX download; embedding is unavailable unless a cloud chain is configured |
 | `LOCAL_EMBEDDING_MODEL` | Built-in fastretrieval model ID, or a local directory containing `fastretrieval-manifest.json` | Built-in default |
+| `LOCAL_RERANK_MODEL` | Fastretrieval `TextCrossEncoder` model ID for bounded semantic reranking | Blank (disabled) |
 | `LOCAL_EMBEDDING_DIM` | Required dimension for an external model ID without a manifest | `0` |
 | `LOCAL_EMBEDDING_MODEL_FILE` | ONNX file path inside a manifest-backed artifact directory | `onnx/model.onnx` |
 | `LOCAL_EMBEDDING_POOLING` | Explicit pooling for an external ID without a manifest: `CLS`, `MEAN`, `LAST_TOKEN`, or `DISABLED` | `MEAN` |
@@ -210,10 +211,15 @@ its standard `<PROVIDER>_API_KEY`.
 | `CRG_DATA_DIR` | Override the per-user data directory (default `~/.crg`) used for per-user graphs and credentials in HTTP multi-user mode |
 | `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` / `SUMMARY_MODEL` | **Deprecated** singular vars, honored one release with a warning -- migrate to the `*_MODELS` chains |
 
-CRG intentionally exposes no local reranker settings because this server has
-no local reranker path. A custom external embedding ID without a manifest must
-provide `LOCAL_EMBEDDING_DIM`; a local artifact directory must provide a valid
-`fastretrieval-manifest.json`, otherwise startup fails closed.
+When `LOCAL_RERANK_MODEL` is configured, semantic vector search retrieves a
+bounded candidate pool of `min(max(limit * 4, limit), 100)` rows, applies the
+existing `kind`, `repo`, and live-row filters, then reranks that pool and returns
+at most `limit` rows. The response uses `search_mode="semantic_reranked"` and
+adds `rerank_score` while preserving `similarity_score`. Blank keeps the
+existing `limit * 2` vector path and `search_mode="semantic"`. Configured
+reranker failures return an explicit error; CRG does not silently fall back to
+vector or keyword results. Keyword searches, including `as_of` snapshots, do
+not invoke the reranker.
 
 ### Example -- cloud embeddings + summaries
 

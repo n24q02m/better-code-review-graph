@@ -76,6 +76,7 @@ def test_empty_plugin_values_use_local_embedding_defaults(monkeypatch):
 
     for key in (
         "LOCAL_EMBEDDING_MODEL",
+        "LOCAL_RERANK_MODEL",
         "LOCAL_EMBEDDING_DIM",
         "LOCAL_EMBEDDING_MODEL_FILE",
         "LOCAL_EMBEDDING_POOLING",
@@ -86,6 +87,7 @@ def test_empty_plugin_values_use_local_embedding_defaults(monkeypatch):
     configured = Settings()
 
     assert configured.local_embedding_model == ""
+    assert configured.local_rerank_model == ""
     assert configured.local_embedding_dim == 0
     assert configured.local_embedding_model_file == "onnx/model.onnx"
     assert configured.local_embedding_pooling == "MEAN"
