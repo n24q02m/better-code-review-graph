@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .config import settings
 from .embeddings import (
     EmbeddingStore,
     embed_all_nodes,
@@ -2500,7 +2501,16 @@ def semantic_search_nodes(
             if as_of == "" and emb_store.available and emb_store.count() > 0:
                 # Vector search
                 search_mode = "semantic"
-                raw = semantic_search(query, store, emb_store, limit=limit * 2)
+                rerank_model = settings.local_rerank_model.strip()
+                if rerank_model and limit <= 0:
+                    return {
+                        "status": "error",
+                        "error": "Local reranking requires a positive limit",
+                    }
+                candidate_limit = (
+                    min(max(limit * 4, limit), 100) if rerank_model else limit * 2
+                )
+                raw = semantic_search(query, store, emb_store, limit=candidate_limit)
                 if kind:
                     raw = [r for r in raw if r.get("kind") == kind]
                 if repo:
@@ -2558,6 +2568,19 @@ def semantic_search_nodes(
                     if qn in surviving_set:
                         surviving.append(r)
                 raw = surviving
+                if rerank_model:
+                    from .reranker import LocalRerankError, rerank_candidates
+
+                    try:
+                        raw = rerank_candidates(query, raw, model_name=rerank_model)
+                    except LocalRerankError as error:
+                        return {
+                            "status": "error",
+                            "error": (
+                                f"Local reranking failed for {rerank_model!r}: {error}"
+                            ),
+                        }
+                    search_mode = "semantic_reranked"
                 raw = raw[:limit]
                 return {
                     "status": "ok",

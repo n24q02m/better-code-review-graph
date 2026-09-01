@@ -9,9 +9,12 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+import better_code_review_graph.tools as tools
+from better_code_review_graph.config import settings
 from better_code_review_graph.embeddings import _DEFAULT_DIMS
 from better_code_review_graph.graph import GraphStore
 from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from better_code_review_graph.reranker import LocalRerankError
 from better_code_review_graph.tools import (
     _BUILTIN_CALL_NAMES,
     _extract_relevant_lines,
@@ -944,6 +947,177 @@ class TestSemanticSearchWithEmbeddings:
                 query="login", kind="Function", repo_root=str(repo_with_graph)
             )
             assert result["status"] == "ok"
+
+    def test_semantic_search_blank_reranker_preserves_vector_mode(
+        self, repo_with_graph, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "local_rerank_model", "")
+        with (
+            patch(
+                "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+                return_value=_stub_local_model(),
+            ),
+            patch(
+                "fastretrieval.TextCrossEncoder",
+                side_effect=AssertionError("blank config constructed a reranker"),
+            ),
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
+            result = semantic_search_nodes(
+                query="authentication login",
+                limit=2,
+                repo_root=str(repo_with_graph),
+            )
+        assert result["status"] == "ok"
+        assert result["search_mode"] == "semantic"
+        assert all("rerank_score" not in row for row in result["results"])
+
+    def test_semantic_search_reranks_filtered_bounded_candidates(
+        self, repo_with_graph, monkeypatch
+    ):
+        captured = {}
+
+        def fake_rerank(query, candidates, *, model_name):
+            captured["query"] = query
+            captured["model_name"] = model_name
+            captured["candidates"] = [dict(candidate) for candidate in candidates]
+            ranked = []
+            for index, candidate in enumerate(reversed(candidates)):
+                enriched = dict(candidate)
+                enriched["rerank_score"] = 0.9 - index / 10
+                ranked.append(enriched)
+            return ranked
+
+        monkeypatch.setattr(settings, "local_rerank_model", "model/id")
+        monkeypatch.setattr(
+            "better_code_review_graph.reranker.rerank_candidates", fake_rerank
+        )
+        with patch(
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            return_value=_stub_local_model(),
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
+            result = semantic_search_nodes(
+                query="authentication login",
+                limit=2,
+                repo_root=str(repo_with_graph),
+            )
+
+        assert captured["query"] == "authentication login"
+        assert captured["model_name"] == "model/id"
+        assert len(captured["candidates"]) <= 8
+        assert result["status"] == "ok"
+        assert result["search_mode"] == "semantic_reranked"
+        assert len(result["results"]) <= 2
+        assert result["results"][0]["rerank_score"] == 0.9
+        assert "similarity_score" in result["results"][0]
+
+    def test_configured_semantic_search_expands_bounded_pool(
+        self, repo_with_graph, monkeypatch
+    ):
+        observed = {}
+        original_search = tools.semantic_search
+
+        def record_limit(query, store, embedding_store, limit=20):
+            observed["limit"] = limit
+            return original_search(query, store, embedding_store, limit=limit)
+
+        monkeypatch.setattr(settings, "local_rerank_model", "model/id")
+        monkeypatch.setattr(tools, "semantic_search", record_limit)
+        monkeypatch.setattr(
+            "better_code_review_graph.reranker.rerank_candidates",
+            lambda _query, candidates, *, model_name: [
+                {**candidate, "rerank_score": 0.5} for candidate in candidates
+            ],
+        )
+        with patch(
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            return_value=_stub_local_model(),
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
+            result = semantic_search_nodes(
+                query="authentication login",
+                limit=2,
+                repo_root=str(repo_with_graph),
+            )
+        assert result["status"] == "ok"
+        assert observed["limit"] == 8
+
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_configured_reranker_rejects_non_positive_limit(
+        self, repo_with_graph, monkeypatch, limit
+    ):
+        calls = []
+
+        def record_rerank(*args, **kwargs):
+            calls.append((args, kwargs))
+            return []
+
+        monkeypatch.setattr(settings, "local_rerank_model", "model/id")
+        monkeypatch.setattr(
+            "better_code_review_graph.reranker.rerank_candidates", record_rerank
+        )
+        with patch(
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            return_value=_stub_local_model(),
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
+            result = semantic_search_nodes(
+                query="authentication login",
+                limit=limit,
+                repo_root=str(repo_with_graph),
+            )
+
+        assert result == {
+            "status": "error",
+            "error": "Local reranking requires a positive limit",
+        }
+        assert calls == []
+
+    def test_configured_reranker_is_not_used_for_as_of(
+        self, repo_with_graph, monkeypatch
+    ):
+        def unexpected_rerank(*_args, **_kwargs):
+            raise AssertionError("historical keyword search invoked reranker")
+
+        monkeypatch.setattr(settings, "local_rerank_model", "model/id")
+        monkeypatch.setattr(
+            "better_code_review_graph.reranker.rerank_candidates", unexpected_rerank
+        )
+        result = semantic_search_nodes(
+            query="login",
+            as_of="a" * 40,
+            repo_root=str(repo_with_graph),
+        )
+        assert result["status"] == "ok"
+        assert result["search_mode"] == "keyword"
+
+    def test_configured_reranker_failure_returns_error(
+        self, repo_with_graph, monkeypatch
+    ):
+        def fail_rerank(*_args, **_kwargs):
+            raise LocalRerankError("local reranker returned the wrong score count")
+
+        monkeypatch.setattr(settings, "local_rerank_model", "model/id")
+        monkeypatch.setattr(
+            "better_code_review_graph.reranker.rerank_candidates", fail_rerank
+        )
+        with patch(
+            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            return_value=_stub_local_model(),
+        ):
+            embed_graph(repo_root=str(repo_with_graph))
+            result = semantic_search_nodes(
+                query="authentication login",
+                repo_root=str(repo_with_graph),
+            )
+        assert result == {
+            "status": "error",
+            "error": (
+                "Local reranking failed for 'model/id': "
+                "local reranker returned the wrong score count"
+            ),
+        }
 
 
 # ---------------------------------------------------------------------------

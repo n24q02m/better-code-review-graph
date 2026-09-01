@@ -195,6 +195,21 @@ class TestHookManifest:
             assert (REPO_ROOT / rel).is_file(), rel
 
 
+def test_local_rerank_model_is_optional_and_forwarded():
+    plugin = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text())
+    field = plugin["userConfig"]["LOCAL_RERANK_MODEL"]
+    assert field["type"] == "string"
+    assert field["required"] is False
+    assert (
+        plugin["mcpServers"]["better-code-review-graph"]["env"]["LOCAL_RERANK_MODEL"]
+        == "${user_config.LOCAL_RERANK_MODEL}"
+    )
+
+    server = json.loads((REPO_ROOT / "server.json").read_text())
+    names = {item["name"] for item in server["packages"][0]["environmentVariables"]}
+    assert "LOCAL_RERANK_MODEL" in names
+
+
 # ---------------------------------------------------------------------------
 # UserPromptSubmit -- stale graph warning
 # ---------------------------------------------------------------------------
