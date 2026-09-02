@@ -108,7 +108,7 @@ Per-task model chains, CSV `provider/model,provider/model`, order = litellm fall
 - `LOCAL_EMBEDDING_POOLING` -- explicit `CLS`, `MEAN`, `LAST_TOKEN`, or `DISABLED` value for an external ID without a manifest.
 - `LOCAL_EMBEDDING_NORMALIZE` -- explicit L2 normalization for an external ID without a manifest, default `true`.
 
-CRG không có đường reranker cục bộ nên không có cấu hình reranker local.
+CRG hỗ trợ reranker cục bộ opt-in qua `LOCAL_RERANK_MODEL` (Fastretrieval `TextCrossEncoder` model ID); bỏ trống nghĩa là tắt reranking, khi bật semantic search sẽ rerank pool kết quả và trả về `rerank_score`.
 Directory artifact thiếu manifest hoặc model ID ngoài registry thiếu dimension sẽ bị từ
 chối, không tự rơi về model mặc định.
 
