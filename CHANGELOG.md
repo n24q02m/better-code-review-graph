@@ -2,6 +2,32 @@
 
 <!-- version list -->
 
+## v3.24.0-beta.1 (2026-09-02)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.23.2 ([#1003](https://github.com/n24q02m/better-code-review-graph/pull/1003),
+  [`c5a4e2f`](https://github.com/n24q02m/better-code-review-graph/commit/c5a4e2f16c2bb30dc3b39ba5e458f7044568b281))
+
+### Documentation
+
+- Describe opt-in LOCAL_RERANK_MODEL reranking accurately
+  ([#1005](https://github.com/n24q02m/better-code-review-graph/pull/1005),
+  [`be22aea`](https://github.com/n24q02m/better-code-review-graph/commit/be22aea828371f18be8be94d2e7ea47567091748))
+
+### Features
+
+- Add opt-in local semantic reranking
+  ([#1004](https://github.com/n24q02m/better-code-review-graph/pull/1004),
+  [`b9b7fee`](https://github.com/n24q02m/better-code-review-graph/commit/b9b7fee43ab1f03c96cec0c022e476bc95d5df97))
+
+### Testing
+
+- Update mcp-core pin expectation
+  ([#1003](https://github.com/n24q02m/better-code-review-graph/pull/1003),
+  [`c5a4e2f`](https://github.com/n24q02m/better-code-review-graph/commit/c5a4e2f16c2bb30dc3b39ba5e458f7044568b281))
+
+
 ## v3.23.0 (2026-08-31)
 
 
