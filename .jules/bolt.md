@@ -55,6 +55,12 @@ Every landed entry is anchored to a commit. If an entry cannot be located in
 
 **Action:** To optimize querying aggregate graph statistics in `GraphStore` (e.g., `get_stats` in `src/better_code_review_graph/graph.py`), derive absolute totals (`total_nodes`, `total_edges`, `files_count`) in Python by summing the values of grouped queries (`sum(nodes_by_kind.values())`) rather than executing redundant `COUNT(*)` subqueries, reducing database roundtrips.
 
+### 2026-09-04 - Avoid full object materialization in graph exports
+
+**Learning:** When exporting the entire graph to formats like JSON-LD, GraphML, DOT, or Cypher, calling `get_all_nodes` and `get_all_edges` triggers `.fetchall()`-like behavior by materializing the entire SQLite table into heavy Python list representations of `GraphNode` and `GraphEdge` objects. This leads to massive peak memory usage for large graphs (e.g. 80MB vs 38MB in our benchmark for 50k nodes).
+
+**Action:** In `exporter.py`, iterate directly over the database cursor (`for node in store._conn.execute("SELECT * FROM nodes")`) and access the SQLite `Row` dictionary directly (e.g., `node["qualified_name"]`) instead of instantiating `GraphNode`/`GraphEdge` wrappers, eliminating unnecessary memory overhead.
+
 ## Rejected
 
 Proposals that were evaluated with measurements and declined. The reasoning is
