@@ -1451,6 +1451,14 @@ class GraphStore:
         cursor = self._conn.execute("SELECT * FROM nodes")
         return [self._row_to_node(r) for r in cursor]
 
+    def iter_all_nodes_raw(self) -> sqlite3.Cursor:
+        """Return an iterator over all node rows without object materialization."""
+        return self._conn.execute("SELECT * FROM nodes")
+
+    def iter_all_edges_raw(self) -> sqlite3.Cursor:
+        """Return an iterator over all edge rows without object materialization."""
+        return self._conn.execute("SELECT * FROM edges")
+
     def get_edges_among(self, qualified_names: set[str]) -> list[GraphEdge]:
         """Return edges where both source and target are in the given set.
 
