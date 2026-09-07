@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import threading
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1440,6 +1441,12 @@ class GraphStore:
         return [self._row_to_node(r) for r in cursor]
 
     # --- Public edge access (for visualization etc.) ---
+
+    def iter_raw_nodes(self) -> Iterator[sqlite3.Row]:
+        return self._conn.execute("SELECT * FROM nodes")
+
+    def iter_raw_edges(self) -> Iterator[sqlite3.Row]:
+        return self._conn.execute("SELECT * FROM edges")
 
     def get_all_edges(self) -> list[GraphEdge]:
         """Return all edges in the graph."""
