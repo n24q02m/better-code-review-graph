@@ -18,7 +18,7 @@ from better_code_review_graph.tools import get_impact_radius
 def dense_graph(tmp_path):
     """Repo with a dense impact graph: 200 functions all callers of one root."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     db = crg / "graph.db"

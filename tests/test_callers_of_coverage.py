@@ -11,7 +11,7 @@ from better_code_review_graph.tools import query_graph
 def repo_with_graph(tmp_path):
     """Create a temp repo with .git, python files, and a seeded graph."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -154,7 +154,7 @@ class TestCallersOfCoverage:
     def test_callers_of_fallback_match(self, repo_with_graph):
         """Test callers_of fallback path when qualified edges are missing but name matches."""
         abs_auth = str(repo_with_graph / "auth.py")
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
 
         # Add a node that is NOT called by its qualified name

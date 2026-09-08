@@ -128,7 +128,7 @@ CRG is local-first for coding workflows:
   impact analysis, review context, security scans, and repository onboarding.
 - **MCP stdio is the secondary protocol adapter** over the same local domain
   services; it does not maintain a separate graph implementation.
-- Graph state stays in `<repo>/.code-review-graph/graph.db` unless an explicit
+- Graph state stays in `<repo>/.better-code-review-graph/graph.db` unless an explicit
   multi-user/self-host configuration selects another data directory.
 - PyPI, CI, security scanning, GitHub releases, and eligible stable MCP Registry
   publication remain active. Historical public OCI tags are retained, but new
@@ -165,24 +165,27 @@ for cloud embeddings, LLM summaries, or an explicit BYO local artifact.
 
 Embeddings select the first `provider/model` entry in `EMBEDDING_MODELS`; later
 entries are retained as configuration but are not runtime fallbacks. Summaries
-use their ordered `SUMMARY_MODELS` chain. Providers are inferred from model
-prefixes and use the matching `<PROVIDER>_API_KEY`.
+select the first `SUMMARY_MODELS` entry too, without runtime fallback. Providers
+are inferred from model prefixes and use the matching `<PROVIDER>_API_KEY`.
 
 | Variable | Purpose | Empty (default) |
 |---|---|---|
 | `EMBEDDING_MODELS` | Cloud embedding selection; the first entry is active | Local fastretrieval registry |
-| `SUMMARY_MODELS` | Summarizer fallback chain for `graph(action="summarize")` | Summaries disabled |
+| `SUMMARY_MODELS` | Completion model selection for `graph(action="summarize")` | Summaries disabled |
 
-All vectors are stored at a fixed 768 dimensions (MRL truncation), so the
-embeddings table schema stays valid across providers. Switching embedding
-*model* changes the vector space; embeddings are tracked per provider and a
-provider switch triggers re-embedding rather than mixing incomparable vectors.
+Cohere `embed-v4.0` requests and stores **1024 dimensions**; other backends retain
+768-dimensional storage. CRG never slices, pads, or silently accepts a different
+provider width. The embedding row's model and byte width must match before reuse.
+Run `graph(action="embed")` after changing models or upgrading an old 768-wide
+Cohere index. Searches reject incompatible widths before a provider call; graph
+nodes are retained and re-embedding replaces only stale vectors.
 
 ### Provider API keys
 
-Cloud models need the provider key for whatever prefixes appear in your chains.
-Without any cloud key the server stays on local ONNX. Summarizers must expose a
-chat-completion API (so Jina and Cohere are embedding-only).
+Cloud models need the provider key for the selected model prefix. Keys alone
+never select models: an empty embedding chain stays local, and an empty summary
+chain stays disabled. A configured cloud error does not fall back to local or
+another provider. Summarizers require a chat-completion model.
 
 | Model prefix | API key env var | Get a key |
 |---|---|---|
@@ -190,6 +193,7 @@ chat-completion API (so Jina and Cohere are embedding-only).
 | `gemini/` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | <https://aistudio.google.com/apikey> |
 | `openai/` (or bare `text-embedding-*`) | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> |
 | `cohere/` | `COHERE_API_KEY` | <https://dashboard.cohere.com/api-keys> |
+| `openrouter/` | `OPENROUTER_API_KEY` | <https://openrouter.ai/settings/keys> |
 | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | <https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview> |
 
 Any other [litellm provider](https://docs.litellm.ai/docs/providers) works via
@@ -199,8 +203,8 @@ its standard `<PROVIDER>_API_KEY`.
 
 | Variable | Purpose |
 |---|---|
-| `EMBEDDING_API_BASE` | Custom OpenAI-compatible base URL for cloud embedding (SSRF-guarded) |
-| `LLM_API_BASE` | Custom OpenAI-compatible base URL for the summarizer (SSRF-guarded) |
+| `EMBEDDING_API_BASE` | Provider-compatible endpoint for cloud embedding, including CF AI Gateway (SSRF-guarded) |
+| `LLM_API_BASE` | Provider-compatible base URL for the summarizer, including CF AI Gateway (SSRF-guarded) |
 | `DISABLE_LOCAL_EMBED` | Skip the local ONNX download; embedding is unavailable unless a cloud chain is configured |
 | `LOCAL_EMBEDDING_MODEL` | Built-in fastretrieval model ID, or a local directory containing `fastretrieval-manifest.json` | Built-in default |
 | `LOCAL_RERANK_MODEL` | Fastretrieval `TextCrossEncoder` model ID for bounded semantic reranking | Blank (disabled) |
@@ -231,15 +235,26 @@ not invoke the reranker.
       "args": ["--python", "3.13", "better-code-review-graph"],
       "env": {
         "MCP_TRANSPORT": "stdio",
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
-        "JINA_AI_API_KEY": "jina_...",
-        "GEMINI_API_KEY": "AIza..."
+        "EMBEDDING_MODELS": "cohere/embed-v4.0",
+        "SUMMARY_MODELS": "openrouter/minimax/minimax-m3:free",
+        "EMBEDDING_API_BASE": "https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/cohere/v2/embed",
+        "LLM_API_BASE": "https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/openrouter/v1",
+        "COHERE_API_KEY": "<cohere-key>",
+        "OPENROUTER_API_KEY": "<openrouter-key>"
       }
     }
   }
 }
 ```
+
+Cohere embedding is paid. Authorize a bounded budget before a live index/query;
+the Minimax-free completion choice does not make embeddings free. This example
+does not add a process-wide model override: in remote mode each authenticated
+subject's relay record supplies its models, endpoints and keys. Missing subject
+credentials fail closed rather than inheriting the server environment.
+
+CRG currently has **no cloud rerank call**: `LOCAL_RERANK_MODEL` is its only
+reranking path. Setting `RERANK_MODELS` or `RERANK_API_BASE` does not enable one.
 
 You can also configure cloud keys interactively in HTTP mode via the relay
 setup form (`config(action="setup_start")` returns the browser URL). See the
@@ -279,7 +294,7 @@ Actions: `build` | `update` | `stats` | `embed` | `export` | `summarize`
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
 | `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud chain. |
 | `export` | Export the graph as `graphml` / `json-ld` / `dot` / `cypher`. Inline or to `output_path`. |
-| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (via the `SUMMARY_MODELS` chain; no-op when no provider key is set). Cost-capped via `max_nodes`. |
+| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (via the first explicit `SUMMARY_MODELS` entry; no-op when no model is selected). Calls bounded by `max_nodes`. |
 
 ### `query` -- Graph queries
 
@@ -452,10 +467,17 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). See
 
 | Mode | Graph DB | Cloud credentials | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `<repo>/.code-review-graph/graph.db` (git-ignored) | `~/.better-code-review-graph-mcp/config.json` (AES-GCM, machine-bound key) | Only your OS user |
+| stdio (default) | `<repo>/.better-code-review-graph/graph.db` (git-ignored) | `~/.better-code-review-graph-mcp/config.json` (AES-GCM, machine-bound key) | Only your OS user |
 | HTTP self-host (multi-user) | Per-user `~/.crg/subs/<sub>/graph.db` | Per-user `~/.crg/subs/<sub>/config.json` | Only the authenticated user |
 
 ## Migration & changelog
+
+Graph, security scan cache, and suppression state now use the package-owned
+`.better-code-review-graph/` directory. Run `graph(action="build", full_rebuild=true)`
+once after upgrading, followed by `graph(action="embed")` if semantic search is
+needed. The ambiguous old `.code-review-graph/` and `.code-review-graph.db` paths
+and their SQLite sidecars are left untouched: they may belong to the separate
+upstream package. Review and reapply any desired suppression rules explicitly.
 
 The v2.0 release added **temporal columns** (`valid_from_sha` / `valid_to_sha`
 on every node and edge) plus an opt-in security scanner. The schema migration

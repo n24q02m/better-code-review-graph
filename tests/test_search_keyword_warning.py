@@ -41,7 +41,7 @@ def test_looks_like_literal_identifier(query, is_literal):
 @pytest.fixture
 def repo_with_graph(tmp_path):
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     db = crg / "graph.db"

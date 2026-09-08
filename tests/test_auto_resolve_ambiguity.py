@@ -18,7 +18,7 @@ from better_code_review_graph.tools import query_graph
 def repo_with_collision(tmp_path):
     """Repo with `auth.py` File and `auth` Function colliding by name."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     db = crg / "graph.db"

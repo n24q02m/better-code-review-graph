@@ -30,7 +30,7 @@ def _clear_cache():
 def repo_with_callers(tmp_path):
     """Repo where 5 callers reference one Function across multiple files."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
 

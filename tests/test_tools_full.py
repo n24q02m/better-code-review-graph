@@ -41,7 +41,7 @@ from better_code_review_graph.tools import (
 def repo_with_graph(tmp_path):
     """Create a temp repo with .git, python files, and a seeded graph."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -210,7 +210,7 @@ class TestValidateRepoRoot:
         assert result == tmp_path.resolve()
 
     def test_valid_crg_dir(self, tmp_path):
-        (tmp_path / ".code-review-graph").mkdir()
+        (tmp_path / ".better-code-review-graph").mkdir()
         result = _validate_repo_root(tmp_path)
         assert result == tmp_path.resolve()
 
@@ -442,7 +442,7 @@ class TestQueryGraph:
         """callers_of should use search_edges_by_target_name fallback."""
         abs_auth = str(repo_with_graph / "auth.py")
         # Add an edge with unqualified target
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         store.upsert_node(
             NodeInfo(
@@ -537,7 +537,7 @@ class TestGetReviewContext:
         large_file.write_text("\n".join(lines))
 
         abs_large = str(large_file)
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         store.upsert_node(
             NodeInfo(
@@ -874,7 +874,7 @@ class TestFindLargeFunctions:
     def test_summary_truncation(self, repo_with_graph):
         """Summary should show max 10 results and '... and N more'."""
         # Add many large nodes
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         for i in range(15):
             fp = str(repo_with_graph / f"big_{i}.py")
@@ -1146,7 +1146,7 @@ class TestQueryGraphEdgeCases:
     def test_query_ambiguous_multiple_candidates(self, repo_with_graph):
         """Multiple search results should return ambiguous status."""
         # Add multiple nodes with similar names
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         abs_main = str(repo_with_graph / "main.py")
@@ -1188,7 +1188,7 @@ class TestQueryGraphEdgeCases:
 
     def test_callers_of_with_edges_no_caller_node(self, repo_with_graph):
         """Caller edge exists but source node is missing from graph."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_edge(
@@ -1212,7 +1212,7 @@ class TestQueryGraphEdgeCases:
 
     def test_callees_of_with_missing_callee_node(self, repo_with_graph):
         """Callee edge exists but target node is missing."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_main = str(repo_with_graph / "main.py")
         store.upsert_edge(
@@ -1249,7 +1249,7 @@ class TestQueryGraphEdgeCases:
 
     def test_inheritors_of_with_inherits_edge(self, repo_with_graph):
         """inheritors_of should find classes that inherit."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_node(
@@ -1284,7 +1284,7 @@ class TestQueryGraphEdgeCases:
 
     def test_find_large_functions_with_no_line_info(self, repo_with_graph):
         """Nodes with None line_start/line_end should have line_count=0."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_node(
@@ -1341,7 +1341,7 @@ class TestQueryGraphEdgeCases:
         from the last segment of the qualified name (e.g. "MyTarget" stored as edge
         target while qualified name ends with "::MyClass.MyTarget").
         """
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_file = str(repo_with_graph / "fallback_test.py")
         store.upsert_node(
@@ -1402,7 +1402,7 @@ class TestQueryGraphEdgeCases:
 
     def test_tests_for_with_tested_by_edge(self, repo_with_graph):
         """tests_for should find tests via TESTED_BY edge where target=function_qn."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_src = str(repo_with_graph / "tested.py")
         abs_test = str(repo_with_graph / "test_tested.py")
@@ -1449,7 +1449,7 @@ class TestQueryGraphEdgeCases:
 
     def test_keyword_search_score_ordering(self, repo_with_graph):
         """Keyword search should order: exact > prefix > partial."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         abs_f = str(repo_with_graph / "scoring.py")
         store.upsert_node(
@@ -1496,7 +1496,7 @@ class TestQueryGraphEdgeCases:
 
     def test_find_large_functions_with_external_path(self, repo_with_graph):
         """find_large_functions should handle file_path outside repo root."""
-        db_path = repo_with_graph / ".code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db_path))
         # Node with absolute path outside repo
         store.upsert_node(

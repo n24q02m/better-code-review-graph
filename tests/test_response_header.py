@@ -22,7 +22,7 @@ from better_code_review_graph.tools import (
 def repo_with_graph(tmp_path):
     """Minimal repo + graph fixture for header tests."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 

@@ -310,7 +310,7 @@ def _validate_repo_root(path: Path) -> Path:
     """Validate that a path is a plausible project root.
 
     Ensures the path is an existing directory that contains a ``.git``
-    or ``.code-review-graph`` directory, preventing arbitrary file-system
+    or ``.better-code-review-graph`` directory, preventing arbitrary file-system
     traversal via the ``repo_root`` parameter.
     """
     resolved = path.resolve()
@@ -318,11 +318,11 @@ def _validate_repo_root(path: Path) -> Path:
         raise ValueError(f"repo_root is not an existing directory: {resolved}")
     if (
         not (resolved / ".git").exists()
-        and not (resolved / ".code-review-graph").exists()
+        and not (resolved / ".better-code-review-graph").exists()
     ):
         raise ValueError(
             f"repo_root does not look like a project root (no .git or "
-            f".code-review-graph directory found): {resolved}"
+            f".better-code-review-graph directory found): {resolved}"
         )
     return resolved
 
@@ -337,6 +337,18 @@ def _get_store(repo_root: str | None = None) -> tuple[GraphStore, Path]:
 # ---------------------------------------------------------------------------
 # Tool 1: build_or_update_graph
 # ---------------------------------------------------------------------------
+
+
+def _php_call_warnings(coverage: dict[str, int]) -> list[str]:
+    unresolved = coverage.get("unresolved", 0)
+    if not unresolved:
+        return []
+    return [
+        f"{unresolved} of {coverage['total']} PHP CALLS targets are unresolved; "
+        "callers and impact results are partial. Dynamic receivers, ambiguous "
+        "definitions, external libraries, and inherited methods may require "
+        "manual inspection."
+    ]
 
 
 def build_or_update_graph(
@@ -376,6 +388,7 @@ def build_or_update_graph(
                     f"created {result['total_nodes']} nodes and {result['total_edges']} edges."
                 ),
                 **result,
+                "warnings": _php_call_warnings(result.get("php_calls", {})),
             }
         else:
             result = incremental_update(root, store, base=base)
@@ -385,6 +398,7 @@ def build_or_update_graph(
                     "build_type": "incremental",
                     "summary": "No changes detected. Graph is up to date.",
                     **result,
+                    "warnings": _php_call_warnings(result.get("php_calls", {})),
                 }
             # #329: surface reviewer-oriented summary alongside raw counts.
             reviewer_summary = result.get("reviewer_summary") or {}
@@ -409,6 +423,7 @@ def build_or_update_graph(
                 "build_type": "incremental",
                 "summary": " ".join(summary_lines),
                 **result,
+                "warnings": _php_call_warnings(result.get("php_calls", {})),
             }
     except Exception as e:
         return {
@@ -524,7 +539,7 @@ def _full_build_federated(
 
     Each entry in ``roots`` is registered with :class:`RepoRegistry` so
     nodes/edges parsed under it inherit the matching ``repo_id``. The
-    primary ``repo_root`` (the one whose ``.code-review-graph`` dir backs
+    primary ``repo_root`` (the one whose ``.better-code-review-graph`` dir backs
     the DB) is registered too so its files don't fall outside every
     root and lose their ``repo_id``.
     """
@@ -533,6 +548,7 @@ def _full_build_federated(
         store, primary_root, roots, registry, target_repos
     )
 
+    php_calls = store.resolve_php_calls()
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")
     store.commit()
@@ -553,6 +569,8 @@ def _full_build_federated(
         "total_edges": total_edges,
         "roots": [str(r) for r in [primary_root, *roots]],
         "errors": stats["errors"],
+        "php_calls": php_calls,
+        "warnings": _php_call_warnings(php_calls),
     }
 
 
@@ -2501,7 +2519,16 @@ def semantic_search_nodes(
             if as_of == "" and emb_store.available and emb_store.count() > 0:
                 # Vector search
                 search_mode = "semantic"
-                rerank_model = settings.local_rerank_model.strip()
+                from .credential_state import (
+                    config_value_for_current_request,
+                    get_current_sub,
+                )
+
+                rerank_model = (
+                    config_value_for_current_request("LOCAL_RERANK_MODEL") or ""
+                    if get_current_sub() is not None
+                    else settings.local_rerank_model
+                ).strip()
                 if rerank_model and limit <= 0:
                     return {
                         "status": "error",
@@ -2714,7 +2741,7 @@ def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
     Uses dual-mode embedding: local fastretrieval ONNX by default or cloud via litellm passthrough.
-    Fixed 768-dim storage via MRL truncation.
+    Cohere embed-v4.0 stores exact 1024-dimensional vectors; other backends use 768.
 
     Only embeds nodes that don't already have up-to-date embeddings.
 
@@ -2887,8 +2914,8 @@ def summarize_graph_dispatch(
 ) -> dict[str, Any]:
     """Generate LLM summaries for Function nodes (Phase 1 v1.6.x).
 
-    Provider auto-detected from env (GEMINI_API_KEY > GOOGLE_API_KEY > OPENAI_API_KEY).
-    No-op when no provider configured. Cost cap via max_nodes (default 500).
+    Uses the first request-scoped SUMMARY_MODELS entry; no implicit provider fallback.
+    No-op when no model configured. Call cap via max_nodes (default 500).
 
     Args:
         repo_root: Repository root path. Auto-detected if omitted.
@@ -2913,8 +2940,8 @@ def summarize_graph_dispatch(
             "status": "skipped",
             "reason": "no_provider_configured",
             "summary": (
-                "Skipped: no provider configured. Set GEMINI_API_KEY (or GOOGLE_API_KEY) "
-                "for Gemini, or OPENAI_API_KEY for OpenAI to enable LLM summaries."
+                "Skipped: no summary model configured. Set SUMMARY_MODELS and its "
+                "provider credential to enable LLM summaries."
             ),
         }
 
@@ -3080,7 +3107,7 @@ def find_large_functions(
 # Tool 10: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
 # ---------------------------------------------------------------------------
 
-_SUPPRESS_PATH_DEFAULT = ".code-review-graph/security-suppressions.json"
+_SUPPRESS_PATH_DEFAULT = ".better-code-review-graph/security-suppressions.json"
 _LAST_SCAN_CACHE_FILENAME = "security-last-scan.json"
 
 
@@ -3325,14 +3352,14 @@ def _save_suppressions(root: Path, suppressions: list[str]) -> None:
 
 def _cache_last_scan(root: Path, payload: dict[str, Any]) -> None:
     """Cache the most recent scan payload so ``security_report`` can re-emit it."""
-    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path = root / ".better-code-review-graph" / _LAST_SCAN_CACHE_FILENAME
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _load_last_scan(root: Path) -> dict[str, Any] | None:
     """Return the cached scan payload, or ``None`` if absent/corrupt."""
-    cache_path = root / ".code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path = root / ".better-code-review-graph" / _LAST_SCAN_CACHE_FILENAME
     if not cache_path.is_file():
         return None
     try:

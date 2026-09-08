@@ -7,6 +7,18 @@ Graph lifecycle operations — build, update, embed, and check stats.
 ### build
 Full or incremental graph build. Parses source files with Tree-sitter, extracts functions/classes/imports, and builds a structural knowledge graph.
 
+Local state lives at `.better-code-review-graph/graph.db`, separate from the
+upstream package's `.code-review-graph` directory. On upgrade, run a full build;
+old databases and sidecars are never adopted or modified automatically.
+
+Build responses include `php_calls: {total, resolved, unresolved}`. PHP functions,
+static/scoped calls, `$this`/`self` calls, namespace and `use` aliases are resolved
+to unique current symbols in the same repository after all files are indexed.
+Bindings are recalculated after incremental edits. Dynamic receivers, ambiguous
+definitions, external libraries, and inherited methods without a direct lexical
+target stay unresolved; their counts warn that impact/callers results are partial,
+not proof of no callers.
+
 **Parameters:**
 - `full_rebuild`: Re-parse all files (default: false, incremental)
 - `base`: Git ref for incremental diff (default: HEAD~1)
@@ -61,7 +73,11 @@ Embedding selection:
 - **Cloud**: the first `EMBEDDING_MODELS` entry; configured entries after it are not runtime fallbacks
 - **Unavailable**: `DISABLE_LOCAL_EMBED=true` with no cloud model configured
 
-All vectors use fixed 768-dimension storage. Switching backends does not invalidate existing vectors.
+Cohere `embed-v4.0` requests and stores exact 1024-dimensional vectors; other
+backends retain 768 dimensions. No response is truncated or padded. Re-run
+`graph(action="embed")` after changing models or upgrading a 768-wide Cohere
+index; incompatible stored widths block queries until re-embedded. Queries use
+Cohere's `search_query` input type, while indexing uses `search_document`.
 `config(action="status")` reports the selected backend, model, dimensions, and
 `none`/`unavailable` fallback result without loading the model.
 
@@ -109,15 +125,18 @@ Generate one-paragraph LLM docstrings for `Function` nodes that lack a stored su
 - `max_nodes`: Cost cap -- max LLM calls per invocation (default: `500`)
 - `repo_root`: Repository root path (auto-detected)
 
-**Provider auto-detection** (priority order):
-1. `GEMINI_API_KEY` (or `GOOGLE_API_KEY` alias) -- Gemini
-2. `OPENAI_API_KEY` -- OpenAI
+The first request-scoped `SUMMARY_MODELS` entry selects the completion model;
+there is no implicit key-based selection or runtime fallback. For example,
+`openrouter/minimax/minimax-m3:free` uses `OPENROUTER_API_KEY` and the per-subject
+`LLM_API_BASE` for the CF AI Gateway OpenRouter route.
 
-Local-only mode does **not** generate summaries. This is intentional: a small ONNX embedder running offline is the zero-cost default; summaries are an opt-in cloud upgrade. When no provider key is set, the action returns `status: "skipped", reason: "no_provider_configured"` and the graph is unchanged.
+Local-only mode does **not** generate summaries. When no summary model is set,
+the action returns `status: "skipped", reason: "no_provider_configured"` and the
+graph is unchanged. A provider key alone does not enable summaries.
 
 **Cost cap + caching:**
 - Default cap is 500 LLM calls per invocation. Tune with `max_nodes` for tighter budgets.
-- Repeat invocations skip nodes whose `source_hash` + `summary_provider` haven't changed -- the cache key is `"{sha256(source_text)}:{provider}"`, so re-running on an unchanged repo is a no-op (cached count goes up, generated count stays at 0). Switching provider invalidates entries even when source bytes are identical.
+- Repeat invocations skip nodes whose `source_hash` + full selected model match. `summary_provider` stores the `provider/model` identity, so switching models within one provider invalidates stale summaries too.
 
 **Example:**
 ```json

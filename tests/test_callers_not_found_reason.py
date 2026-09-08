@@ -22,7 +22,7 @@ from better_code_review_graph.tools import query_graph
 def repo_with_graph(tmp_path):
     """Build a graph with class methods, ambiguous names, and zero-caller funcs."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -169,7 +169,7 @@ class TestSymbolNotIndexed:
         the qualified name.
         """
         (tmp_path / ".git").mkdir()
-        crg_dir = tmp_path / ".code-review-graph"
+        crg_dir = tmp_path / ".better-code-review-graph"
         crg_dir.mkdir()
 
         only_py = tmp_path / "only.py"

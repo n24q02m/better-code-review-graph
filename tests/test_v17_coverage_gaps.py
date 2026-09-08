@@ -50,7 +50,7 @@ def _run_git(repo: Path, *args: str) -> None:
 def _make_minimal_repo(tmp_path: Path) -> Path:
     """Create a minimal repo with a .code-review-graph dir for graph storage."""
     (tmp_path / ".git").mkdir(exist_ok=True)
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir(exist_ok=True)
     (crg / ".gitignore").write_text("*\n")
     return tmp_path

@@ -22,7 +22,7 @@ add ``py_app`` as the importer of ``py_lib``):
 
     workspace/
     .git/                           # primary root (where the DB lives)
-    .code-review-graph/
+    .better-code-review-graph/
     py_lib/                         # Python library
         .git/
         pyproject.toml              # name = "py_lib"
@@ -153,7 +153,7 @@ def federation_workspace(tmp_path: Path) -> Iterator[dict[str, Any]]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    (workspace / ".code-review-graph").mkdir()
+    (workspace / ".better-code-review-graph").mkdir()
 
     py_lib = workspace / "py_lib"
     py_app = workspace / "py_app"
@@ -172,7 +172,7 @@ def federation_workspace(tmp_path: Path) -> Iterator[dict[str, Any]]:
     )
     assert result["status"] == "ok", result
 
-    db_path = workspace / ".code-review-graph" / "graph.db"
+    db_path = workspace / ".better-code-review-graph" / "graph.db"
     store = GraphStore(str(db_path))
 
     # Map every registered path -> repo_id so tests can look up by name.
@@ -433,7 +433,7 @@ def test_three_repo_federation_last_indexed_sha_recorded(
     ).stdout.strip()
     assert head, "git rev-parse HEAD returned empty"
 
-    crg_dir = repo / ".code-review-graph"
+    crg_dir = repo / ".better-code-review-graph"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 

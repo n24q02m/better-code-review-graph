@@ -64,10 +64,22 @@
           "name": "LOCAL_EMBEDDING_NORMALIZE"
         },
         {
-          "description": "Ordered summarizer model chain; empty = summaries disabled",
+          "description": "Summarizer model selection; first provider/model entry only, no fallback; empty = disabled",
           "isRequired": false,
           "isSecret": false,
           "name": "SUMMARY_MODELS"
+        },
+        {
+          "description": "Credential for explicitly selected Cohere embeddings, including a configured CF AI Gateway route",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "COHERE_API_KEY"
+        },
+        {
+          "description": "Credential for explicitly selected OpenRouter completion models",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "OPENROUTER_API_KEY"
         },
         {
           "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
@@ -76,13 +88,13 @@
           "name": "EMBEDDING_BACKEND"
         },
         {
-          "description": "Custom OpenAI-compatible base URL for cloud embedding (litellm passthrough). Optional.",
+          "description": "Provider-compatible cloud embedding endpoint, including CF AI Gateway; SSRF-guarded.",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_API_BASE"
         },
         {
-          "description": "Custom OpenAI-compatible base URL for the LLM summarizer (litellm passthrough). Optional.",
+          "description": "Provider-compatible summarizer base URL, including CF AI Gateway; SSRF-guarded.",
           "isRequired": false,
           "isSecret": false,
           "name": "LLM_API_BASE"

@@ -93,6 +93,15 @@ def test_export_jsonld_emits_node_link_format(populated_store):
     assert e["kind"] == "CALLS"
 
 
+def test_jsonld_preserves_missing_language_as_empty_string(populated_store):
+    populated_store._conn.execute("UPDATE nodes SET language = NULL")
+    parsed = json.loads(export_jsonld(populated_store))
+    assert {node["@id"]: node["language"] for node in parsed["nodes"]} == {
+        "src/x.py::foo": "",
+        "src/x.py::bar": "",
+    }
+
+
 def test_export_dot_emits_digraph_with_quoted_ids(populated_store):
     out = export_dot(populated_store)
     assert out.startswith("digraph G {")
@@ -174,8 +183,8 @@ def test_export_crg_repo_id_matches_federation_for_same_root(tmp_path):
     from better_code_review_graph.federation import RepoRegistry, derive_repo_id
 
     root = tmp_path / "myrepo"
-    (root / ".code-review-graph").mkdir(parents=True)
-    db_path = root / ".code-review-graph" / "graph.db"
+    (root / ".better-code-review-graph").mkdir(parents=True)
+    db_path = root / ".better-code-review-graph" / "graph.db"
 
     store = GraphStore(str(db_path))
     try:
@@ -216,8 +225,8 @@ def test_export_graph_dispatch_passes_root_for_crg_repo_id(tmp_path):
     from better_code_review_graph.federation import derive_repo_id
 
     root = tmp_path / "myrepo"
-    (root / ".code-review-graph").mkdir(parents=True)
-    db_path = root / ".code-review-graph" / "graph.db"
+    (root / ".better-code-review-graph").mkdir(parents=True)
+    db_path = root / ".better-code-review-graph" / "graph.db"
     store = GraphStore(str(db_path))
     try:
         with_root = json.loads(export_graph(store, format="crg", root=root))
@@ -248,7 +257,7 @@ def test_export_graphml_handles_empty_graph(tmp_path):
         store.close()
 
 
-def test_export_dot_escapes_quotes_in_labels(tmp_path):
+def test_export_dot_escapes_node_and_edge_identifiers_and_labels(tmp_path):
     db_path = tmp_path / "edge.db"
     store = GraphStore(str(db_path))
     try:
@@ -263,8 +272,19 @@ def test_export_dot_escapes_quotes_in_labels(tmp_path):
             ),
             file_hash="h",
         )
+        store.upsert_edge(
+            EdgeInfo(
+                kind="CALLS",
+                source='src/x.py::say"hi"',
+                target='dst"\npath',
+                file_path="src/x.py",
+                line=2,
+            )
+        )
         out = export_dot(store)
         assert 'label="say\\"hi\\""' in out
+        assert '"src/x.py::say\\"hi\\"" [label=' in out
+        assert '"src/x.py::say\\"hi\\"" -> "dst\\"\\npath" [label="CALLS"];' in out
     finally:
         store.close()
 
@@ -411,5 +431,37 @@ def test_export_graphml_skips_empty_edge_attrs(tmp_path):
         assert '<data key="edge_file">' not in out
         # But edge_kind still emitted
         assert '<data key="edge_kind">CALLS</data>' in out
+    finally:
+        store.close()
+
+
+def test_cypher_quotes_dynamic_types_and_reuses_string_escaping(tmp_path):
+    store = GraphStore(tmp_path / "graph.db")
+    try:
+        path = "src\\quote'file.py"
+        qualified = f"{path}::f"
+        store.upsert_node(
+            NodeInfo(
+                kind=r"Odd\u0060Label`",
+                name="f",
+                file_path=path,
+                line_start=1,
+                line_end=2,
+            )
+        )
+        store.upsert_edge(
+            EdgeInfo(
+                kind=r"calls\u0060type`",
+                source=qualified,
+                target=qualified,
+                file_path=path,
+                line=1,
+            )
+        )
+        out = export_cypher(store)
+        assert ":`Odd``Label``` {" in out
+        assert "CREATE (a)-[:`CALLS``TYPE```]->(b);" in out
+        escaped_id = "src\\\\quote\\'file.py::f"
+        assert out.count(f"id: '{escaped_id}'") == 3
     finally:
         store.close()

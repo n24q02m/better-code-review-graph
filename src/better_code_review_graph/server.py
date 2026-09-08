@@ -247,8 +247,8 @@ def graph(
         a CI runner, import on a laptop).
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
         Function nodes. Models come from the SUMMARY_MODELS chain (provider
-        inferred from the model prefix); when unset a key-gated default
-        (gemini or openai) is used. No-op when no provider key is configured.
+        inferred from the model prefix). No-op when no summary model is configured;
+        provider credentials alone do not enable summaries.
         Cost-capped via max_nodes (default 500 LLM calls per invocation).
     """
     match action:
@@ -973,7 +973,7 @@ def security(
       payload as JSON (default) or SARIF v2.1.0.
     - suppress (rule_id -> remove=false, repo_root): Add or remove a rule_id
       from the persistent suppression list at
-      ``.code-review-graph/security-suppressions.json``.
+      ``.better-code-review-graph/security-suppressions.json``.
     - rule_list (-> engine='heuristic'|'semgrep'): Enumerate active rules.
     """
     match action:
@@ -1061,7 +1061,10 @@ async def run_http(port: int = 0) -> None:
         ``ContextVar.set/reset`` keeps the binding scoped to this request
         even under concurrent in-flight requests on the same event loop.
         """
-        token = _current_sub.set(claims.get("sub"))
+        sub = claims.get("sub")
+        if not isinstance(sub, str) or not sub:
+            raise RuntimeError("Remote requests require an authenticated subject")
+        token = _current_sub.set(sub)
         try:
             await next_()
         finally:
