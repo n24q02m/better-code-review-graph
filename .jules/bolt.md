@@ -101,3 +101,9 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 
 **Learning:** When fetching dependent edges via `get_edges_by_targets` and `get_edges_by_target`, filtering by edge kind in Python (e.g. `if e.kind == "IMPORTS_FROM"`) forces SQLite to materialize and return thousands of irrelevant rows, creating a significant memory overhead and serialization bottleneck.
 **Action:** Always push the `kind` filter directly down to the database using the existing `_kind_filter` helper so the database engine only returns the relevant subsets of graph edges, preventing unnecessary Python-side object materialization.
+
+### 2026-08-30 - Stream JSON generation to avoid materializing large datasets
+
+**Learning:** Using list comprehensions to build a full list of dicts from a database cursor before passing them to `json.dumps()` creates massive memory overhead for large exports.
+
+**Action:** When exporting large JSON structures, stream the output by iterating over the database cursor in a Python generator and yielding incrementally-dumped string pieces (e.g., using `json.dumps()` per row) rather than materializing the full result set.

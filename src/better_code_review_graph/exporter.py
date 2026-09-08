@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -249,12 +250,47 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     from .federation import derive_repo_id
 
     repo_id = derive_repo_id(root if root is not None else store.db_path.parent)
-    nodes = [dict(row) for row in store._conn.execute("SELECT * FROM nodes")]
-    edges = [dict(row) for row in store._conn.execute("SELECT * FROM edges")]
-    return json.dumps(
-        {"schema_version": 1, "repo_id": repo_id, "nodes": nodes, "edges": edges},
-        indent=2,
-    )
+
+    # Performance Optimization: iterate the cursor directly and stream JSON chunks
+    # to prevent materializing lists of dicts in memory for large exports.
+    def generate() -> Iterator[str]:
+        yield "{\n"
+        yield '  "schema_version": 1,\n'
+        yield f'  "repo_id": {json.dumps(repo_id)},\n'
+
+        yield '  "nodes": ['
+        first = True
+        for row in store._conn.execute("SELECT * FROM nodes"):
+            if first:
+                yield "\n"
+            else:
+                yield ",\n"
+            first = False
+            yield "    " + json.dumps(dict(row), indent=2).replace("\n", "\n    ")
+
+        if not first:
+            yield "\n  ],\n"
+        else:
+            yield "],\n"
+
+        yield '  "edges": ['
+        first = True
+        for row in store._conn.execute("SELECT * FROM edges"):
+            if first:
+                yield "\n"
+            else:
+                yield ",\n"
+            first = False
+            yield "    " + json.dumps(dict(row), indent=2).replace("\n", "\n    ")
+
+        if not first:
+            yield "\n  ]\n"
+        else:
+            yield "]\n"
+
+        yield "}"
+
+    return "".join(generate())
 
 
 _FORMATTERS = {
