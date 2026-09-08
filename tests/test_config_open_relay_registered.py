@@ -7,6 +7,8 @@ can re-trigger the relay form by tool call.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from better_code_review_graph.server import mcp
@@ -35,13 +37,9 @@ class TestConfigOpenRelayRegistered:
 
     async def test_config_open_relay_returns_expected_keys(self):
         """Tool handler must return the documented ``url/browser_opened/status`` shape.
-
-        After spec 2026-05-01-stdio-pure-http-multiuser.md, the
-        ``config__open_relay`` tool is HTTP-only -- it returns
-        ``status: 'stdio_unsupported'`` when the server is running in stdio
-        mode (no ``PUBLIC_URL``). The server module loads with
-        ``PUBLIC_URL`` unset by default, so ``status`` is
-        ``stdio_unsupported`` here.
+        The registered handler is fixed at module import, so the expected
+        status follows the import-time ``PUBLIC_URL`` value. Empty strings
+        are treated as stdio by the production registration.
         """
         result = await mcp.call_tool("config__open_relay", {})
         # FastMCP wraps the dict in structured/unstructured content; pull the
@@ -54,10 +52,14 @@ class TestConfigOpenRelayRegistered:
                 result, "data", None
             )
         assert payload is not None, f"No structured payload from tool call: {result!r}"
-        assert set(payload.keys()) >= {"url", "browser_opened", "status"}
-        assert payload["status"] == "stdio_unsupported"
+        public_url = os.environ.get("PUBLIC_URL")
+        if public_url:
+            assert payload["status"] == "unconfigured"
+            assert payload["url"] == f"{public_url.rstrip('/')}/authorize"
+        else:
+            assert payload["status"] == "stdio_unsupported"
+            assert payload["url"] == ""
         assert payload["browser_opened"] is False
-        assert payload["url"] == ""
 
 
 if __name__ == "__main__":

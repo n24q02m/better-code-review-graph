@@ -127,6 +127,28 @@ class TestSetupStatus:
         assert "cloud_keys_in_env" in result
         assert "GEMINI_API_KEY" in result["cloud_keys_in_env"]
 
+    async def test_status_is_subject_scoped_in_remote_mode(self, tmp_path, monkeypatch):
+        """Remote setup_status never reports another subject's ambient key."""
+        from better_code_review_graph.credential_state import (
+            _current_sub,
+            store_for_sub,
+        )
+        from better_code_review_graph.server import config
+
+        monkeypatch.setenv("PUBLIC_URL", "https://crg.example")
+        monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+        store_for_sub("subject-a", {"COHERE_API_KEY": "subject-key"})
+        token = _current_sub.set("subject-a")
+        try:
+            result = await config(action="setup_status")
+        finally:
+            _current_sub.reset(token)
+
+        assert result["state"] == "configured"
+        assert result["providers_configured"] == ["COHERE_API_KEY"]
+        assert result["cloud_keys_in_env"] == []
+
     async def test_status_with_setup_url(self, monkeypatch):
         """setup_status includes setup_url when set on the module."""
         from better_code_review_graph import credential_state as cs

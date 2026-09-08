@@ -25,12 +25,12 @@ def _call_config_setup_status_sync() -> dict[str, Any]:
 
 
 class TestSetupStatusLiveDerivedState:
-    """setup_status derives state from live PerPluginStore, not stale _state."""
+    """setup_status derives state from the current request's credentials."""
 
-    def test_returns_configured_when_store_has_keys(
+    def test_ignores_ambient_store_in_stdio(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """setup_status returns configured when PerPluginStore has cloud keys."""
+        """Stdio status must not read the process-global per-plugin store."""
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
         monkeypatch.delenv("JINA_AI_API_KEY", raising=False)
@@ -40,12 +40,12 @@ class TestSetupStatusLiveDerivedState:
 
         with patch(
             "mcp_core.storage.per_plugin_store.PerPluginStore.load",
-            return_value={"GEMINI_API_KEY": "test-key-123"},
+            return_value={"GEMINI_API_KEY": "ambient-store-key"},
         ):
             result = _call_config_setup_status_sync()
 
-        assert result["state"] == "configured"
-        assert "GEMINI_API_KEY" in result["providers_configured"]
+        assert result["state"] == "awaiting_setup"
+        assert result["providers_configured"] == []
 
     def test_returns_needs_setup_when_store_empty(
         self, monkeypatch: pytest.MonkeyPatch

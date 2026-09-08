@@ -639,25 +639,30 @@ async def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
-            from mcp_core.storage.per_plugin_store import PerPluginStore
-
             from . import credential_state as _cs
 
-            # Refresh module-level state from live PerPluginStore load + env
-            # to ensure setup_status is always accurate.
-            _cs.resolve_credential_state()
+            # Status is request-scoped just like live dispatch. In HTTP
+            # multi-user mode, reading the process-global PerPluginStore or
+            # environment here would expose another subject's configuration.
+            _credentials = _cs.credentials_for_current_request()
+            _providers = [key for key in _cs.CLOUD_KEYS if _credentials.get(key)]
+            _env_keys = [
+                key
+                for key in _providers
+                if _cs.get_current_sub() is None and os.environ.get(key)
+            ]
 
-            _saved = PerPluginStore(_cs.PLUGIN_NAME).load() or {}
-            _env_keys = [k for k in _cs.CLOUD_KEYS if os.environ.get(k)]
-            _store_keys = [k for k in _cs.CLOUD_KEYS if _saved.get(k)]
-            _providers = list(dict.fromkeys(_env_keys + _store_keys))
-
-            # Logic for deriving state when resolve_credential_state() is limited
-            # (e.g. in stdio mode where it ignores PerPluginStore).
-            _state = _cs.get_state().value
-            if _providers and _state != "configured":
-                _state = "configured"
-
+            # Do not refresh global state from an ambient store. A stale
+            # module state is not evidence of current request credentials.
+            _state = (
+                "configured"
+                if _providers
+                else (
+                    _cs.get_state().value
+                    if _cs.get_state().value == "local"
+                    else "awaiting_setup"
+                )
+            )
             return {
                 "state": _state,
                 "setup_url": _cs.get_setup_url(),
@@ -687,9 +692,10 @@ async def config(
                 "status": "stdio_mode",
                 "message": (
                     "Stdio mode reads API keys from env vars only. "
-                    "Set GEMINI_API_KEY / OPENAI_API_KEY / JINA_AI_API_KEY / "
-                    "COHERE_API_KEY in the plugin config, or switch to HTTP "
-                    "mode to use the browser-based setup form."
+                    "Select EMBEDDING_MODELS / SUMMARY_MODELS and set the matching "
+                    "provider key (for example GEMINI_API_KEY, COHERE_API_KEY, "
+                    "or OPENROUTER_API_KEY), or switch to HTTP mode to use the "
+                    "browser-based setup form."
                 ),
             }
         case "setup_skip":
@@ -1008,7 +1014,7 @@ SERVER_NAME = "better-code-review-graph"
 # In HTTP mode the tool returns ``<PUBLIC_URL>/authorize``; in stdio mode
 # it returns ``status: 'stdio_unsupported'`` so the caller can surface a
 # "switch to HTTP mode" message. See ``mcp_core.relay.tool_helpers``.
-register_open_relay_tool(mcp, SERVER_NAME, os.environ.get("PUBLIC_URL"))
+register_open_relay_tool(mcp, SERVER_NAME, os.environ.get("PUBLIC_URL") or None)
 
 
 # ---------------------------------------------------------------------------

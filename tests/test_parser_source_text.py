@@ -118,6 +118,7 @@ def test_batch_summarize_picks_up_parser_populated_source(tmp_path, monkeypatch)
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     py_file = tmp_path / "x.py"
     py_file.write_text("def alpha():\n    return 42\n", encoding="utf-8")
