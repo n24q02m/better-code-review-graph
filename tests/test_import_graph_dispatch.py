@@ -126,7 +126,7 @@ def test_import_dispatch_bad_schema_version_returns_error(tmp_path):
 def test_import_dispatch_path_traversal_blocked(
     tmp_path, _allow_temporal_migration_without_git
 ):
-    (tmp_path / ".code-review-graph").mkdir()
+    (tmp_path / ".better-code-review-graph").mkdir()
     outside_file = tmp_path.parent / "outside_import.json"
     outside_file.write_text(
         json.dumps({"schema_version": 1, "repo_id": "x", "nodes": [], "edges": []}),

@@ -153,22 +153,11 @@ def test_summary_chain_explicit_wins_over_legacy(monkeypatch):
     assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
 
 
-def test_summary_chain_default_key_gated_gemini(monkeypatch):
+def test_summary_keys_do_not_implicitly_enable_completion(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
-    assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
-
-
-def test_summary_chain_default_key_gated_google_alias(monkeypatch):
-    _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("GOOGLE_API_KEY", "g-key")
-    assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
-
-
-def test_summary_chain_default_key_gated_openai_only(monkeypatch):
-    _clear_provider_env(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "o-key")
-    assert resolve_summary_chain() == ["openai/gpt-4o-mini"]
+    assert resolve_summary_chain() == []
 
 
 def test_summary_chain_default_empty_when_no_keys(monkeypatch):
@@ -200,11 +189,13 @@ def test_summarize_node_gemini_returns_text(monkeypatch):
     with patch(
         "mcp_core.llm.completion", return_value=fake_response
     ) as mock_completion:
-        result = summarize_node(node, provider="gemini", api_key="g-key")
+        result = summarize_node(
+            node, provider="gemini", api_key="g-key", model="gemini/gemini-2.5-flash"
+        )
     assert result == "Returns nothing — placeholder function."
     mock_completion.assert_called_once()
     call_kwargs = mock_completion.call_args.kwargs
-    # Default gemini model used when SUMMARY_MODEL unset.
+    # The explicitly selected model is preserved.
     assert call_kwargs["model"] == "gemini/gemini-2.5-flash"
     assert call_kwargs["messages"][0]["role"] == "user"
     assert "def foo(): pass" in call_kwargs["messages"][0]["content"]
@@ -213,24 +204,8 @@ def test_summarize_node_gemini_returns_text(monkeypatch):
     assert call_kwargs["api_base"] is None
 
 
-def test_summarize_node_openai_returns_text(monkeypatch):
-    monkeypatch.delenv("SUMMARY_MODEL", raising=False)
-    node = NodeNeedingSummary(
-        node_id="x.py::bar", source_text="def bar(): pass", source_hash=None
-    )
-    fake_response = _completion_resp("\nEmpty stub function.\n")
-    with patch(
-        "mcp_core.llm.completion", return_value=fake_response
-    ) as mock_completion:
-        result = summarize_node(node, provider="openai", api_key="o-key")
-    assert result == "Empty stub function."
-    call_kwargs = mock_completion.call_args.kwargs
-    assert call_kwargs["model"] == "gpt-4o-mini"
-    assert call_kwargs["messages"][0]["role"] == "user"
-
-
 def test_summarize_node_explicit_model_used_verbatim(monkeypatch):
-    """An explicit ``model`` override is used verbatim, ignoring the provider default.
+    """An explicit ``model`` is used verbatim, ignoring ambient legacy selection.
 
     The SUMMARY_MODEL env is NOT read inside summarize_node anymore; the
     override is plumbed via the ``model`` param by batch_summarize. Setting
@@ -260,14 +235,18 @@ def test_summarize_node_forwards_llm_api_base(monkeypatch):
     with patch(
         "mcp_core.llm.completion", return_value=_completion_resp("ok")
     ) as mock_completion:
-        summarize_node(node, provider="openai", api_key="o-key")
+        summarize_node(
+            node, provider="openai", api_key="o-key", model="openai/gpt-4o-mini"
+        )
     assert mock_completion.call_args.kwargs["api_base"] == "https://proxy.example/v1"
 
 
-def test_summarize_node_unknown_provider_raises():
+def test_summarize_node_missing_model_never_calls_provider():
     node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(ValueError, match="Unsupported provider"):
-        summarize_node(node, provider="anthropic", api_key="k")
+    with patch("mcp_core.llm.completion") as completion:
+        with pytest.raises(ValueError, match="explicit model"):
+            summarize_node(node, provider="openrouter", api_key="configured-key")
+    completion.assert_not_called()
 
 
 def test_summarize_node_wraps_llm_errors(monkeypatch):
@@ -275,7 +254,12 @@ def test_summarize_node_wraps_llm_errors(monkeypatch):
     node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
     with patch("mcp_core.llm.completion", side_effect=Exception("API timeout")):
         with pytest.raises(RuntimeError, match="summarize_node failed via gemini"):
-            summarize_node(node, provider="gemini", api_key="g-key")
+            summarize_node(
+                node,
+                provider="gemini",
+                api_key="g-key",
+                model="gemini/gemini-2.5-flash",
+            )
 
 
 def test_summarize_node_no_choices_raises(monkeypatch):
@@ -288,7 +272,9 @@ def test_summarize_node_no_choices_raises(monkeypatch):
     fake_response.choices = []
     with patch("mcp_core.llm.completion", return_value=fake_response):
         with pytest.raises(RuntimeError, match="no choices") as exc_info:
-            summarize_node(node, provider="openai", api_key="o-key")
+            summarize_node(
+                node, provider="openai", api_key="o-key", model="openai/gpt-4o-mini"
+            )
     assert "summarize_node failed via openai" not in str(exc_info.value)
     assert "x.py::bar" in str(exc_info.value)
 
@@ -302,16 +288,14 @@ def test_summarize_node_none_content_raises(monkeypatch):
     fake_response = _completion_resp(None)
     with patch("mcp_core.llm.completion", return_value=fake_response):
         with pytest.raises(RuntimeError, match="empty/None content") as exc_info:
-            summarize_node(node, provider="gemini", api_key="g-key")
+            summarize_node(
+                node,
+                provider="gemini",
+                api_key="g-key",
+                model="gemini/gemini-2.5-flash",
+            )
     assert "summarize_node failed via gemini" not in str(exc_info.value)
     assert "x.py::baz" in str(exc_info.value)
-
-
-def test_summarize_node_provider_is_case_sensitive():
-    """provider arg must match the lowercase canonical provider form (default-model path)."""
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(ValueError, match="Unsupported provider: 'Gemini'"):
-        summarize_node(node, provider="Gemini", api_key="k")
 
 
 def test_summarize_node_handles_braces_in_source(monkeypatch):
@@ -323,7 +307,9 @@ def test_summarize_node_handles_braces_in_source(monkeypatch):
     with patch(
         "mcp_core.llm.completion", return_value=fake_response
     ) as mock_completion:
-        result = summarize_node(node, provider="gemini", api_key="k")
+        result = summarize_node(
+            node, provider="gemini", api_key="k", model="gemini/gemini-2.5-flash"
+        )
     assert result == "Returns a dict."
     # Verify the source went verbatim into the prompt
     assert src in mock_completion.call_args.kwargs["messages"][0]["content"]
@@ -394,6 +380,7 @@ def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -428,7 +415,7 @@ def test_batch_summarize_generates_for_uncached_nodes(tmp_path, monkeypatch):
             (node_id,),
         ).fetchone()
         assert row[0] == "Returns 1."
-        assert row[1] == "gemini"
+        assert row[1] == "gemini/gemini-2.5-flash"
         assert row[2] == compute_source_hash("def f(): return 1")
     finally:
         store.close()
@@ -443,6 +430,7 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkey
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -460,7 +448,13 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path, monkey
         )
         store._conn.execute(
             "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
-            (src, "Cached summary.", "gemini", compute_source_hash(src), node_id),
+            (
+                src,
+                "Cached summary.",
+                "gemini/gemini-2.5-flash",
+                compute_source_hash(src),
+                node_id,
+            ),
         )
         store._conn.commit()
 
@@ -483,6 +477,7 @@ def test_batch_summarize_regenerates_when_source_changed(tmp_path, monkeypatch):
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -535,6 +530,7 @@ def test_batch_summarize_respects_max_nodes_cap(tmp_path, monkeypatch):
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -575,6 +571,7 @@ def test_batch_summarize_continues_after_per_node_error(tmp_path, monkeypatch):
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -649,6 +646,7 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -667,7 +665,7 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
         # Stored summary is empty string, hash + provider would otherwise match.
         store._conn.execute(
             "UPDATE nodes SET source_text=?, summary=?, summary_provider=?, source_hash=? WHERE id=?",
-            (src, "", "gemini", compute_source_hash(src), node_id),
+            (src, "", "gemini/gemini-2.5-flash", compute_source_hash(src), node_id),
         )
         store._conn.commit()
 
@@ -689,12 +687,10 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(
 
 
 def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch):
-    """With SUMMARY_MODEL set, the cache tag is derived from the model prefix.
+    """An explicit model change invalidates provider-only cached summaries.
 
-    Env-resolved provider is 'gemini' (GEMINI_API_KEY) but SUMMARY_MODEL points
-    at an OpenAI model, so the persisted ``summary_provider`` + result.provider
-    must be 'openai' (derived from the prefix), invalidating any gemini-tagged
-    cache entry.
+    The result reports the provider, while the persisted cache identity retains
+    the complete selected model so two models from one provider cannot collide.
     """
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
@@ -739,7 +735,7 @@ def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch
             (node_id,),
         ).fetchone()
         assert row[0] == "New summary."
-        assert row[1] == "openai"
+        assert row[1] == "openai/gpt-4o-mini"
         # C1: env api_key (gemini) must NOT be forwarded to the openai model.
         # api_key=None lets litellm resolve the correct env key; provider label +
         # explicit model override are passed through.
@@ -751,19 +747,13 @@ def test_batch_summarize_cache_provider_from_summary_model(tmp_path, monkeypatch
         store.close()
 
 
-def test_batch_summarize_default_chain_passes_prefixed_model(monkeypatch, tmp_path):
-    """Default chain (key-gated) passes chain[0] as an explicit prefixed model.
-
-    The provider key is resolved request-scoped and forwarded explicitly to
-    ``summarize_node`` (stdio path: from ``os.environ``; HTTP multi-user: from
-    the bound sub's bucket) so one user's key never reaches another concurrent
-    user's call. The cache provider is derived from the model prefix.
-    """
+def test_batch_summarize_explicit_chain_uses_selected_model(monkeypatch, tmp_path):
+    """An explicitly selected model uses its request-scoped provider key."""
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
     from better_code_review_graph.summarizer import batch_summarize
 
-    monkeypatch.delenv("SUMMARY_MODELS", raising=False)
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
     monkeypatch.delenv("SUMMARY_MODEL", raising=False)
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
@@ -831,19 +821,12 @@ def test_summarize_node_explicit_model_skips_provider_guard():
     assert mock_completion.call_args.kwargs["api_key"] is None
 
 
-def test_summarize_node_default_path_still_guards_provider():
-    """I1 regression: without a model override, the provider guard still fires."""
-    node = NodeNeedingSummary(node_id="x", source_text="y", source_hash=None)
-    with pytest.raises(ValueError, match="Unsupported provider: 'anthropic'"):
-        summarize_node(node, provider="anthropic", api_key="k")
-
-
 def test_batch_summarize_anthropic_override_does_not_raise(tmp_path, monkeypatch):
     """I2: SUMMARY_MODEL=anthropic/... must summarize without a ValueError.
 
     Integration check that the C1+I1 fixes compose: env provider is gemini but
     the override routes to anthropic; the batch must regenerate (no guard raise,
-    no errors) and tag the cache 'anthropic'.
+    no errors) and tag the cache with the complete selected model.
     """
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import NodeInfo
@@ -887,7 +870,7 @@ def test_batch_summarize_anthropic_override_does_not_raise(tmp_path, monkeypatch
             (node_id,),
         ).fetchone()
         assert row[0] == "Returns 1."
-        assert row[1] == "anthropic"
+        assert row[1] == "anthropic/claude-haiku"
     finally:
         store.close()
 
@@ -911,6 +894,7 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
     for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.setenv("SUMMARY_MODELS", "gemini/gemini-2.5-flash")
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -937,5 +921,47 @@ def test_batch_summarize_skips_non_function_nodes(tmp_path, monkeypatch):
 
         assert result.generated == 0
         mock_sum.assert_not_called()
+    finally:
+        store.close()
+
+
+def test_changing_model_within_provider_invalidates_summary_cache(
+    tmp_path, monkeypatch
+):
+    from better_code_review_graph.graph import GraphStore
+    from better_code_review_graph.parser import NodeInfo
+    from better_code_review_graph.summarizer import batch_summarize
+
+    monkeypatch.setenv("SUMMARY_MODELS", "openrouter/minimax/minimax-m3:free")
+    store = GraphStore(tmp_path / "graph.db")
+    try:
+        store.upsert_node(
+            NodeInfo(
+                kind="Function",
+                name="read_config",
+                file_path="config.py",
+                line_start=1,
+                line_end=2,
+                language="python",
+                source_text="def read_config(): return {}",
+            )
+        )
+        store.commit()
+        with patch(
+            "mcp_core.llm.completion",
+            side_effect=[
+                _completion_resp("First model summary."),
+                _completion_resp("Changed model summary."),
+            ],
+        ) as completion:
+            assert batch_summarize(store, max_nodes=1).generated == 1
+            assert batch_summarize(store, max_nodes=1).cached == 1
+            monkeypatch.setenv("SUMMARY_MODELS", "openrouter/example/test-model")
+            assert batch_summarize(store, max_nodes=1).generated == 1
+            assert batch_summarize(store, max_nodes=1).cached == 1
+        assert completion.call_count == 2
+        assert store._conn.execute(
+            "SELECT summary, summary_provider FROM nodes WHERE name = 'read_config'"
+        ).fetchone()[:] == ("Changed model summary.", "openrouter/example/test-model")
     finally:
         store.close()

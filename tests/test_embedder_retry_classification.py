@@ -109,7 +109,7 @@ class TestPermanentErrorNotRetriedAtBatchLevel:
             with patch("mcp_core.llm.embedding", side_effect=side_effect):
                 with patch("time.sleep"):  # would be skipped anyway; guard latency
                     with pytest.raises(APIConnectionError):
-                        backend.embed_texts(["test"], dimensions=768)
+                        backend.embed_texts(["test"], dimensions=1024)
 
             assert call_count == 1
 
@@ -134,6 +134,6 @@ class TestPermanentErrorNotRetriedAtBatchLevel:
             with patch("mcp_core.llm.embedding", side_effect=side_effect):
                 with patch("time.sleep"):
                     with pytest.raises(APIConnectionError):
-                        backend.embed_texts(["test"], dimensions=768)
+                        backend.embed_texts(["test"], dimensions=1024)
 
             assert call_count == _MAX_RETRIES

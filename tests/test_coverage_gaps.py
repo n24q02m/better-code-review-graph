@@ -488,7 +488,7 @@ class TestIncrementalDeletedFile:
             check=True,
         )
 
-        db = repo / ".code-review-graph" / "graph.db"
+        db = repo / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db))
         try:
             # Build full graph first
@@ -542,7 +542,7 @@ class TestIncrementalNonParseableFile:
             check=True,
         )
 
-        db = repo / ".code-review-graph" / "graph.db"
+        db = repo / ".better-code-review-graph" / "graph.db"
         store = GraphStore(str(db))
         try:
             result = incremental_update(repo, store, changed_files=["readme.txt"])

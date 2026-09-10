@@ -40,7 +40,7 @@ def _clear_cache():
 def repo_with_injected_source(tmp_path):
     """A repo whose changed file's body carries a planted injection string."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -124,7 +124,7 @@ def test_spot_check_wraps_planted_injection_in_snippet(repo_with_injected_source
     abs_caller = str(caller_py)
     abs_evil = str(repo / "evil.py")
 
-    db_path = repo / ".code-review-graph" / "graph.db"
+    db_path = repo / ".better-code-review-graph" / "graph.db"
     store = GraphStore(str(db_path))
     store.upsert_node(
         NodeInfo(

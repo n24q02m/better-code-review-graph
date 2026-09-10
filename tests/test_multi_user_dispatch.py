@@ -121,6 +121,51 @@ def test_chain_falls_back_to_env_when_no_sub(monkeypatch, _clean_cloud_env):
     assert resolve_summary_chain() == ["gemini/gemini-2.5-flash"]
 
 
+def test_remote_missing_subject_blocks_ambient_configuration(
+    monkeypatch, _clean_cloud_env
+):
+    monkeypatch.setenv("PUBLIC_URL", "https://crg.example")
+    monkeypatch.setenv("EMBEDDING_MODELS", "cohere/embed-v4.0")
+    monkeypatch.setenv("SUMMARY_MODELS", "openrouter/minimax/minimax-m3:free")
+    with pytest.raises(RuntimeError, match="authenticated subject"):
+        resolve_embedding_chain()
+    with pytest.raises(RuntimeError, match="authenticated subject"):
+        resolve_summary_chain()
+
+
+def test_missing_sub_key_cannot_use_ambient_or_constructor_key(
+    tmp_path, monkeypatch, _clean_cloud_env
+):
+    monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("COHERE_API_KEY", "another-subject-key")
+    store_for_sub("sub-a", {"EMBEDDING_MODELS": "cohere/embed-v4.0"})
+    _current_sub.set("sub-a")
+    backend = CloudEmbeddingBackend(api_key="constructor-key")
+    with patch("mcp_core.llm.embedding") as embedding:
+        with pytest.raises(ValueError, match="current subject"):
+            backend.embed_texts(["private code"], dimensions=1024)
+    embedding.assert_not_called()
+
+
+def test_missing_summary_sub_key_never_bills_global_key(
+    tmp_path, monkeypatch, _clean_cloud_env
+):
+    monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "another-subject-key")
+    store_for_sub("sub-a", {"SUMMARY_MODELS": "openrouter/minimax/minimax-m3:free"})
+    _current_sub.set("sub-a")
+    store = GraphStore(tmp_path / "graph.db")
+    try:
+        _seed_function_node(store)
+        with patch("mcp_core.llm.completion") as completion:
+            result = batch_summarize(store, max_nodes=1)
+        assert result.generated == 0
+        assert result.errors == 1
+        completion.assert_not_called()
+    finally:
+        store.close()
+
+
 # ---------------------------------------------------------------------------
 # Embedding dispatch: per-sub key reaches the mocked litellm embedding call
 # ---------------------------------------------------------------------------

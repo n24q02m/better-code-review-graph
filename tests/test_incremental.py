@@ -52,31 +52,34 @@ class TestFindProjectRoot:
 class TestGetDbPath:
     def test_creates_directory_and_db_path(self, tmp_path):
         db_path = get_db_path(tmp_path)
-        assert db_path == tmp_path / ".code-review-graph" / "graph.db"
-        assert (tmp_path / ".code-review-graph").is_dir()
+        assert db_path == tmp_path / ".better-code-review-graph" / "graph.db"
+        assert (tmp_path / ".better-code-review-graph").is_dir()
 
     def test_creates_gitignore(self, tmp_path):
         get_db_path(tmp_path)
-        gi = tmp_path / ".code-review-graph" / ".gitignore"
+        gi = tmp_path / ".better-code-review-graph" / ".gitignore"
         assert gi.exists()
         assert "*\n" in gi.read_text()
 
-    def test_migrates_legacy_db(self, tmp_path):
-        legacy = tmp_path / ".code-review-graph.db"
-        legacy.write_text("legacy data")
-        db_path = get_db_path(tmp_path)
-        assert db_path.exists()
-        assert not legacy.exists()
-        assert db_path.read_text() == "legacy data"
+    def test_does_not_adopt_or_modify_another_packages_database(self, tmp_path):
+        shared = tmp_path / ".code-review-graph"
+        shared.mkdir()
+        old_paths = [
+            shared / "graph.db",
+            shared / "graph.db-wal",
+            tmp_path / ".code-review-graph.db",
+            tmp_path / ".code-review-graph.db-wal",
+            tmp_path / ".code-review-graph.db-shm",
+        ]
+        for old_path in old_paths:
+            old_path.write_bytes(b"owned by another package")
 
-    def test_cleans_legacy_side_files(self, tmp_path):
-        legacy = tmp_path / ".code-review-graph.db"
-        legacy.write_text("data")
-        for suffix in ("-wal", "-shm", "-journal"):
-            (tmp_path / f".code-review-graph.db{suffix}").write_text("side")
-        get_db_path(tmp_path)
-        for suffix in ("-wal", "-shm", "-journal"):
-            assert not (tmp_path / f".code-review-graph.db{suffix}").exists()
+        db_path = get_db_path(tmp_path)
+
+        assert db_path == tmp_path / ".better-code-review-graph" / "graph.db"
+        assert not db_path.exists()
+        for old_path in old_paths:
+            assert old_path.read_bytes() == b"owned by another package"
 
 
 class TestIgnorePatterns:
@@ -307,7 +310,7 @@ class TestIncrementalUpdateFromHook:
         monkeypatch.chdir(tmp_path)
         incremental_update_from_hook()  # Should not raise
         # Verify graph was created
-        db_path = tmp_path / ".code-review-graph" / "graph.db"
+        db_path = tmp_path / ".better-code-review-graph" / "graph.db"
         assert db_path.exists()
 
 
@@ -478,5 +481,172 @@ class TestIncrementalUpdateRefreshesLastIndexedSha:
                 repo_registry=registry,
             )
             assert result["files_updated"] == 0
+        finally:
+            store.close()
+
+
+class TestPhpCallResolution:
+    def test_cross_file_aliases_and_same_class_calls_survive_reopen(self, tmp_path):
+        definitions = tmp_path / "definitions.php"
+        definitions.write_text(
+            "<?php\nnamespace Library;\n"
+            "class Worker { public static function commit() {} }\n"
+            "function save() {}\n"
+        )
+        caller = tmp_path / "caller.php"
+        caller.write_text(
+            "<?php\nnamespace App;\n"
+            "use Library\\Worker as W;\n"
+            "use function Library\\save as persist;\n"
+            "class Service {\n"
+            " public function local() {}\n"
+            " public function run($unknown) {\n"
+            "  $this->local();\n"
+            "  self::local();\n"
+            "  W::commit();\n"
+            "  persist();\n"
+            "  $unknown->commit();\n"
+            "  $unknown?->commit();\n"
+            " }\n}\n"
+        )
+        db_path = get_db_path(tmp_path)
+        store = GraphStore(db_path)
+        try:
+            result = full_build(tmp_path, store)
+            assert result["errors"] == []
+            assert result["php_calls"] == {"total": 6, "resolved": 4, "unresolved": 2}
+        finally:
+            store.close()
+
+        store = GraphStore(db_path)
+        try:
+            calls = store.get_edges_by_source(f"{caller}::Service.run", kind="CALLS")
+            targets = [edge.target_qualified for edge in calls]
+            assert targets.count(f"{caller}::Service.local") == 2
+            assert targets.count(f"{definitions}::Worker.commit") == 1
+            assert targets.count(f"{definitions}::save") == 1
+            assert targets.count("commit") == 2
+        finally:
+            store.close()
+
+    def test_php_cross_file_impact_and_legacy_state_isolation(self, tmp_path):
+        """Issue #1006: PHP CALLS resolve and old upstream state survives."""
+        definitions = tmp_path / "src" / "Repository"
+        controllers = tmp_path / "src" / "Controller"
+        definitions.mkdir(parents=True)
+        controllers.mkdir()
+        legacy_db = tmp_path / ".code-review-graph" / "graph.db"
+        legacy_db.parent.mkdir()
+        legacy_db.write_bytes(b"upstream-state")
+        definition = definitions / "UserRepository.php"
+        definition.write_text(
+            "<?php namespace App\\Repository; "
+            "class UserRepository { public static function find() {} }"
+        )
+        caller = controllers / "UserController.php"
+        caller.write_text(
+            "<?php namespace App\\Controller; "
+            "use App\\Repository\\UserRepository; "
+            "class UserController { "
+            "public function index() { UserRepository::find(); } }"
+        )
+
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            result = full_build(tmp_path, store)
+            calls = store.get_all_edges()
+            php_calls = [
+                edge
+                for edge in calls
+                if edge.kind == "CALLS"
+                and edge.source_qualified.endswith("UserController.index")
+            ]
+            assert result["php_calls"] == {"total": 1, "resolved": 1, "unresolved": 0}
+            assert len(php_calls) == 1
+            assert php_calls[0].target_qualified.endswith("UserRepository.find")
+        finally:
+            store.close()
+
+        from better_code_review_graph.tools import get_impact_radius
+
+        impact = get_impact_radius(
+            changed_files=[str(caller)], repo_root=str(tmp_path), max_depth=2
+        )
+        assert any(
+            path.endswith("UserRepository.php") for path in impact["impacted_files"]
+        )
+        assert legacy_db.read_bytes() == b"upstream-state"
+
+    def test_incremental_ambiguity_invalidates_then_restores_binding(self, tmp_path):
+        definition = tmp_path / "worker.php"
+        definition.write_text(
+            "<?php namespace Library; class Worker { public static function commit() {} }"
+        )
+        caller = tmp_path / "caller.php"
+        caller.write_text(
+            "<?php namespace App; use Library\\Worker; "
+            "function run() { Worker::commit(); }"
+        )
+        duplicate = tmp_path / "duplicate.php"
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            full_build(tmp_path, store)
+            source = f"{caller}::run"
+            assert store.get_edges_by_source(source, kind="CALLS")[
+                0
+            ].target_qualified == (f"{definition}::Worker.commit")
+            duplicate.write_text(definition.read_text())
+            result = incremental_update(
+                tmp_path, store, changed_files=["duplicate.php"]
+            )
+            assert result["php_calls"]["unresolved"] == 1
+            assert (
+                store.get_edges_by_source(source, kind="CALLS")[0].target_qualified
+                == "commit"
+            )
+
+            duplicate.unlink()
+            result = incremental_update(
+                tmp_path, store, changed_files=["duplicate.php"]
+            )
+            assert result["php_calls"]["resolved"] == 1
+            assert store.get_edges_by_source(source, kind="CALLS")[
+                0
+            ].target_qualified == (f"{definition}::Worker.commit")
+        finally:
+            store.close()
+
+    def test_php_symbols_remain_repo_scoped_after_incremental_update(self, tmp_path):
+        from better_code_review_graph.federation import RepoRegistry
+
+        root_a, root_b = tmp_path / "a", tmp_path / "b"
+        root_a.mkdir()
+        root_b.mkdir()
+        worker_a, worker_b = root_a / "worker.php", root_b / "worker.php"
+        definition = "<?php class Worker { public static function commit() {} }"
+        worker_a.write_text(definition)
+        worker_b.write_text(definition)
+        caller = root_a / "caller.php"
+        caller.write_text("<?php function run() { Worker::commit(); }")
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            registry = RepoRegistry(store)
+            repo_a = registry.add(root_a)
+            registry.add(root_b)
+            result = full_build(tmp_path, store)
+            assert result["php_calls"] == {"total": 1, "resolved": 1, "unresolved": 0}
+            worker_a.write_text(
+                definition.replace("commit() {}", "commit() { return 1; }")
+            )
+            incremental_update(tmp_path, store, changed_files=["a/worker.php"])
+            call = store.get_edges_by_source(f"{caller}::run", kind="CALLS")[0]
+            assert call.target_qualified == f"{worker_a}::Worker.commit"
+            assert (
+                store._conn.execute(
+                    "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+                    (call.target_qualified,),
+                ).fetchone()[0]
+                == repo_a
+            )
         finally:
             store.close()

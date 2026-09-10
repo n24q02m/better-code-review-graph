@@ -700,6 +700,69 @@ class GraphStore:
         )
         return self._conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+    def resolve_php_calls(self) -> dict[str, int]:
+        """Bind lexical PHP call evidence to unique, current same-repo symbols.
+
+        Re-evaluate earlier bindings on every build so deletion or a newly
+        ambiguous definition cannot leave a stale cross-file edge behind.
+        Dynamic receivers and missing/external symbols remain unresolved.
+        """
+        symbols = {
+            (row["repo_id"], row["symbol"]): (row["qualified_name"], row["count"])
+            for row in self._conn.execute(
+                """SELECT repo_id, json_extract(extra, '$.php_symbol') AS symbol,
+                          MIN(qualified_name) AS qualified_name, COUNT(*) AS count
+                   FROM nodes
+                   WHERE language = 'php' AND kind IN ('Function', 'Test')
+                     AND valid_to_sha IS NULL
+                     AND json_type(extra, '$.php_symbol') = 'text'
+                   GROUP BY repo_id, symbol"""
+            )
+        }
+
+        def updates():
+            for row in self._conn.execute(
+                """SELECT id, repo_id, target_qualified, extra FROM edges
+                   WHERE kind = 'CALLS' AND valid_to_sha IS NULL
+                     AND json_type(extra, '$.php_targets') = 'array'
+                     AND json_type(extra, '$.php_unresolved_target') = 'text'"""
+            ):
+                extra = json.loads(row["extra"])
+                target = extra["php_unresolved_target"]
+                for candidate in extra["php_targets"]:
+                    if not isinstance(candidate, str):
+                        continue
+                    match = symbols.get((row["repo_id"], candidate))
+                    if match is not None:
+                        if match[1] == 1:
+                            target = match[0]
+                        # An ambiguous namespace-local definition must not
+                        # fall through to a different global function.
+                        break
+                if target != row["target_qualified"]:
+                    yield target, row["id"]
+
+        changed = self._conn.executemany(
+            "UPDATE edges SET target_qualified = ? WHERE id = ?", updates()
+        ).rowcount
+        if changed:
+            self._invalidate_cache()
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS total,
+                      COALESCE(SUM(target.id IS NOT NULL), 0) AS resolved
+               FROM edges AS edge
+               JOIN nodes AS source ON source.qualified_name = edge.source_qualified
+                    AND source.valid_to_sha IS NULL AND source.language = 'php'
+               LEFT JOIN nodes AS target ON target.qualified_name = edge.target_qualified
+                    AND target.valid_to_sha IS NULL
+               WHERE edge.kind = 'CALLS' AND edge.valid_to_sha IS NULL"""
+        ).fetchone()
+        return {
+            "total": row["total"],
+            "resolved": row["resolved"],
+            "unresolved": row["total"] - row["resolved"],
+        }
+
     def update_summary(
         self,
         node_id: int,
@@ -713,7 +776,7 @@ class GraphStore:
         Args:
             node_id: The integer primary key of the node row in the nodes table.
             summary: Generated docstring text.
-            provider: Provider name (e.g. "gemini" or "openai").
+            provider: Complete selected model identity (e.g. "openrouter/minimax/minimax-m3:free").
             source_hash: SHA-256 of the source_text used to generate the summary.
                 Used as cache key on subsequent batch_summarize calls.
         """

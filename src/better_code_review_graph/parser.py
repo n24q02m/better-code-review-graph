@@ -207,7 +207,12 @@ _CALL_TYPES: dict[str, list[str]] = {
     "ruby": ["call", "method_call"],
     "kotlin": ["call_expression"],
     "swift": ["call_expression"],
-    "php": ["function_call_expression", "member_call_expression"],
+    "php": [
+        "function_call_expression",
+        "member_call_expression",
+        "nullsafe_member_call_expression",
+        "scoped_call_expression",
+    ],
     "solidity": ["call_expression"],
 }
 
@@ -530,6 +535,7 @@ class CodeParser:
         # NodeInfo.source_text. Reset to None between parses so a stale
         # buffer can never leak across files.
         self._current_source_lines: list[str] | None = None
+        self._php_scopes: list[tuple[int, int, str, dict[tuple[str, str], str]]] = []
 
     def _get_parser(self, language: str):
         """The Tree-sitter parser for ``language``.
@@ -647,6 +653,8 @@ class CodeParser:
         # next parse_bytes call.
         source_text_full = source.decode("utf-8", errors="replace")
         self._current_source_lines = source_text_full.split("\n")
+        if language == "php":
+            self._php_scopes = self._collect_php_scopes(tree.root_node)
 
         try:
             # File node
@@ -704,6 +712,7 @@ class CodeParser:
                 )
         finally:
             self._current_source_lines = None
+            self._php_scopes = []
 
         # Phase 2 Task 9: federation post-processing. Single-repo callers
         # (no registry) skip this entirely so behaviour is unchanged.
@@ -989,6 +998,10 @@ class CodeParser:
                 language=language,
                 parent_name=enclosing_class,
             )
+            if language == "php":
+                node_info.extra["php_symbol"] = self._php_declared_symbol(
+                    node, name, enclosing_class
+                )
             nodes.append(node_info)
 
             # CONTAINS edge
@@ -1098,6 +1111,10 @@ class CodeParser:
             is_test=is_test,
             source_text=source_text,
         )
+        if language == "php":
+            node_info.extra["php_symbol"] = self._php_declared_symbol(
+                node, name, enclosing_class
+            )
         nodes.append(node_info)
 
         # CONTAINS edge
@@ -1209,15 +1226,25 @@ class CodeParser:
                 if enclosing_func
                 else file_path
             )
-            target = self._resolve_call_target(
-                call_name,
-                file_path,
-                language,
-                import_map or {},
-                defined_names or set(),
-                enclosing_class=enclosing_class,
-                local_defined_names=local_defined_names,
-            )
+            call_extra = {}
+            if language == "php":
+                target = call_name
+                call_extra = {
+                    "php_targets": self._php_call_targets(
+                        node, call_name, enclosing_class
+                    ),
+                    "php_unresolved_target": call_name,
+                }
+            else:
+                target = self._resolve_call_target(
+                    call_name,
+                    file_path,
+                    language,
+                    import_map or {},
+                    defined_names or set(),
+                    enclosing_class=enclosing_class,
+                    local_defined_names=local_defined_names,
+                )
             line = node.start_point[0] + 1
             edges.append(
                 EdgeInfo(
@@ -1226,6 +1253,7 @@ class CodeParser:
                     target=target,
                     file_path=file_path,
                     line=line,
+                    extra=call_extra,
                 )
             )
             # Function references passed as arguments — e.g. JS
@@ -2481,9 +2509,162 @@ class CodeParser:
                 imports.append(match.group(1))
         return imports
 
+    @staticmethod
+    def _collect_php_scopes(
+        root,
+    ) -> list[tuple[int, int, str, dict[tuple[str, str], str]]]:
+        """Collect lexical namespaces and class/function use aliases once per file."""
+        scopes = []
+        namespace = ""
+        start = 0
+        statements = []
+
+        def append_scope(end: int) -> None:
+            aliases: dict[tuple[str, str], str] = {}
+            for statement in statements:
+                if statement.type != "namespace_use_declaration":
+                    continue
+                type_node = statement.child_by_field_name("type")
+                default_kind = type_node.text.decode() if type_node else "class"
+                group = statement.child_by_field_name("body")
+                prefix = ""
+                if group is not None:
+                    prefix_node = next(
+                        (
+                            c
+                            for c in statement.named_children
+                            if c.type == "namespace_name"
+                        ),
+                        None,
+                    )
+                    if prefix_node is not None:
+                        prefix = prefix_node.text.decode(
+                            "utf-8", errors="replace"
+                        ).strip("\\")
+                clauses = (group or statement).named_children
+                for clause in clauses:
+                    if clause.type != "namespace_use_clause":
+                        continue
+                    alias = clause.child_by_field_name("alias")
+                    clause_type = clause.child_by_field_name("type")
+                    kind = clause_type.text.decode() if clause_type else default_kind
+                    target = next(
+                        (
+                            c
+                            for c in clause.named_children
+                            if c != alias and c.type in {"name", "qualified_name"}
+                        ),
+                        None,
+                    )
+                    if target is None or kind not in {"class", "function"}:
+                        continue
+                    qualified = target.text.decode("utf-8", errors="replace").strip(
+                        "\\"
+                    )
+                    if prefix:
+                        qualified = f"{prefix}\\{qualified}"
+                    local = (
+                        alias.text.decode("utf-8", errors="replace")
+                        if alias is not None
+                        else qualified.rsplit("\\", 1)[-1]
+                    )
+                    aliases[(kind, local.lower())] = qualified.lower()
+            scopes.append((start, end, namespace, aliases))
+
+        for child in root.named_children:
+            if child.type != "namespace_definition":
+                statements.append(child)
+                continue
+            append_scope(child.start_byte)
+            name = child.child_by_field_name("name")
+            namespace = (
+                name.text.decode("utf-8", errors="replace").lower() if name else ""
+            )
+            start = child.start_byte
+            body = child.child_by_field_name("body")
+            statements = list(body.named_children) if body is not None else []
+            if body is not None:
+                append_scope(child.end_byte)
+                namespace = ""
+                start = child.end_byte
+                statements = []
+        append_scope(root.end_byte)
+        return scopes
+
+    def _php_scope(self, offset: int) -> tuple[str, dict[tuple[str, str], str]]:
+        for start, end, namespace, aliases in self._php_scopes:
+            if start <= offset < end:
+                return namespace, aliases
+        return "", {}
+
+    def _php_declared_symbol(self, node, name: str, parent: str | None) -> str:
+        namespace, _aliases = self._php_scope(node.start_byte)
+        symbol = f"{parent}::{name}" if parent else name
+        return (f"{namespace}\\{symbol}" if namespace else symbol).lower()
+
+    def _php_call_targets(
+        self, node, name: str, enclosing_class: str | None
+    ) -> list[str]:
+        """Keep lexical PHP evidence; unknown dynamic receivers stay unresolved."""
+        namespace, aliases = self._php_scope(node.start_byte)
+
+        def qualify(value: str, kind: str) -> str:
+            value = value.lower()
+            if value.startswith("\\"):
+                return value.lstrip("\\")
+            if value.startswith("namespace\\"):
+                value = value[len("namespace\\") :]
+            else:
+                first, separator, rest = value.partition("\\")
+                imported = aliases.get((kind, first))
+                if imported is not None:
+                    return imported + (separator + rest if separator else "")
+            return f"{namespace}\\{value}" if namespace else value
+
+        if node.type == "function_call_expression":
+            target = qualify(name, "function")
+            candidates = [target]
+            # PHP falls back to global functions only for unqualified calls
+            # without a function-import alias, never for qualified names.
+            if (
+                namespace
+                and "\\" not in name
+                and ("function", name.lower()) not in aliases
+            ):
+                candidates.append(name.lower())
+            return candidates
+        receiver = node.child_by_field_name(
+            "scope" if node.type == "scoped_call_expression" else "object"
+        )
+        if receiver is None:
+            return []
+        value = receiver.text.decode("utf-8", errors="replace")
+        if value in {"$this", "self", "static"} and enclosing_class:
+            owner = f"{namespace}\\{enclosing_class}" if namespace else enclosing_class
+        elif node.type == "scoped_call_expression" and receiver.type in {
+            "name",
+            "qualified_name",
+            "relative_name",
+        }:
+            owner = qualify(value, "class")
+        else:
+            return []
+        return [f"{owner}::{name}".lower()]
+
     def _get_call_name(self, node, language: str, source: bytes) -> str | None:
         """Extract the function/method name being called."""
         if not node.children:
+            return None
+        if language == "php":
+            name_node = node.child_by_field_name(
+                "function" if node.type == "function_call_expression" else "name"
+            )
+            if name_node is not None and name_node.type in {
+                "name",
+                "qualified_name",
+                "relative_name",
+            }:
+                return name_node.text.decode("utf-8", errors="replace")
             return None
 
         first = node.children[0]

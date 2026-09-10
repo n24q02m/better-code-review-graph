@@ -159,7 +159,7 @@ def test_phase_3_full_lifecycle_python(
 ) -> None:
     """End-to-end: 2 commits moving a function -> diff modified + line shift."""
     repo, sha1, sha2 = two_commit_repo
-    crg_dir = repo / ".code-review-graph"
+    crg_dir = repo / ".better-code-review-graph"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 
@@ -229,7 +229,7 @@ def test_phase_3_security_scan_tags_persisted(tmp_path: Path) -> None:
     repo = tmp_path / "vuln-repo"
     repo.mkdir()
     (repo / ".git").mkdir()
-    crg_dir = repo / ".code-review-graph"
+    crg_dir = repo / ".better-code-review-graph"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 

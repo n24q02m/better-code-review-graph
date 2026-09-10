@@ -20,7 +20,7 @@ from better_code_review_graph.tools import query_graph
 def repo_with_async_dispatch(tmp_path):
     """Repo with `worker.execute_with_retry` referenced via asyncio.to_thread."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
 
@@ -125,7 +125,7 @@ def test_callers_of_surfaces_asyncio_to_thread_hint(repo_with_async_dispatch):
 def test_callers_of_no_hints_when_pattern_absent(tmp_path):
     """Targets without any dispatch references -> no hints field."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     src = tmp_path / "plain.py"

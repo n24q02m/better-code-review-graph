@@ -25,7 +25,7 @@ def test_dispatch_returns_skipped_when_no_provider(tmp_path, monkeypatch):
 
     assert result["status"] == "skipped"
     assert result["reason"] == "no_provider_configured"
-    assert "GEMINI_API_KEY" in result["summary"]
+    assert "SUMMARY_MODELS" in result["summary"]
 
 
 def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):

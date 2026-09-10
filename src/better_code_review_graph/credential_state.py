@@ -40,6 +40,7 @@ CLOUD_KEYS = [
     "COHERE_API_KEY",
     "CO_API_KEY",
     "GOOGLE_VERTEX_EXPRESS_API_KEY",
+    "OPENROUTER_API_KEY",
     # Per-sub custom endpoints (SSRF-vetted in mcp_core.llm dispatch). Listed
     # here so the per-sub bucket carries them and the os.environ filter in
     # credentials_for_current_request keeps them, same as the provider keys.
@@ -237,8 +238,11 @@ def set_current_sub(sub: str | None) -> None:
 
 
 def get_current_sub() -> str | None:
-    """Return the JWT ``sub`` set by the current HTTP request, if any."""
-    return _current_sub.get()
+    """Return the subject, refusing unscoped access on a remote deployment."""
+    sub = _current_sub.get()
+    if os.environ.get("PUBLIC_URL") and not sub:
+        raise RuntimeError("Remote requests require an authenticated subject")
+    return sub
 
 
 def credentials_for_current_request() -> dict[str, str]:
@@ -249,13 +253,10 @@ def credentials_for_current_request() -> dict[str, str]:
     user's per-sub bucket (``<CRG_DATA_DIR>/subs/<sub>/config.json``) and
     return its contents. Empty dict if the user has not completed setup.
 
-    Stdio / single-user HTTP / no-JWT contexts: ``_current_sub`` is ``None``
-    so we fall back to the process environment, returning only ``CLOUD_KEYS``
-    that are set. Existing call sites that read ``os.environ.get(...)``
-    directly continue to work unchanged; this helper exists for future
-    HTTP-multi-user-aware code paths.
+    Stdio / single-user HTTP contexts without PUBLIC_URL may use process
+    credentials. Remote requests without an authenticated subject fail closed.
     """
-    sub = _current_sub.get()
+    sub = get_current_sub()
     if sub is None:
         return {k: v for k, v in os.environ.items() if k in CLOUD_KEYS and v}
     return read_for_sub(sub)
@@ -279,7 +280,7 @@ def config_value_for_current_request(key: str) -> str | None:
     reading ``os.environ`` directly: per-sub values flow request-scoped and
     are never written to the process-global environment.
     """
-    sub = _current_sub.get()
+    sub = get_current_sub()
     if sub is None:
         return os.environ.get(key)
     value = read_for_sub(sub).get(key)

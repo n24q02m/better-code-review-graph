@@ -48,7 +48,7 @@ def _make_repo_with_node(
 ) -> tuple[Path, str]:
     """Materialise a repo root + a single Function node + return (root, qname)."""
     (tmp_path / ".git").mkdir(exist_ok=True)
-    crg_dir = tmp_path / ".code-review-graph"
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir(exist_ok=True)
     db_path = crg_dir / "graph.db"
 
@@ -140,7 +140,7 @@ def test_security_scan_semgrep_uses_scanner_when_available(tmp_path: Path) -> No
 def test_security_scan_caches_last_scan_to_disk(tmp_path: Path) -> None:
     root, _ = _make_repo_with_node(tmp_path)
     payload = security_scan(repo_root=str(root))
-    cache_path = root / ".code-review-graph" / "security-last-scan.json"
+    cache_path = root / ".better-code-review-graph" / "security-last-scan.json"
     assert cache_path.is_file(), "cache file should be written"
     cached = json.loads(cache_path.read_text(encoding="utf-8"))
     assert cached == payload
@@ -149,7 +149,7 @@ def test_security_scan_caches_last_scan_to_disk(tmp_path: Path) -> None:
 def test_security_scan_persists_security_tags_to_nodes(tmp_path: Path) -> None:
     root, qname = _make_repo_with_node(tmp_path)
     security_scan(repo_root=str(root))
-    db_path = root / ".code-review-graph" / "graph.db"
+    db_path = root / ".better-code-review-graph" / "graph.db"
     store = GraphStore(db_path)
     try:
         row = store._conn.execute(
@@ -304,14 +304,14 @@ def test_load_suppressions_returns_empty_when_file_missing(tmp_path: Path) -> No
 
 
 def test_load_suppressions_handles_corrupt_file(tmp_path: Path) -> None:
-    sup_path = tmp_path / ".code-review-graph" / "security-suppressions.json"
+    sup_path = tmp_path / ".better-code-review-graph" / "security-suppressions.json"
     sup_path.parent.mkdir(parents=True, exist_ok=True)
     sup_path.write_text("not-json", encoding="utf-8")
     assert _load_suppressions(tmp_path) == set()
 
 
 def test_load_suppressions_rejects_non_list_payload(tmp_path: Path) -> None:
-    sup_path = tmp_path / ".code-review-graph" / "security-suppressions.json"
+    sup_path = tmp_path / ".better-code-review-graph" / "security-suppressions.json"
     sup_path.parent.mkdir(parents=True, exist_ok=True)
     sup_path.write_text('{"not": "a list"}', encoding="utf-8")
     assert _load_suppressions(tmp_path) == set()
@@ -356,7 +356,7 @@ def test_load_last_scan_returns_none_when_missing(tmp_path: Path) -> None:
 
 
 def test_load_last_scan_handles_corrupt_file(tmp_path: Path) -> None:
-    cache_path = tmp_path / ".code-review-graph" / "security-last-scan.json"
+    cache_path = tmp_path / ".better-code-review-graph" / "security-last-scan.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text("{not json", encoding="utf-8")
     assert _load_last_scan(tmp_path) is None

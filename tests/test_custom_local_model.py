@@ -206,7 +206,7 @@ def test_local_backend_uses_registry_and_embedding_facade(monkeypatch):
     monkeypatch.setattr("fastretrieval.TextEmbedding", FakeTextEmbedding)
 
     backend = LocalEmbeddingBackend()
-    assert backend.name == "local:registry"
+    assert backend.name == "local:acme/registry-model"
     assert backend.embed_texts(["text"], dimensions=2) == [[0.1, 0.2]]
     assert backend.embed_texts(["text"]) == [[0.1, 0.2]]
     assert backend.embed_single_query("query", dimensions=2) == [0.1, 0.2]

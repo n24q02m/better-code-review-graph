@@ -76,11 +76,11 @@ def _make_function_node(
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Iterator[Path]:
-    """Build a fake repo workspace with .git + .code-review-graph/graph.db."""
+    """Build a fake repo workspace with .git + .better-code-review-graph/graph.db."""
     ws = tmp_path / "workspace"
     ws.mkdir()
     (ws / ".git").mkdir()
-    crg_dir = ws / ".code-review-graph"
+    crg_dir = ws / ".better-code-review-graph"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
     yield ws
@@ -89,7 +89,7 @@ def workspace(tmp_path: Path) -> Iterator[Path]:
 @pytest.fixture
 def store(workspace: Path) -> Iterator[GraphStore]:
     """File-backed GraphStore inside the fake workspace."""
-    db_path = workspace / ".code-review-graph" / "graph.db"
+    db_path = workspace / ".better-code-review-graph" / "graph.db"
     s = GraphStore(str(db_path))
     yield s
     s.close()

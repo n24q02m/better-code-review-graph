@@ -12,7 +12,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-GRAPH_DIR = ".code-review-graph"
+GRAPH_DIR = ".better-code-review-graph"
 GRAPH_DB = "graph.db"
 PREFIX = "[better-code-review-graph]"
 

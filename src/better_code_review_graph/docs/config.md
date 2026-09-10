@@ -6,7 +6,7 @@ Server configuration, status, cache management, and credential setup.
 
 ### status
 Show current server status including graph counts and the selected embedding
-backend, model, fixed storage dimensions, and fallback result. Status resolves
+backend, model, selected storage dimensions, and fallback result. Status resolves
 configuration only; it does not load the embedding model.
 
 **Parameters:**
@@ -22,7 +22,7 @@ configuration only; it does not load the embedding model.
 {
   "status": "ok",
   "version": "2.0.0",
-  "graph_path": "/path/to/.code-review-graph/graph.db",
+  "graph_path": "/path/to/.better-code-review-graph/graph.db",
   "embedding_backend": "local",
   "embedding_model": "n24q02m/Qwen3-Embedding-0.6B-ONNX",
   "embedding_dimensions": 768,

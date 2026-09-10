@@ -120,12 +120,12 @@ def _git_init_with_commit(repo_root: Path) -> str:
 def repo_with_db(tmp_path: Path) -> tuple[Path, Path, str]:
     """Build a real git repo containing a CRG-style ``graph.db`` location.
 
-    Layout mirrors production: ``<repo>/.code-review-graph/graph.db``.
+    Layout mirrors production: ``<repo>/.better-code-review-graph/graph.db``.
     Returns ``(db_path, repo_root, head_sha)``.
     """
     repo_root = tmp_path / "myrepo"
     head_sha = _git_init_with_commit(repo_root)
-    crg_dir = repo_root / ".code-review-graph"
+    crg_dir = repo_root / ".better-code-review-graph"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     return db_path, repo_root, head_sha

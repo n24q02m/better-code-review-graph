@@ -12,12 +12,12 @@ Supports two backends:
 Backend selection:
 - ``EMBEDDING_MODELS`` non-empty -> 'cloud' (first entry is the model).
 - Empty -> 'local' unless ``DISABLE_LOCAL_EMBED`` makes it unavailable.
-- Default chain keeps only models whose provider key is configured.
+- Provider keys alone never select a cloud model.
 - Legacy ``EMBEDDING_BACKEND`` / ``EMBEDDING_MODEL`` honored one release
   (with a deprecation warning).
 
-All embeddings are stored at fixed 768 dimensions (MRL truncation).
-Switching backend does NOT invalidate existing vectors.
+Cohere embed-v4.0 uses exact 1024-dimensional vectors; other backends use 768.
+Changing model or storage width requires re-embedding; vectors are never coerced.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ import hashlib
 import json
 import logging
 import math
-import os
 import sqlite3
 import struct
 import time
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_DIMS = 768  # Fixed storage dimension (MRL truncation)
+_DEFAULT_DIMS = 768
 
 # Retry config for transient errors (rate limits, 5xx, network).
 _MAX_RETRIES = 3
@@ -130,14 +129,9 @@ def _detect_embedding_provider(model: str) -> str:
         return "cohere"
     if lower.startswith("text-embedding") or lower.startswith("openai/"):
         return "openai"
-    # Fallback: check env vars in priority order
-    if os.getenv("JINA_AI_API_KEY"):
-        return "jina"
-    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
-        return "gemini"
-    if os.getenv("OPENAI_API_KEY"):
-        return "openai"
-    return "cohere"
+    from mcp_core.llm.providers import provider_of_model
+
+    return provider_of_model(model)
 
 
 def _strip_provider(model: str) -> str:
@@ -215,7 +209,9 @@ class LocalEmbeddingBackend:
 
     @property
     def name(self) -> str:
-        return f"local:{self._model_name or 'registry'}"
+        if self._model_name is None:
+            self._model_name = _first_supported_local_model_id()
+        return f"local:{self._model_name}"
 
     def _get_model(self):
         """Lazy-load the embedding model.
@@ -280,40 +276,12 @@ class LocalEmbeddingBackend:
 # ---------------------------------------------------------------------------
 
 
-# Explicit provider prefixes -> unambiguous key detection + litellm routing.
-#
-# The cohere leg pins v4 deliberately. Its predecessors (embed-*-v3.0) emit a
-# fixed 1024-wide vector and are not Matryoshka-trained, so there is no way to
-# reach the 768 storage width from them: they reject a narrower request, and
-# slicing their output would discard dimensions that carry meaning. v4 is
-# Matryoshka, so a prefix of its vector remains a valid embedding.
-_DEFAULT_EMBEDDING_CHAIN = (
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "openai/text-embedding-3-large",
-    "cohere/embed-v4.0",
-)
-
-# Cohere validates the requested width against this fixed set and rejects
-# anything else outright ("<n> is not a valid output_dimension", HTTP 422).
-# _DEFAULT_DIMS is not a member, so the width has to be negotiated rather than
-# passed straight through -- see _cohere_output_dimension.
+# Cohere only accepts these exact output widths. Never widen and slice.
 # Source: https://docs.cohere.com/docs/cohere-embed
 _COHERE_OUTPUT_DIMENSIONS = (256, 512, 1024, 1536)
 
 
-# Cohere models that accept an explicit output_dimension. Widening the request
-# is only correct for these, and for two reasons that happen to coincide: they
-# are the models that accept a width at all, and they are the Matryoshka ones,
-# which is what makes slicing the response back down meaning-preserving.
-#
-# Every other cohere model keeps receiving the exact width asked for. That is
-# deliberate: such a model rejects it outright ("output_dimension is not
-# supported for this model") and the caller finds out. Widening the request
-# instead would be accepted -- the native width is always a legal value -- and
-# we would then slice a non-Matryoshka vector into nonsense without a word.
-# A model added here later must be checked for Matryoshka training, not just
-# for accepting the parameter.
+# Explicit storage contract for the supported Cohere v4 embedding space.
 _COHERE_WIDTH_SELECTABLE_MODELS = ("embed-v4.0",)
 
 
@@ -322,30 +290,14 @@ def _cohere_supports_width_selection(model: str) -> bool:
     return _strip_provider(model).lower() in _COHERE_WIDTH_SELECTABLE_MODELS
 
 
-def _cohere_output_dimension(dimensions: int) -> int | None:
-    """Narrowest Cohere width that ``dimensions`` fits inside.
-
-    Returns ``None`` when no supported width is wide enough; the caller then
-    omits the parameter entirely and takes Cohere's own default width.
-    """
-    return next((d for d in _COHERE_OUTPUT_DIMENSIONS if d >= dimensions), None)
+def _cloud_storage_dimensions(model: str | None) -> int:
+    """Chọn chiều lưu trữ hợp lệ cho model, không cắt hoặc đệm vector."""
+    if model and _cohere_supports_width_selection(model):
+        return 1024
+    return _DEFAULT_DIMS
 
 
 _KEY_ALIASES = {"GEMINI_API_KEY": "GOOGLE_API_KEY", "COHERE_API_KEY": "CO_API_KEY"}
-
-
-def _key_available(env_var: str) -> bool:
-    """True if ``env_var`` (or its alias) is set for the current request.
-
-    Request-scoped: in HTTP multi-user mode reads the bound sub's per-sub
-    bucket; in stdio/single-user falls back to ``os.environ``.
-    """
-    from .credential_state import config_value_for_current_request
-
-    if config_value_for_current_request(env_var):
-        return True
-    alias = _KEY_ALIASES.get(env_var)
-    return bool(alias and config_value_for_current_request(alias))
 
 
 def resolve_embedding_chain() -> list[str]:
@@ -354,16 +306,13 @@ def resolve_embedding_chain() -> list[str]:
     The current embedding backend selects the first entry; later entries are
     retained as configuration but are not runtime fallbacks. Empty -> local
     ONNX. Legacy EMBEDDING_MODEL is honored for one release (warning).
-    Default keeps ONLY models whose provider key is configured; none -> empty
-    -> local. Not "any key" (that would keep keyless cloud models).
+    Provider keys alone do not opt into a cloud model.
 
     Request-scoped: ``EMBEDDING_MODELS`` / ``EMBEDDING_MODEL`` come from the
     bound JWT sub's per-sub bucket in HTTP multi-user mode, falling back to
     ``os.environ`` in stdio/single-user mode. Per-sub model selection must
     not leak across concurrent users.
     """
-    from mcp_core.llm.providers import key_env_for_model
-
     from .credential_state import config_value_for_current_request
 
     explicit = (config_value_for_current_request("EMBEDDING_MODELS") or "").strip()
@@ -376,20 +325,25 @@ def resolve_embedding_chain() -> list[str]:
             "(removed next release)."
         )
         return [legacy]
-    return [m for m in _DEFAULT_EMBEDDING_CHAIN if _key_available(key_env_for_model(m))]
+    return []
 
 
 def _selected_cloud_model(model: str | None = None) -> str:
     """Return the model CloudEmbeddingBackend will use."""
-    return model or (resolve_embedding_chain() or [_DEFAULT_EMBEDDING_CHAIN[-1]])[0]
+    if model:
+        return model
+    chain = resolve_embedding_chain()
+    if not chain:
+        raise ValueError(
+            "Cloud embedding requires an explicit EMBEDDING_MODELS selection"
+        )
+    return chain[0]
 
 
 class CloudEmbeddingBackend:
     """Cloud embedding via ``mcp_core.llm`` (litellm passthrough).
 
-    Provider is auto-detected from the model name or env vars and mapped to
-    a litellm ``provider/model`` string. Priority: jina > gemini > openai >
-    cohere.
+    Provider comes from the selected model, never ambient process credentials.
     """
 
     MAX_BATCH_SIZE = 96
@@ -416,25 +370,17 @@ class CloudEmbeddingBackend:
         written to the process-global environment, so one user's key cannot
         leak to another concurrent user's embedding call.
         """
-        if self.api_key:
+        from mcp_core.llm.providers import key_env_for_model
+
+        from .credential_state import config_value_for_current_request, get_current_sub
+
+        if self.api_key and get_current_sub() is None:
             return self.api_key
-        from .credential_state import config_value_for_current_request
-
-        def _cfg(*keys: str) -> str:
-            for key in keys:
-                value = config_value_for_current_request(key)
-                if value:
-                    return value
-            return ""
-
-        if self._provider == "jina":
-            return _cfg("JINA_AI_API_KEY")
-        if self._provider == "gemini":
-            return _cfg("GEMINI_API_KEY", "GOOGLE_API_KEY")
-        if self._provider == "openai":
-            return _cfg("OPENAI_API_KEY")
-        # cohere
-        return _cfg("COHERE_API_KEY", "CO_API_KEY")
+        key_env = key_env_for_model(self._litellm_model())
+        value = config_value_for_current_request(key_env)
+        if not value and key_env in _KEY_ALIASES:
+            value = config_value_for_current_request(_KEY_ALIASES[key_env])
+        return value or ""
 
     def _litellm_model(self) -> str:
         """Map crg's model naming to a litellm ``provider/model`` string."""
@@ -450,31 +396,40 @@ class CloudEmbeddingBackend:
         return self.model
 
     def _call_provider(
-        self, texts: list[str], dimensions: int | None = None
+        self,
+        texts: list[str],
+        dimensions: int | None = None,
+        *,
+        input_type: str = "search_document",
     ) -> list[list[float]]:
         """Single cloud path via mcp_core.llm (litellm passthrough)."""
         # Lazy import: litellm costs ~1-2s on first import.
         from mcp_core.llm import embedding
 
-        from .credential_state import config_value_for_current_request
+        from .credential_state import config_value_for_current_request, get_current_sub
 
         kwargs: dict[str, Any] = {}
-        if dimensions:
+        if dimensions is not None:
+            if dimensions <= 0:
+                raise ValueError("Embedding dimensions must be positive")
             kwargs["dimensions"] = dimensions
         if self._provider == "cohere":
-            kwargs["input_type"] = "search_document"
-            # litellm forwards ``dimensions`` to Cohere as ``output_dimension``,
-            # which only accepts _COHERE_OUTPUT_DIMENSIONS. Requesting the
-            # storage width directly is rejected before any vector is returned,
-            # so ask for the next supported width up and let the truncation at
-            # the end of this method trim it back down. Models that cannot
-            # select a width are left alone -- see the note there.
-            if dimensions and _cohere_supports_width_selection(self.model):
-                negotiated = _cohere_output_dimension(dimensions)
-                if negotiated is None:
-                    del kwargs["dimensions"]
-                else:
-                    kwargs["dimensions"] = negotiated
+            kwargs["input_type"] = input_type
+            if (
+                dimensions is not None
+                and _cohere_supports_width_selection(self.model)
+                and dimensions not in _COHERE_OUTPUT_DIMENSIONS
+            ):
+                raise ValueError(
+                    f"Cohere embed-v4.0 requires dimensions in {_COHERE_OUTPUT_DIMENSIONS}; "
+                    f"received {dimensions}. Re-embed the graph with its selected storage width."
+                )
+
+        api_key = self._resolve_api_key()
+        if get_current_sub() is not None and not api_key:
+            raise ValueError(
+                "Cloud embedding requires a provider key for the current subject"
+            )
 
         # Resolve the custom endpoint request-scoped (per-sub bucket in HTTP
         # multi-user, os.environ in stdio/single-user) via the same accessor
@@ -487,7 +442,7 @@ class CloudEmbeddingBackend:
             model=self._litellm_model(),
             input=texts,
             api_base=config_value_for_current_request("EMBEDDING_API_BASE") or None,
-            api_key=self._resolve_api_key() or None,
+            api_key=api_key or None,
             **kwargs,
         )
 
@@ -507,25 +462,28 @@ class CloudEmbeddingBackend:
         data = sorted(resp.data or [], key=_idx)
         embeddings = [_vec(item) for item in data]
 
-        # Truncate locally when the server returned more dims than requested:
-        # Cohere is deliberately asked for the next supported width up (see
-        # above), and some providers ignore ``dimensions`` server-side. Slicing
-        # a prefix preserves meaning only on Matryoshka-trained models, which is
-        # why the default chain pins models that are.
-        if dimensions and embeddings and len(embeddings[0]) > dimensions:
-            embeddings = [e[:dimensions] for e in embeddings]
+        if len(embeddings) != len(texts):
+            raise ValueError("Embedding provider returned the wrong vector count")
+        if any(_idx(item) != index for index, item in enumerate(data)):
+            raise ValueError("Embedding provider returned invalid vector indices")
+        if dimensions is not None and any(len(vec) != dimensions for vec in embeddings):
+            raise ValueError(
+                f"Embedding provider returned a different width than requested ({dimensions})"
+            )
         return embeddings
 
     def _embed_batch_inner(
         self,
         texts: list[str],
         dimensions: int | None = None,
+        *,
+        input_type: str = "search_document",
     ) -> list[list[float]]:
         """Embed a single batch with retry logic for transient errors."""
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             try:
-                return self._call_provider(texts, dimensions)
+                return self._call_provider(texts, dimensions, input_type=input_type)
             except Exception as e:
                 last_exc = e
                 if attempt < _MAX_RETRIES - 1 and _is_retryable(e):
@@ -569,6 +527,12 @@ class CloudEmbeddingBackend:
         results = self.embed_texts([text], dimensions)
         return results[0]
 
+    def embed_single_query(
+        self, text: str, dimensions: int | None = None
+    ) -> list[float]:
+        """Dùng search_query cho truy vấn Cohere, tách biệt với tài liệu."""
+        return self._embed_batch_inner([text], dimensions, input_type="search_query")[0]
+
 
 # ---------------------------------------------------------------------------
 # Factory functions
@@ -585,7 +549,9 @@ def resolve_backend() -> str:
     gracefully unavailable, NOT forced). Legacy ``EMBEDDING_BACKEND`` is honored
     one release (warning).
     """
-    legacy = os.getenv("EMBEDDING_BACKEND")
+    from .credential_state import config_value_for_current_request
+
+    legacy = config_value_for_current_request("EMBEDDING_BACKEND")
     if legacy:
         logger.warning(
             "Deprecated EMBEDDING_BACKEND honored; inferred from EMBEDDING_MODELS now."
@@ -593,7 +559,15 @@ def resolve_backend() -> str:
         return "cloud" if legacy in ("cloud", "litellm") else legacy
     return _resolve_capability_backend(
         has_cloud_chain=bool(resolve_embedding_chain()),
-        local_enabled=local_enabled_from_env("DISABLE_LOCAL_EMBED"),
+        local_enabled=local_enabled_from_env(
+            "DISABLE_LOCAL_EMBED",
+            environ={
+                "DISABLE_LOCAL_EMBED": config_value_for_current_request(
+                    "DISABLE_LOCAL_EMBED"
+                )
+                or ""
+            },
+        ),
     ).value
 
 
@@ -616,7 +590,9 @@ def describe_backend_selection() -> dict[str, str | int | None]:
     return {
         "backend": backend,
         "model": model,
-        "dimensions": _DEFAULT_DIMS,
+        "dimensions": _cloud_storage_dimensions(model)
+        if backend == "cloud"
+        else _DEFAULT_DIMS,
         "fallback": "unavailable" if backend == "unavailable" else "none",
     }
 
@@ -753,8 +729,8 @@ def _node_to_text(node: GraphNode) -> str:
 class EmbeddingStore:
     """Manages vector embeddings for graph nodes in SQLite.
 
-    Uses a fixed 768-dim storage via MRL truncation. The backend name is
-    tracked per row so that switching backends triggers re-embedding.
+    Storage width follows the selected embedding model. Provider and vector
+    width are checked before reuse so incompatible persisted rows are re-embedded.
     """
 
     def __init__(
@@ -762,6 +738,11 @@ class EmbeddingStore:
     ) -> None:
         self.backend = backend
         self.available = backend is not None
+        self.dimensions = (
+            _cloud_storage_dimensions(backend.model)
+            if isinstance(backend, CloudEmbeddingBackend)
+            else _DEFAULT_DIMS
+        )
         self.db_path = Path(db_path)
         self._conn = sqlite3.connect(str(self.db_path), timeout=30)
         self._conn.row_factory = sqlite3.Row
@@ -803,7 +784,7 @@ class EmbeddingStore:
         qns = [n.qualified_name for n in nodes if n.kind != "File"]
         existing_map: dict[str, dict[str, Any]] = {}
         cursor = self._conn.execute(
-            "SELECT qualified_name, text_hash, provider FROM embeddings "
+            "SELECT qualified_name, text_hash, provider, length(vector) AS vector_bytes FROM embeddings "
             "WHERE qualified_name IN (SELECT value FROM json_each(?))",
             (json.dumps(qns),),
         )
@@ -822,6 +803,7 @@ class EmbeddingStore:
                 existing
                 and existing["text_hash"] == text_hash
                 and existing["provider"] == provider_name
+                and existing["vector_bytes"] == self.dimensions * 4
             ):
                 continue
             to_embed.append((node, text, text_hash))
@@ -831,7 +813,13 @@ class EmbeddingStore:
 
         # Encode in batches
         texts = [t for _, t, _ in to_embed]
-        vectors = self.backend.embed_texts(texts, dimensions=_DEFAULT_DIMS)
+        vectors = self.backend.embed_texts(texts, dimensions=self.dimensions)
+        if len(vectors) != len(texts) or any(
+            len(vec) != self.dimensions for vec in vectors
+        ):
+            raise ValueError(
+                f"Embedding output must contain one {self.dimensions}-dimensional vector per node"
+            )
 
         # Use executemany for batch insertion to eliminate N+1 query bottlenecks
         insert_data = [
@@ -867,20 +855,28 @@ class EmbeddingStore:
         # ranking silently corrupts results when the user switches providers.
         provider_name = self._get_backend_name()
 
-        # Count embeddings for the active provider first
-        count = self._conn.execute(
-            "SELECT COUNT(*) FROM embeddings WHERE provider = ?",
+        # Refuse stale dimensions before spending a query request.
+        count, minimum, maximum = self._conn.execute(
+            "SELECT COUNT(*), MIN(length(vector)), MAX(length(vector)) "
+            "FROM embeddings WHERE provider = ?",
             (provider_name,),
-        ).fetchone()[0]
+        ).fetchone()
         if count == 0:
             return []
+        if minimum != self.dimensions * 4 or maximum != self.dimensions * 4:
+            raise ValueError(
+                f"Stored embeddings are incompatible with {self.dimensions}-dimensional "
+                "queries. Run graph(action='embed') to re-embed the graph."
+            )
 
         # Embed query -- use query-specific method if available
         query_method = getattr(self.backend, "embed_single_query", None)
         if callable(query_method):
-            query_vec = query_method(query, dimensions=_DEFAULT_DIMS)
+            query_vec = query_method(query, dimensions=self.dimensions)
         else:
-            query_vec = self.backend.embed_single(query, dimensions=_DEFAULT_DIMS)
+            query_vec = self.backend.embed_single(query, dimensions=self.dimensions)
+        if len(query_vec) != self.dimensions:
+            raise ValueError(f"Query embedding must have {self.dimensions} dimensions")
 
         # Brute-force cosine similarity scan with precalculated query norm
         scored: list[tuple[str, float]] = []

@@ -17,7 +17,7 @@ from better_code_review_graph.tools import (
 def repo_with_cache(tmp_path):
     """Setup a repo and populate _LAST_CALLERS_RESULT cache."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".code-review-graph"
+    crg = tmp_path / ".better-code-review-graph"
     crg.mkdir()
 
     file_path = tmp_path / "test.py"
@@ -60,7 +60,7 @@ def test_get_review_context_source_snippets_handles_oserror(tmp_path):
     """Test that _get_source_snippets handles OSError (via get_review_context)."""
     repo = tmp_path
     (repo / ".git").mkdir()
-    crg = repo / ".code-review-graph"
+    crg = repo / ".better-code-review-graph"
     crg.mkdir()
 
     # Create a dummy database

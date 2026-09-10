@@ -1,7 +1,7 @@
 """Config schema for relay page setup (model-chain widget).
 
 The relay form uses per-task ``model-chain`` widgets: the user picks an
-ordered list of ``provider/model`` strings per task (order = fallback). The
+ordered list of ``provider/model`` strings per task (first entry is selected). The
 relay page derives the required API-key fields from the providers referenced
 by the chosen models (``derived: True``) and renders them automatically.
 
@@ -15,16 +15,8 @@ mcp-core catches up; see tracker: see docs/migration-from-mcp-relay-core.md.
 
 from typing import Any
 
-_EMBEDDING_SUGGESTED = [
-    "jina_ai/jina-embeddings-v5-text-small",
-    "gemini/gemini-embedding-001",
-    "openai/text-embedding-3-large",
-    "cohere/embed-v4.0",
-]
-_SUMMARY_SUGGESTED = [
-    "gemini/gemini-2.5-flash",
-    "openai/gpt-4o-mini",
-]
+_EMBEDDING_SUGGESTED = ["cohere/embed-v4.0"]
+_SUMMARY_SUGGESTED = ["openrouter/minimax/minimax-m3:free"]
 
 
 def _key_field(key: str, label: str, ph: str, url: str) -> dict[str, Any]:
@@ -59,7 +51,7 @@ RELAY_SCHEMA: dict[str, Any] = {
     "server": "better-code-review-graph",
     "displayName": "Code Review Graph",
     "description": (
-        "Pick models per task (order = fallback). Leave embedding empty for "
+        "Pick models per task (first entry is selected; no runtime fallback). Leave embedding empty for "
         "local ONNX; leave summary empty to disable LLM summaries. Key fields "
         "appear automatically for the providers your models use."
     ),
@@ -91,6 +83,12 @@ RELAY_SCHEMA: dict[str, Any] = {
             "LLM_API_BASE",
             "Summary (LLM) endpoint",
             "Custom endpoint / CF AI Gateway for summary LLM calls.",
+        ),
+        _key_field(
+            "OPENROUTER_API_KEY",
+            "OpenRouter API Key",
+            "",
+            "https://openrouter.ai/settings/keys",
         ),
         _key_field(
             "JINA_AI_API_KEY", "Jina AI API Key", "jina_...", "https://jina.ai/api-key"

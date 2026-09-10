@@ -127,8 +127,8 @@ def test_security_scan_payload_shape(tmp_path):
     shape and doesn't crash even though the cursor-iteration codepath
     can no longer use ``len(rows)`` accounting."""
     # `_validate_repo_root` requires either a ``.git`` ancestor or
-    # a ``.code-review-graph`` directory before it will accept ``repo_root``.
-    crg_dir = tmp_path / ".code-review-graph"
+    # a ``.better-code-review-graph`` directory before it will accept ``repo_root``.
+    crg_dir = tmp_path / ".better-code-review-graph"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     store = GraphStore(str(db_path))

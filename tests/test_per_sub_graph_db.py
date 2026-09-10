@@ -54,7 +54,7 @@ def _node(name: str) -> NodeInfo:
 
 
 def test_stdio_no_sub_uses_repo_relative_path(tmp_path, monkeypatch):
-    """No sub bound (stdio / single-user) -> ``<repo>/.code-review-graph/graph.db``."""
+    """No sub bound (stdio / single-user) -> package-owned repository graph."""
     monkeypatch.setenv("CRG_DATA_DIR", str(tmp_path / "data"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -63,7 +63,7 @@ def test_stdio_no_sub_uses_repo_relative_path(tmp_path, monkeypatch):
 
     set_current_sub(None)
     path = get_db_path(repo)
-    assert path == repo / ".code-review-graph" / "graph.db"
+    assert path == repo / ".better-code-review-graph" / "graph.db"
 
 
 def test_bound_sub_uses_per_sub_path(tmp_path, monkeypatch):
@@ -81,7 +81,7 @@ def test_bound_sub_uses_per_sub_path(tmp_path, monkeypatch):
     path = get_db_path(repo)
     assert path == db_path_for_sub("user-a")
     # The analyzed-repo path must NOT be used for a bound sub.
-    assert path != repo / ".code-review-graph" / "graph.db"
+    assert path != repo / ".better-code-review-graph" / "graph.db"
     assert "user-a" in str(path)
 
 
