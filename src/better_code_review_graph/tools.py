@@ -2597,10 +2597,11 @@ def semantic_search_nodes(
             emb_store.close()
 
         # Keyword fallback
-        results = store.search_nodes(query, limit=limit * 2, repo=repo, as_of=as_of)
-
-        if kind:
-            results = [r for r in results if r.kind == kind]
+        # Bolt optimization: push node kind filtering to SQLite to avoid unnecessary
+        # Python-side materialization and prevent truncating valid results.
+        results = store.search_nodes(
+            query, kind=kind, limit=limit * 2, repo=repo, as_of=as_of
+        )
 
         def score(node):
             name_lower = node.name.lower()
