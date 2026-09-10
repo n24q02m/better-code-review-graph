@@ -39,8 +39,14 @@ JSONLD_CONTEXT = {
 
 
 def _safe_label(value: object) -> str:
-    """Quote-escape a value for inclusion in a DOT label string."""
-    return str(value or "").replace("\\", "\\\\").replace('"', '\\"')
+    """Quote-escape a value for a DOT identifier or label string."""
+    return (
+        str(value or "")
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
 
 
 def _cypher_props(props: dict[str, object]) -> str:
@@ -58,6 +64,16 @@ def _cypher_props(props: dict[str, object]) -> str:
 
 
 _CYPHER_VAR_PATTERN = re.compile(r"\W")
+_CYPHER_IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_CYPHER_BACKTICK_ESCAPE = re.compile(r"\\(?:u0060|U00000060)", re.IGNORECASE)
+
+
+def _cypher_identifier(value: str) -> str:
+    """Quote dynamic labels/types, including Cypher's Unicode backtick escape."""
+    if _CYPHER_IDENTIFIER_PATTERN.fullmatch(value):
+        return value
+    escaped = _CYPHER_BACKTICK_ESCAPE.sub("`", value).replace("`", "``")
+    return f"`{escaped}`"
 
 
 def _cypher_var(node_id: str) -> str:
@@ -104,45 +120,46 @@ def export_graphml(store: GraphStore) -> str:
         root, f"{{{GRAPHML_NS}}}graph", {"id": "G", "edgedefault": "directed"}
     )
 
-    # Bolt optimization: iterate directly over sqlite3.Cursor to avoid peak memory overhead from full GraphNode materialization
-    for row in store.iter_raw_nodes():
+    for node in store.iter_raw_nodes():
         n_el = standard_ET.SubElement(
-            graph, f"{{{GRAPHML_NS}}}node", {"id": row["qualified_name"]}
+            graph, f"{{{GRAPHML_NS}}}node", {"id": node["qualified_name"]}
         )
         for k, v in (
-            ("kind", row["kind"]),
-            ("name", row["name"]),
-            ("qualified_name", row["qualified_name"]),
-            ("file_path", row["file_path"]),
-            ("language", row["language"]),
+            ("kind", node["kind"]),
+            ("name", node["name"]),
+            ("qualified_name", node["qualified_name"]),
+            ("file_path", node["file_path"]),
+            ("language", node["language"]),
         ):
             if v is None or v == "":
                 continue
             d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
-        for k, v in (("line_start", row["line_start"]), ("line_end", row["line_end"])):
+        for k, v in (
+            ("line_start", node["line_start"]),
+            ("line_end", node["line_end"]),
+        ):
             if v is None:
                 continue
             d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
 
-    # Bolt optimization: iterate directly over sqlite3.Cursor to avoid peak memory overhead from full GraphEdge materialization
-    for row in store.iter_raw_edges():
+    for edge in store.iter_raw_edges():
         e_el = standard_ET.SubElement(
             graph,
             f"{{{GRAPHML_NS}}}edge",
-            {"source": row["source_qualified"], "target": row["target_qualified"]},
+            {"source": edge["source_qualified"], "target": edge["target_qualified"]},
         )
-        for k, v in (("edge_kind", row["kind"]), ("edge_file", row["file_path"])):
+        for k, v in (("edge_kind", edge["kind"]), ("edge_file", edge["file_path"])):
             if v is None or v == "":
                 continue
             d = standard_ET.SubElement(e_el, f"{{{GRAPHML_NS}}}data", {"key": k})
             d.text = str(v)
-        if row["line"] is not None:
+        if edge["line"] is not None:
             d = standard_ET.SubElement(
                 e_el, f"{{{GRAPHML_NS}}}data", {"key": "edge_line"}
             )
-            d.text = str(row["line"])
+            d.text = str(edge["line"])
 
     return standard_ET.tostring(root, encoding="unicode", xml_declaration=True)
 
@@ -150,31 +167,30 @@ def export_graphml(store: GraphStore) -> str:
 def export_jsonld(store: GraphStore) -> str:
     """Emit JSON-LD with @context + nodes + edges arrays."""
     nodes = []
-    # Bolt optimization: iterate directly over sqlite3.Cursor to avoid full object materialization overhead
-    for row in store.iter_raw_nodes():
+    for node in store.iter_raw_nodes():
         n: dict[str, object] = {
-            "@id": row["qualified_name"],
-            "@type": row["kind"],
-            "name": row["name"],
-            "filePath": row["file_path"],
-            "language": row["language"],
+            "@id": node["qualified_name"],
+            "@type": node["kind"],
+            "name": node["name"],
+            "filePath": node["file_path"],
+            "language": node["language"] or "",
         }
-        if row["line_start"] is not None:
-            n["lineStart"] = row["line_start"]
-        if row["line_end"] is not None:
-            n["lineEnd"] = row["line_end"]
+        if node["line_start"] is not None:
+            n["lineStart"] = node["line_start"]
+        if node["line_end"] is not None:
+            n["lineEnd"] = node["line_end"]
         nodes.append(n)
     edges = []
-    for row in store.iter_raw_edges():
+    for edge in store.iter_raw_edges():
         e: dict[str, object] = {
-            "source": row["source_qualified"],
-            "target": row["target_qualified"],
-            "kind": row["kind"],
+            "source": edge["source_qualified"],
+            "target": edge["target_qualified"],
+            "kind": edge["kind"],
         }
-        if row["file_path"]:
-            e["filePath"] = row["file_path"]
-        if row["line"] is not None:
-            e["line"] = row["line"]
+        if edge["file_path"]:
+            e["filePath"] = edge["file_path"]
+        if edge["line"] is not None:
+            e["line"] = edge["line"]
         edges.append(e)
     return json.dumps(
         {"@context": JSONLD_CONTEXT, "nodes": nodes, "edges": edges}, indent=2
@@ -184,14 +200,14 @@ def export_jsonld(store: GraphStore) -> str:
 def export_dot(store: GraphStore) -> str:
     """Emit Graphviz DOT format (digraph)."""
     lines = ["digraph G {"]
-    # Bolt optimization: iterate over sqlite3.Cursor directly
-    for row in store.iter_raw_nodes():
-        label = _safe_label(row["name"] or row["qualified_name"])
-        lines.append(f'  "{row["qualified_name"]}" [label="{label}"];')
-    for row in store.iter_raw_edges():
-        kind = _safe_label(row["kind"])
+    for node in store.iter_raw_nodes():
+        label = _safe_label(node["name"] or node["qualified_name"])
+        lines.append(f'  "{_safe_label(node["qualified_name"])}" [label="{label}"];')
+    for edge in store.iter_raw_edges():
+        kind = _safe_label(edge["kind"])
         lines.append(
-            f'  "{row["source_qualified"]}" -> "{row["target_qualified"]}" [label="{kind}"];'
+            f'  "{_safe_label(edge["source_qualified"])}" -> '
+            f'"{_safe_label(edge["target_qualified"])}" [label="{kind}"];'
         )
     lines.append("}")
     return "\n".join(lines)
@@ -200,25 +216,24 @@ def export_dot(store: GraphStore) -> str:
 def export_cypher(store: GraphStore) -> str:
     """Emit Neo4j Cypher CREATE statements that recreate the graph."""
     parts = []
-    # Bolt optimization: iterate over sqlite3.Cursor directly
-    for row in store.iter_raw_nodes():
-        kind_label = row["kind"] or "Node"
-        var = _cypher_var(row["qualified_name"])
+    for node in store.iter_raw_nodes():
+        kind_label = _cypher_identifier(node["kind"] or "Node")
+        var = _cypher_var(node["qualified_name"])
         props: dict[str, object] = {
-            "id": row["qualified_name"],
-            "name": row["name"],
-            "file_path": row["file_path"],
-            "language": row["language"],
-            "line_start": row["line_start"],
-            "line_end": row["line_end"],
+            "id": node["qualified_name"],
+            "name": node["name"],
+            "file_path": node["file_path"],
+            "language": node["language"] or "",
+            "line_start": node["line_start"],
+            "line_end": node["line_end"],
         }
         parts.append(f"CREATE ({var}:{kind_label} {{{_cypher_props(props)}}});")
-    for row in store.iter_raw_edges():
-        kind = (row["kind"] or "RELATED").upper().replace("-", "_")
-        src_escaped = row["source_qualified"].replace("'", "\\'")
-        tgt_escaped = row["target_qualified"].replace("'", "\\'")
+    for edge in store.iter_raw_edges():
+        kind = _cypher_identifier((edge["kind"] or "RELATED").upper().replace("-", "_"))
+        source_props = _cypher_props({"id": edge["source_qualified"]})
+        target_props = _cypher_props({"id": edge["target_qualified"]})
         parts.append(
-            f"MATCH (a {{id: '{src_escaped}'}}), (b {{id: '{tgt_escaped}'}}) "
+            f"MATCH (a {{{source_props}}}), (b {{{target_props}}}) "
             f"CREATE (a)-[:{kind}]->(b);"
         )
     return "\n".join(parts)
@@ -249,7 +264,7 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     store's own db directory so the id stays deterministic per store; note
     that fallback is *not* guaranteed to match a federated id for a real
     root, since ``store.db_path`` normally lives at
-    ``<root>/.code-review-graph/graph.db`` -- one directory below ``root``.
+    ``<root>/.better-code-review-graph/graph.db`` -- one directory below ``root``.
     """
     from .federation import derive_repo_id
 
