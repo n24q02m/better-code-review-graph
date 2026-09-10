@@ -1446,6 +1446,22 @@ class GraphStore:
         cursor = self._conn.execute("SELECT * FROM edges")
         return [self._row_to_edge(r) for r in cursor]
 
+    def iter_raw_nodes(self) -> "sqlite3.Cursor":
+        """Yield raw sqlite3.Row objects for all nodes, bypassing materialization.
+
+        Bolt optimization: Use this for large whole-graph exports to avoid
+        peak memory overhead from instantiating tens of thousands of GraphNode objects.
+        """
+        return self._conn.execute("SELECT * FROM nodes")
+
+    def iter_raw_edges(self) -> "sqlite3.Cursor":
+        """Yield raw sqlite3.Row objects for all edges, bypassing materialization.
+
+        Bolt optimization: Use this for large whole-graph exports to avoid
+        peak memory overhead from instantiating tens of thousands of GraphEdge objects.
+        """
+        return self._conn.execute("SELECT * FROM edges")
+
     def get_all_nodes(self) -> list[GraphNode]:
         """Return all nodes in the graph."""
         cursor = self._conn.execute("SELECT * FROM nodes")
