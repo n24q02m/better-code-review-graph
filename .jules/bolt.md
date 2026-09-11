@@ -105,3 +105,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 ## 2026-09-05 - Optimize peak memory overhead during full graph exports
 **Learning:** Full graph serializations (e.g., `export_graphml`, `export_jsonld` in `src/better_code_review_graph/exporter.py`) iterated over python `GraphNode` and `GraphEdge` objects via `store.get_all_nodes()` / `store.get_all_edges()`. This led to significant unnecessary memory consumption due to the construction and destruction of tens of thousands of dataclass instances for operations that only required scalar row values.
 **Action:** Replace `for node in store.get_all_nodes():` with a direct iterator over `sqlite3.Cursor` (e.g., `for row in store._conn.execute("SELECT * FROM nodes")`), accessing data via dictionary-style keys (`row["qualified_name"]`), eliminating object materialization on hot loops that touch the whole graph.
+
+### 2026-09-11 - Stream large JSON graph exports via generator
+
+**Anchor:** `N/A` (to be committed)
+
+**Learning:** When exporting the full code review graph via `export_crg`, materializing the entire graph's nodes and edges into lists of Python dictionaries before passing them to `json.dumps()` causes massive peak memory overhead, especially for large repositories.
+
+**Action:** Replace full list materialization (`[dict(row) for row in cursor]`) with a generator that iterates over the `sqlite3.Cursor` directly. Yield incrementally-dumped JSON string chunks (`json.dumps(dict(row), indent=2).replace("\\n", "\\n    ")`) to construct the final payload efficiently on-the-fly.

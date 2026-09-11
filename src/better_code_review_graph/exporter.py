@@ -269,12 +269,37 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     from .federation import derive_repo_id
 
     repo_id = derive_repo_id(root if root is not None else store.db_path.parent)
-    nodes = [dict(row) for row in store.iter_raw_nodes()]
-    edges = [dict(row) for row in store.iter_raw_edges()]
-    return json.dumps(
-        {"schema_version": 1, "repo_id": repo_id, "nodes": nodes, "edges": edges},
-        indent=2,
-    )
+
+    # To prevent massive memory overhead when exporting large JSON structures,
+    # stream the output by iterating over the database cursor in a Python generator
+    # and yielding incrementally-dumped string pieces instead of materializing full lists.
+    def _generate():
+        yield "{\n"
+        yield '  "schema_version": 1,\n'
+        yield f'  "repo_id": {json.dumps(repo_id)},\n'
+        yield '  "nodes": [\n'
+
+        first = True
+        for row in store.iter_raw_nodes():
+            if not first:
+                yield ",\n"
+            first = False
+            yield "    " + json.dumps(dict(row), indent=2).replace("\n", "\n    ")
+
+        yield "\n  ],\n"
+        yield '  "edges": [\n'
+
+        first = True
+        for row in store.iter_raw_edges():
+            if not first:
+                yield ",\n"
+            first = False
+            yield "    " + json.dumps(dict(row), indent=2).replace("\n", "\n    ")
+
+        yield "\n  ]\n"
+        yield "}"
+
+    return "".join(_generate())
 
 
 _FORMATTERS = {
