@@ -650,3 +650,108 @@ class TestPhpCallResolution:
             )
         finally:
             store.close()
+
+
+class TestBareCallResolution:
+    """Issue #1006: bare CALLS targets bind to unique same-repo symbols."""
+
+    def test_unique_bare_js_target_binds_and_impact_walks(self, tmp_path):
+        store_js = tmp_path / "store.js"
+        store_js.write_text("export function commit() {}\n")
+        actions_js = tmp_path / "actions.js"
+        actions_js.write_text(
+            "export function logout() { commit(); }\n"  # no import: bare target
+        )
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            result = full_build(tmp_path, store)
+            assert result["errors"] == []
+            calls = store.get_edges_by_source(f"{actions_js}::logout", kind="CALLS")
+            assert [edge.target_qualified for edge in calls] == [f"{store_js}::commit"]
+            assert result["bare_calls"]["resolved"] >= 1
+        finally:
+            store.close()
+
+        from better_code_review_graph.tools import get_impact_radius
+
+        impact = get_impact_radius(
+            changed_files=[str(store_js)], repo_root=str(tmp_path), max_depth=2
+        )
+        assert any(path.endswith("actions.js") for path in impact["impacted_files"])
+
+    def test_ambiguous_stays_bare_then_binds_after_dedup(self, tmp_path):
+        store_js = tmp_path / "store.js"
+        store_js.write_text("export function commit() {}\n")
+        duplicate_js = tmp_path / "duplicate.js"
+        duplicate_js.write_text("export function commit() {}\n")
+        actions_js = tmp_path / "actions.js"
+        actions_js.write_text("export function logout() { commit(); }\n")
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            result = full_build(tmp_path, store)
+            assert result["bare_calls"]["unresolved"] >= 1
+            source = f"{actions_js}::logout"
+            assert (
+                store.get_edges_by_source(source, kind="CALLS")[0].target_qualified
+                == "commit"
+            )
+
+            duplicate_js.unlink()
+            result = incremental_update(tmp_path, store, changed_files=["duplicate.js"])
+            assert result["bare_calls"]["resolved"] >= 1
+            assert (
+                store.get_edges_by_source(source, kind="CALLS")[0].target_qualified
+                == f"{store_js}::commit"
+            )
+        finally:
+            store.close()
+
+    def test_php_dynamic_receivers_are_not_double_bound(self, tmp_path):
+        definitions = tmp_path / "definitions.php"
+        definitions.write_text(
+            "<?php\nnamespace Library;\n"
+            "class Worker { public static function commit() {} }\n"
+        )
+        caller = tmp_path / "caller.php"
+        caller.write_text(
+            "<?php\nnamespace App;\n"
+            "class Service {\n"
+            " public function run($unknown) {\n"
+            "  $unknown->commit();\n"
+            " }\n}\n"
+        )
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            full_build(tmp_path, store)
+            calls = store.get_edges_by_source(f"{caller}::Service.run", kind="CALLS")
+            assert [edge.target_qualified for edge in calls] == ["commit"]
+        finally:
+            store.close()
+
+    def test_bare_symbols_remain_repo_scoped(self, tmp_path):
+        from better_code_review_graph.federation import RepoRegistry
+
+        root_a, root_b = tmp_path / "a", tmp_path / "b"
+        root_a.mkdir()
+        root_b.mkdir()
+        (root_a / "store.js").write_text("export function commit() {}\n")
+        (root_b / "store.js").write_text("export function commit() {}\n")
+        caller = root_a / "actions.js"
+        caller.write_text("export function logout() { commit(); }\n")
+        store = GraphStore(get_db_path(tmp_path))
+        try:
+            registry = RepoRegistry(store)
+            repo_a = registry.add(root_a)
+            registry.add(root_b)
+            full_build(tmp_path, store)
+            call = store.get_edges_by_source(f"{caller}::logout", kind="CALLS")[0]
+            assert call.target_qualified == f"{root_a / 'store.js'}::commit"
+            assert (
+                store._conn.execute(
+                    "SELECT repo_id FROM nodes WHERE qualified_name = ?",
+                    (call.target_qualified,),
+                ).fetchone()[0]
+                == repo_a
+            )
+        finally:
+            store.close()

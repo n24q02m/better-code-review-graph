@@ -385,6 +385,7 @@ def full_build(repo_root: Path, store: GraphStore) -> dict:
             logger.info("Progress: %d/%d files parsed", i, file_count)
 
     php_calls = store.resolve_php_calls()
+    bare_calls = store.resolve_bare_calls()
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full")
     current_head = get_head_sha(repo_root)
@@ -397,6 +398,7 @@ def full_build(repo_root: Path, store: GraphStore) -> dict:
         "total_nodes": total_nodes,
         "total_edges": total_edges,
         "php_calls": php_calls,
+        "bare_calls": bare_calls,
         "errors": errors,
     }
 
@@ -622,6 +624,7 @@ def incremental_update(
                 if rid is not None:
                     repo_registry.update_last_indexed_sha(rid, head)
         php_calls = store.resolve_php_calls()
+        bare_calls = store.resolve_bare_calls()
         store.commit()
         return {
             "files_updated": 0,
@@ -630,6 +633,7 @@ def incremental_update(
             "changed_files": [],
             "dependent_files": [],
             "php_calls": php_calls,
+            "bare_calls": bare_calls,
         }
 
     # 2. Find dependent files
@@ -644,6 +648,7 @@ def incremental_update(
         repo_root, store, parser, all_files, ignore_patterns, repo_registry
     )
     php_calls = store.resolve_php_calls()
+    bare_calls = store.resolve_bare_calls()
 
     # 5. Build reviewer summary
     reviewer_summary = _build_reviewer_summary(
@@ -666,6 +671,7 @@ def incremental_update(
         "errors": errors,
         "reviewer_summary": reviewer_summary,
         "php_calls": php_calls,
+        "bare_calls": bare_calls,
     }
 
 
