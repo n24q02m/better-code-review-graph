@@ -351,6 +351,17 @@ def _php_call_warnings(coverage: dict[str, int]) -> list[str]:
     ]
 
 
+def _bare_call_warnings(coverage: dict[str, int]) -> list[str]:
+    unresolved = coverage.get("unresolved", 0)
+    if not unresolved:
+        return []
+    return [
+        f"{unresolved} of {coverage['total']} CALLS targets are unresolved; "
+        "callers and impact results are partial. Dynamic receivers, ambiguous "
+        "definitions, and external libraries may require manual inspection."
+    ]
+
+
 def build_or_update_graph(
     full_rebuild: bool = False,
     repo_root: str | None = None,
@@ -388,7 +399,8 @@ def build_or_update_graph(
                     f"created {result['total_nodes']} nodes and {result['total_edges']} edges."
                 ),
                 **result,
-                "warnings": _php_call_warnings(result.get("php_calls", {})),
+                "warnings": _php_call_warnings(result.get("php_calls", {}))
+                + _bare_call_warnings(result.get("bare_calls", {})),
             }
         else:
             result = incremental_update(root, store, base=base)
@@ -398,7 +410,8 @@ def build_or_update_graph(
                     "build_type": "incremental",
                     "summary": "No changes detected. Graph is up to date.",
                     **result,
-                    "warnings": _php_call_warnings(result.get("php_calls", {})),
+                    "warnings": _php_call_warnings(result.get("php_calls", {}))
+                    + _bare_call_warnings(result.get("bare_calls", {})),
                 }
             # #329: surface reviewer-oriented summary alongside raw counts.
             reviewer_summary = result.get("reviewer_summary") or {}
@@ -423,7 +436,8 @@ def build_or_update_graph(
                 "build_type": "incremental",
                 "summary": " ".join(summary_lines),
                 **result,
-                "warnings": _php_call_warnings(result.get("php_calls", {})),
+                "warnings": _php_call_warnings(result.get("php_calls", {}))
+                + _bare_call_warnings(result.get("bare_calls", {})),
             }
     except Exception as e:
         return {
@@ -549,6 +563,7 @@ def _full_build_federated(
     )
 
     php_calls = store.resolve_php_calls()
+    bare_calls = store.resolve_bare_calls()
     store.set_metadata("last_updated", time.strftime("%Y-%m-%dT%H:%M:%S"))
     store.set_metadata("last_build_type", "full_federated")
     store.commit()
@@ -570,7 +585,8 @@ def _full_build_federated(
         "roots": [str(r) for r in [primary_root, *roots]],
         "errors": stats["errors"],
         "php_calls": php_calls,
-        "warnings": _php_call_warnings(php_calls),
+        "bare_calls": bare_calls,
+        "warnings": _php_call_warnings(php_calls) + _bare_call_warnings(bare_calls),
     }
 
 

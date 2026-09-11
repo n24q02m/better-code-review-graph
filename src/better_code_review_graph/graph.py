@@ -763,6 +763,92 @@ class GraphStore:
             "unresolved": row["total"] - row["resolved"],
         }
 
+    def resolve_bare_calls(self) -> dict[str, int]:
+        """Bind bare CALLS targets to unique, current same-repo symbols.
+
+        Issue #1006: the parser leaves a bare identifier in
+        ``target_qualified`` when a call cannot be resolved locally, so
+        cross-file CALLS edges never materialise and impact traversal has
+        nothing to walk. A bare target binds only when exactly one current
+        node in the same repository carries that name; ambiguous and
+        external names stay bare. The original target plus its candidate
+        list persist in ``extra`` (``bare_targets`` /
+        ``bare_unresolved_target``) and are re-evaluated on every build, so
+        deletion or a newly ambiguous definition unbinds the edge.
+
+        Edges carrying PHP call evidence (``php_unresolved_target``) are
+        owned by :meth:`resolve_php_calls` and are never double-bound here.
+        """
+        symbols: dict[tuple[str | None, str], int] = {}
+        qualified: dict[tuple[str | None, str], str] = {}
+        for row in self._conn.execute(
+            """SELECT repo_id, qualified_name FROM nodes
+               WHERE kind IN ('Function', 'Test', 'Class', 'Type')
+                 AND valid_to_sha IS NULL"""
+        ):
+            name = row["qualified_name"].rsplit("::", 1)[-1]
+            key = (row["repo_id"], name)
+            symbols[key] = symbols.get(key, 0) + 1
+            if key not in qualified or row["qualified_name"] < qualified[key]:
+                qualified[key] = row["qualified_name"]
+
+        def updates():
+            for row in self._conn.execute(
+                """SELECT id, repo_id, target_qualified, extra FROM edges
+                   WHERE kind = 'CALLS' AND valid_to_sha IS NULL
+                     AND (instr(target_qualified, '::') = 0
+                          OR json_type(extra, '$.bare_unresolved_target') = 'text')"""
+            ):
+                try:
+                    extra = json.loads(row["extra"]) if row["extra"] else {}
+                except (json.JSONDecodeError, TypeError):
+                    extra = {}
+                unresolved = extra.get("bare_unresolved_target")
+                if unresolved is None:
+                    if "php_unresolved_target" in extra:
+                        continue
+                    unresolved = row["target_qualified"]
+                    candidates = [unresolved]
+                else:
+                    candidates = extra.get("bare_targets")
+                    if not isinstance(candidates, list) or not all(
+                        isinstance(candidate, str) for candidate in candidates
+                    ):
+                        candidates = [unresolved]
+                target = unresolved
+                for candidate in candidates:
+                    if symbols.get((row["repo_id"], candidate)) == 1:
+                        target = qualified[(row["repo_id"], candidate)]
+                        break
+                if (
+                    target != row["target_qualified"]
+                    or "bare_unresolved_target" not in extra
+                ):
+                    new_extra = dict(extra)
+                    new_extra["bare_targets"] = candidates
+                    new_extra["bare_unresolved_target"] = unresolved
+                    yield target, json.dumps(new_extra), row["id"]
+
+        changed = self._conn.executemany(
+            "UPDATE edges SET target_qualified = ?, extra = ? WHERE id = ?",
+            updates(),
+        ).rowcount
+        if changed:
+            self._invalidate_cache()
+        row = self._conn.execute(
+            """SELECT COUNT(*) AS total,
+                      COALESCE(SUM(target.id IS NOT NULL), 0) AS resolved
+               FROM edges AS edge
+               LEFT JOIN nodes AS target ON target.qualified_name = edge.target_qualified
+                    AND target.valid_to_sha IS NULL
+               WHERE edge.kind = 'CALLS' AND edge.valid_to_sha IS NULL"""
+        ).fetchone()
+        return {
+            "total": row["total"],
+            "resolved": row["resolved"],
+            "unresolved": row["total"] - row["resolved"],
+        }
+
     def update_summary(
         self,
         node_id: int,

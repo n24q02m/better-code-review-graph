@@ -19,6 +19,17 @@ definitions, external libraries, and inherited methods without a direct lexical
 target stay unresolved; their counts warn that impact/callers results are partial,
 not proof of no callers.
 
+Build responses also include `bare_calls: {total, resolved, unresolved}`. A bare
+CALLS target written by the parser (an identifier with no `file::symbol`
+qualification, e.g. a callback with no resolvable import) binds after all files
+are indexed when exactly one current Function, Test, Class, or Type in the same
+repository carries that name, so cross-file impact traversal has edges to walk.
+The original bare name and its candidates persist on the edge and are
+re-evaluated on every build: deleting the symbol or introducing a same-name
+definition unbinds the edge back to its bare form. Ambiguous definitions,
+external libraries, and PHP dynamic receivers (owned by the PHP pass above)
+stay unresolved.
+
 **Parameters:**
 - `full_rebuild`: Re-parse all files (default: false, incremental)
 - `base`: Git ref for incremental diff (default: HEAD~1)
