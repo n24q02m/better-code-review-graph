@@ -2,6 +2,78 @@
 
 <!-- version list -->
 
+## v3.25.0 (2026-09-11)
+
+### Bug Fixes
+
+- Bolt optimization for full graph exports peak memory overhead
+  ([#1015](https://github.com/n24q02m/better-code-review-graph/pull/1015),
+  [`6ed06b0`](https://github.com/n24q02m/better-code-review-graph/commit/6ed06b017a869ab0d035e4ef131021bdac29f803))
+
+- Bolt optimization push node kind filtering to sqlite in keyword fallback search
+  ([#1021](https://github.com/n24q02m/better-code-review-graph/pull/1021),
+  [`ecfef5a`](https://github.com/n24q02m/better-code-review-graph/commit/ecfef5a6bbb8fb90fb3cf5aa6293663411874c85))
+
+- Complete #1017 exporter contract (DOT/Cypher escaping, language COALESCE) on iter_raw helpers
+  ([#1022](https://github.com/n24q02m/better-code-review-graph/pull/1022),
+  [`48ce452`](https://github.com/n24q02m/better-code-review-graph/commit/48ce452e9f77be990a8c58417344d58f8cd4fb9f))
+
+- Complete graph isolation and resolution contracts
+  ([#1017](https://github.com/n24q02m/better-code-review-graph/pull/1017),
+  [`0d3a57e`](https://github.com/n24q02m/better-code-review-graph/commit/0d3a57e1ba5456200208073bbb08a04a7b963da9))
+
+- Isolate setup and dependency contracts
+  ([#1017](https://github.com/n24q02m/better-code-review-graph/pull/1017),
+  [`0d3a57e`](https://github.com/n24q02m/better-code-review-graph/commit/0d3a57e1ba5456200208073bbb08a04a7b963da9))
+
+- Resolve bare CALLS targets against unique same-repo symbols (#1006)
+  ([#1023](https://github.com/n24q02m/better-code-review-graph/pull/1023),
+  [`abe6cad`](https://github.com/n24q02m/better-code-review-graph/commit/abe6cad0c3489729496c0049573265a37b18258d))
+
+- Sentinel [REJECTED] document why dynamic SQL parameterized IN clauses are secure
+  ([#1020](https://github.com/n24q02m/better-code-review-graph/pull/1020),
+  [`508bfd9`](https://github.com/n24q02m/better-code-review-graph/commit/508bfd98954629a23d351d5856415fa59995e1e3))
+
+- **deps**: Lock file maintenance
+  ([#1010](https://github.com/n24q02m/better-code-review-graph/pull/1010),
+  [`201fa23`](https://github.com/n24q02m/better-code-review-graph/commit/201fa23be833d4701b1e003bd6828555686f5401))
+
+- **deps**: Update minor dependencies
+  ([#989](https://github.com/n24q02m/better-code-review-graph/pull/989),
+  [`3bc3682`](https://github.com/n24q02m/better-code-review-graph/commit/3bc3682387c623a59685ce7ba4ff6a8cb0b35102))
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.6.0
+  ([#1007](https://github.com/n24q02m/better-code-review-graph/pull/1007),
+  [`4ccb2c0`](https://github.com/n24q02m/better-code-review-graph/commit/4ccb2c05f371946c675e12019401a85f4a32037a))
+
+- **deps**: Update patch dependencies
+  ([#1018](https://github.com/n24q02m/better-code-review-graph/pull/1018),
+  [`df4c1bc`](https://github.com/n24q02m/better-code-review-graph/commit/df4c1bc0dd0b1efb516d4be20b1738b18dce4abb))
+
+- **deps**: Update patch dependencies
+  ([#1009](https://github.com/n24q02m/better-code-review-graph/pull/1009),
+  [`bff9e9d`](https://github.com/n24q02m/better-code-review-graph/commit/bff9e9d375f0f1ebd4cc790bb780827a15c040cf))
+
+- **deps**: Update python-semantic-release/publish-action action to v10.6.2
+  ([#1013](https://github.com/n24q02m/better-code-review-graph/pull/1013),
+  [`1895ba3`](https://github.com/n24q02m/better-code-review-graph/commit/1895ba3326331f0e0621555189340939c7385d56))
+
+- **deps**: Update python:3.13-slim-bookworm Docker digest to ed86c82
+  ([#1008](https://github.com/n24q02m/better-code-review-graph/pull/1008),
+  [`8ae5faa`](https://github.com/n24q02m/better-code-review-graph/commit/8ae5faa6153d4c4d150ce07683a1a8404d495d5f))
+
+### Continuous Integration
+
+- Wire unified merge=release ladder (push staging=beta, main=stable)
+  ([`b8d4541`](https://github.com/n24q02m/better-code-review-graph/commit/b8d4541f6e955a6c8293303a1acc040e6f811265))
+
+### Features
+
+- Complete graph isolation and resolution contracts
+  ([#1017](https://github.com/n24q02m/better-code-review-graph/pull/1017),
+  [`0d3a57e`](https://github.com/n24q02m/better-code-review-graph/commit/0d3a57e1ba5456200208073bbb08a04a7b963da9))
+
+
 ## v3.24.0 (2026-09-02)
 
 
