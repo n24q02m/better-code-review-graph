@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v3.25.3 (2026-09-12)
+
+### Bug Fixes
+
+- Update fastretrieval stable pin expectation
+  ([#1027](https://github.com/n24q02m/better-code-review-graph/pull/1027),
+  [`79bb07a`](https://github.com/n24q02m/better-code-review-graph/commit/79bb07a2c0224754e36a57f712c5465fbc0a9aeb))
+
+- **deps**: Update minor dependencies
+  ([#1027](https://github.com/n24q02m/better-code-review-graph/pull/1027),
+  [`79bb07a`](https://github.com/n24q02m/better-code-review-graph/commit/79bb07a2c0224754e36a57f712c5465fbc0a9aeb))
+
+### Chores
+
+- **release**: Fix stale two-branch comment (single-main lane)
+  ([`ab7b641`](https://github.com/n24q02m/better-code-review-graph/commit/ab7b641ab9f99825ffd633ffa0a98eae8e08d858))
+
+- **release**: Single-main release lane (staging branch retired)
+  ([`06b4d8e`](https://github.com/n24q02m/better-code-review-graph/commit/06b4d8e60b529df8bcd908fa4e56a639524d2ac2))
+
+
 ## v3.25.2 (2026-09-12)
 
 ### Bug Fixes
