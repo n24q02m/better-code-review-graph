@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v3.25.2 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Update dawidd6/action-send-mail action to v21
+  ([#1028](https://github.com/n24q02m/better-code-review-graph/pull/1028),
+  [`c3ce62e`](https://github.com/n24q02m/better-code-review-graph/commit/c3ce62eb688112da285d92e5544e1afd69c1d3f2))
+
+### Chores
+
+- Pin BSR action to v1.6.1 stable (6e688489)
+  ([#1024](https://github.com/n24q02m/better-code-review-graph/pull/1024),
+  [`f171021`](https://github.com/n24q02m/better-code-review-graph/commit/f171021700cc781bd8aa640a5f8b3c7dba340511))
+
+- **rulesets**: Align IaC with repo-bootstrap template
+  ([`9404940`](https://github.com/n24q02m/better-code-review-graph/commit/94049404c43fc7e3984bbb948f713914a798075a))
+
+
 ## v3.25.1 (2026-09-11)
 
 ### Bug Fixes
