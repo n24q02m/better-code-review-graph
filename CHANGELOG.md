@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.25.5 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance
+  ([#1033](https://github.com/n24q02m/better-code-review-graph/pull/1033),
+  [`c419cd2`](https://github.com/n24q02m/better-code-review-graph/commit/c419cd2b2680b4d8da52ece25b41ae8f2359ff26))
+
+
 ## v3.25.4 (2026-09-12)
 
 ### Bug Fixes
