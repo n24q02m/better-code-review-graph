@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.25.6 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Update patch dependencies
+  ([#1034](https://github.com/n24q02m/better-code-review-graph/pull/1034),
+  [`3bf050e`](https://github.com/n24q02m/better-code-review-graph/commit/3bf050ea29cc0875f397f8b3af28f4ab4f2e1303))
+
+
 ## v3.25.5 (2026-09-12)
 
 ### Bug Fixes
