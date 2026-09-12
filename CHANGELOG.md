@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.25.4 (2026-09-12)
+
+### Bug Fixes
+
+- Bolt optimize memory overhead in crg export
+  ([#1029](https://github.com/n24q02m/better-code-review-graph/pull/1029),
+  [`3e4d438`](https://github.com/n24q02m/better-code-review-graph/commit/3e4d438304ccd0e7c1b25050706fa8b1a7236650))
+
+
 ## v3.25.3 (2026-09-12)
 
 ### Bug Fixes
