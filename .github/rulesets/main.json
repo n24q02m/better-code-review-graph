@@ -4,6 +4,23 @@
   "source_type": "Repository",
   "source": "n24q02m/better-code-review-graph",
   "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    },
+    {
+      "actor_id": 3200052,
+      "actor_type": "Integration",
+      "bypass_mode": "always"
+    },
+    {
+      "actor_id": 2740,
+      "actor_type": "Integration",
+      "bypass_mode": "always"
+    }
+  ],
   "conditions": {
     "ref_name": {
       "exclude": [],
@@ -25,24 +42,16 @@
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 1,
+        "required_approving_review_count": 0,
         "dismiss_stale_reviews_on_push": true,
-        "required_reviewers": [],
-        "require_code_owner_review": true,
+        "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
         "allowed_merge_methods": [
           "squash"
-        ]
-      }
-    },
-    {
-      "type": "update"
-    },
-    {
-      "type": "code_quality",
-      "parameters": {
-        "severity": "errors"
+        ],
+        "required_reviewers": [],
+        "require_extra_approval_for_unattributed_changes": true
       }
     },
     {
@@ -56,13 +65,6 @@
           }
         ]
       }
-    }
-  ],
-  "bypass_actors": [
-    {
-      "actor_id": 5,
-      "actor_type": "RepositoryRole",
-      "bypass_mode": "always"
     }
   ]
 }
