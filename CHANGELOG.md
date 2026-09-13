@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v3.25.10 (2026-09-13)
+
+### Bug Fixes
+
+- Bump mcp-core to 1.24.1 ([#1031](https://github.com/n24q02m/better-code-review-graph/pull/1031),
+  [`d3346fe`](https://github.com/n24q02m/better-code-review-graph/commit/d3346fe8bc2f2dc7f696335d984b5aa65c72a314))
+
+### Testing
+
+- Update fastretrieval stable guard to 1.4.0 (verified genuine stable on PyPI; unblocks pre-existing
+  main CI failure from lock-maintenance #1038)
+  ([#1031](https://github.com/n24q02m/better-code-review-graph/pull/1031),
+  [`d3346fe`](https://github.com/n24q02m/better-code-review-graph/commit/d3346fe8bc2f2dc7f696335d984b5aa65c72a314))
+
+
 ## v3.25.9 (2026-09-12)
 
 ### Bug Fixes
