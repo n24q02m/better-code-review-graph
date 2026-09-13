@@ -2,6 +2,51 @@
 
 <!-- version list -->
 
+## v3.25.9 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance
+  ([#1038](https://github.com/n24q02m/better-code-review-graph/pull/1038),
+  [`ca2e39e`](https://github.com/n24q02m/better-code-review-graph/commit/ca2e39ea411e58ca2ac5b3f00d8e7480f8db8b89))
+
+
+## v3.25.8 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance
+  ([#1037](https://github.com/n24q02m/better-code-review-graph/pull/1037),
+  [`186c962`](https://github.com/n24q02m/better-code-review-graph/commit/186c96243e2edc6db3889894f0d9df72167f5ce9))
+
+
+## v3.25.7 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance
+  ([#1036](https://github.com/n24q02m/better-code-review-graph/pull/1036),
+  [`2234cb6`](https://github.com/n24q02m/better-code-review-graph/commit/2234cb66fe1a08901911928a919f02b591c2a6ca))
+
+
+## v3.25.6 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Update patch dependencies
+  ([#1034](https://github.com/n24q02m/better-code-review-graph/pull/1034),
+  [`3bf050e`](https://github.com/n24q02m/better-code-review-graph/commit/3bf050ea29cc0875f397f8b3af28f4ab4f2e1303))
+
+
+## v3.25.5 (2026-09-12)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance
+  ([#1033](https://github.com/n24q02m/better-code-review-graph/pull/1033),
+  [`c419cd2`](https://github.com/n24q02m/better-code-review-graph/commit/c419cd2b2680b4d8da52ece25b41ae8f2359ff26))
+
+
 ## v3.25.4 (2026-09-12)
 
 ### Bug Fixes
