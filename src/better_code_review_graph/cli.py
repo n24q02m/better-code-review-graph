@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import Any
@@ -514,6 +515,148 @@ def _handle_security(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Host control plane (hull-core pattern): server/token/config/db
+# ---------------------------------------------------------------------------
+
+
+def _configure_server(sub: argparse.ArgumentParser) -> None:
+    server_sub = sub.add_subparsers(dest="server_command", required=True)
+    start = server_sub.add_parser(
+        "start", help="start the HTTP MCP server (blocking; Ctrl+C stops)"
+    )
+    start.add_argument("--host", default=None, help="bind host (default from config)")
+    start.add_argument(
+        "--port", type=int, default=None, help="bind port (default from config)"
+    )
+
+
+def _handle_server_start(args: argparse.Namespace) -> int:
+    import sys
+
+    from .config import load_instance_settings
+    from .server import serve_main
+
+    os.environ["MCP_TRANSPORT"] = "http"
+    # run_http() resolves bind address from these (falls back to config).
+    host = args.host or os.environ.get("MCP_HOST")
+    if args.host:
+        os.environ["MCP_HOST"] = args.host
+    if args.port:
+        os.environ["MCP_PORT"] = str(args.port)
+    # Security property carried over from the wp2-wip line: an
+    # unauthenticated (no-auth) listener must never bind off-loopback.
+    if (
+        host
+        and host not in {"localhost", "127.0.0.1", "::1"}
+        and load_instance_settings().server.auth == "no-auth"
+    ):
+        print(
+            "crg refuses to start: auth = 'no-auth' only permits loopback "
+            "binds; set [server] auth to 'token' or 'multi' for a shared "
+            "listener",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        serve_main()
+    except KeyboardInterrupt:
+        pass
+    except SystemExit as exc:  # e.g. no-auth non-loopback bind refusal
+        if str(exc):
+            print(f"error: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+def _configure_token(sub: argparse.ArgumentParser) -> None:
+    token_sub = sub.add_subparsers(dest="token_command", required=True)
+    token_hash_p = token_sub.add_parser(
+        "hash", help="mint a scrypt token_hash from a plaintext token"
+    )
+    token_hash_p.add_argument(
+        "token", help="plaintext token (keep it out of shell history)"
+    )
+
+
+def _handle_token_hash(args: argparse.Namespace) -> int:
+    from hull_core.auth.tokens import hash_token
+
+    print(hash_token(args.token))
+    return 0
+
+
+def _configure_config(sub: argparse.ArgumentParser) -> None:
+    config_sub = sub.add_subparsers(dest="config_command", required=True)
+    init_p = config_sub.add_parser(
+        "init", help="write the instance config.toml from the template"
+    )
+    init_p.add_argument(
+        "--force", action="store_true", help="overwrite an existing config"
+    )
+    config_sub.add_parser("path", help="print the config file path")
+    config_sub.add_parser(
+        "show", help="print the effective config (template if absent)"
+    )
+
+
+def _handle_config_init(args: argparse.Namespace) -> int:
+    import sys
+
+    from hull_core.config.settings import write_default_config
+
+    from .config import crg_config_dir
+
+    try:
+        path = write_default_config(config_dir=crg_config_dir(), force=args.force)
+    except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote {path}")
+    return 0
+
+
+def _handle_config_path(_args: argparse.Namespace) -> int:
+    from .config import crg_config_dir
+
+    print(crg_config_dir() / "config.toml")
+    return 0
+
+
+def _handle_config_show(_args: argparse.Namespace) -> int:
+
+    from hull_core.config.settings import CONFIG_TEMPLATE
+
+    from .config import crg_config_dir
+
+    path = crg_config_dir() / "config.toml"
+    if path.is_file():
+        print(path.read_text(encoding="utf-8"), end="")
+    else:
+        print(CONFIG_TEMPLATE, end="")
+    return 0
+
+
+def _configure_db(sub: argparse.ArgumentParser) -> None:
+    db_sub = sub.add_subparsers(dest="db_command", required=True)
+    db_sub.add_parser("path", help="print the repo-local graph.db path")
+
+
+def _handle_db_path(_args: argparse.Namespace) -> int:
+    from .incremental import find_project_root, get_db_path
+
+    print(get_db_path(find_project_root(None)))
+    return 0
+
+
+def _handle_config(args: argparse.Namespace) -> int:
+    if args.config_command == "path":
+        return _handle_config_path(args)
+    if args.config_command == "show":
+        return _handle_config_show(args)
+    return _handle_config_init(args)
+
+
+# ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
@@ -533,6 +676,10 @@ def main() -> int:
         "query": (_configure_query, _handle_query),
         "review": (_configure_review, _handle_review),
         "security": (_configure_security, _handle_security),
+        "server": (_configure_server, _handle_server_start),
+        "token": (_configure_token, _handle_token_hash),
+        "config": (_configure_config, _handle_config),
+        "db": (_configure_db, _handle_db_path),
     }
 
     argv = sys.argv[1:]
