@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.29.0 (2026-09-27)
+
+### Features
+
+- Rank summarize queue with deterministic order and jev advisory batches
+  ([`2739dd8`](https://github.com/n24q02m/crg/commit/2739dd85386bb6080b97380902e021bc84bd4fba))
+
+
 ## v3.28.1 (2026-09-27)
 
 ### Bug Fixes
