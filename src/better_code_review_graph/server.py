@@ -1,8 +1,11 @@
 """MCP server entry point for Better Code Review Graph.
 
 6-tool architecture: graph + query + review (3 main) + config + security
-+ help.
-Run as: better-code-review-graph serve
++ help. HTTP serving goes through hull-core's token middleware (modes
+no-auth / token / multi with users.toml, spec 2026-09-26 §4) behind the
+lifecycle lock; ``crg server start`` (or any argv with ``--http``) is the
+only way to serve HTTP. MCP is never spawned — it is the endpoint at
+``http://host:port/mcp``.
 """
 
 from __future__ import annotations
@@ -163,10 +166,10 @@ mcp = FastMCP(
     version=_pkg_version,
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
-        "context-aware code reviews. 7 tools: graph (build/embed/stats), "
+        "context-aware code reviews. 6 tools: graph (build/embed/stats), "
         "query (search/impact/patterns), review (code review context), "
-        "config (status/set/setup_*), security (scan/report/rule_list), "
-        "help (full docs), config__open_relay (re-trigger relay form)."
+        "config (status/set/setup_status), security (scan/report/rule_list), "
+        "help (full docs)."
     ),
 )
 
@@ -248,7 +251,8 @@ def graph(
         case "stats":
             return list_graph_stats(repo_root=repo_root)
         case "embed":
-            return embed_graph(repo_root=repo_root)
+            result = embed_graph(repo_root=repo_root)
+            return result
         case "export":
             return export_graph_dispatch(
                 repo_root=repo_root, format=format, output_path=output_path
@@ -380,7 +384,7 @@ def query(
         case "search":
             if not search_query:
                 return {"error": "search_query is required for search action"}
-            return semantic_search_nodes(
+            result = semantic_search_nodes(
                 query=search_query,
                 kind=kind,
                 limit=limit,
@@ -388,6 +392,7 @@ def query(
                 repo=repo,
                 as_of=as_of,
             )
+            return result
         case "impact":
             return get_impact_radius(
                 changed_files=changed_files,
@@ -570,10 +575,12 @@ def review(
         "Server configuration, status, and model-cell setup. "
         "Actions: status (show state), set (key, value -- keys: log_level), "
         "cache_clear (wipe embeddings), "
-        "setup_status (state + configured model cells), "
+        "setup_status (model-cell + auth-mode configuration view), "
         "setup_start (where the host configures keys), "
         "setup_skip (local mode), setup_reset (reset to local), "
         "setup_complete (re-resolve from host config). "
+        "Multi-user: mutating config actions are host-side only (edit "
+        "~/.crg/config.toml + restart). "
         "Use `help` tool for full docs."
     ),
     annotations=ToolAnnotations(
@@ -591,19 +598,17 @@ async def config(
     repo_root: str | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Server configuration, status, and model-cell setup.
+    """Server configuration, status, and model-cell status.
 
     Config actions:
     - status: Show graph path, node/edge counts, embedding backend, last updated
     - set: Update runtime setting (key + value). Keys: log_level
     - cache_clear: Wipe all embeddings from the graph
 
-    Setup actions (host-owned model cells — no browser flow post-de-host):
-    - setup_status: Show current state and which model cells have keys
-    - setup_start: Explain where the host configures keys
-    - setup_skip: Set local mode (local ONNX embedding, no cloud cells)
-    - setup_reset: Reset state to local; host config re-resolves on next call
-    - setup_complete: Re-resolve credential state from host config
+    Setup status:
+    - setup_status: Show per-task model cells (configured? model name, never
+      the key) + the active auth mode. Host-only: edit the instance
+      ``config.toml`` / ``users.toml`` and restart to change any of it.
     """
     match action:
         case "status":
@@ -620,19 +625,24 @@ async def config(
         case "cache_clear":
             return _config_cache_clear(repo_root)
         case "setup_status":
-            from . import credential_state as _cs
-            from .config import resolve_cells
+            from .config import load_instance_settings, resolve_cells
+            from .credential_state import resolve_credential_state
 
-            # Post-de-host (BYOK cut): there is no browser setup flow and no
-            # per-sub credential store. Keys are host-only material in the
-            # instance config ``[models.<task>]`` cells (or ``HULL_<TASK>_API_KEY``
-            # env injected at start), so status reports the resolved cells.
-            _cells = resolve_cells()
-            _providers = [task for task, cell in _cells.items() if cell.configured]
+            settings = load_instance_settings()
+            cells = resolve_cells(settings)
+            state = resolve_credential_state()
             return {
-                "state": "configured" if _providers else _cs.get_state().value,
-                "setup_url": None,
-                "providers_configured": _providers,
+                "state": state.value,
+                "auth_mode": settings.server.auth,
+                "config_dir": str(settings.config_dir),
+                "cells": {
+                    task: {
+                        "configured": cell.configured,
+                        "base_url": cell.base_url,
+                        "model": cell.model,
+                    }
+                    for task, cell in cells.items()
+                },
             }
         case "setup_start":
             from .credential_state import CredentialState, get_state
@@ -688,7 +698,6 @@ async def config(
             return {
                 "status": "ok",
                 "state": state.value,
-                "message": "Credential state refreshed.",
             }
         case _:
             import difflib
@@ -958,68 +967,132 @@ def security(
 
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+SERVER_NAME = "better-code-review-graph"
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
-async def run_http(port: int = 0) -> None:
-    """Run as HTTP server with hull-core token auth.
+def build_http_app(settings: Any = None) -> Any:
+    """Authenticated HTTP MCP app via hull-core middleware (no port bind).
 
-    Post-de-host (spec 2026-09-26 §4): the serving surface is crg's FastMCP
-    wrapped in hull's ``HullAuthMiddleware`` — the same composition as
-    ``hull_core.server.app.build_app``, but with the crg tool set. Config
-    modes (``[server] auth``): ``no-auth`` (localhost, one shared
-    namespace), ``token`` (one shared token), ``multi`` (``users.toml``;
-    each token maps to a namespace that scopes the graph DB at
-    ``<CRG_DATA_DIR>/subs/<namespace>/graph.db``). There is no OAuth
-    credential relay anymore: keys are host-only material in
-    ``[models.<task>]`` cells or ``HULL_<TASK>_API_KEY`` env.
+    The hull ASGI middleware resolves the bearer token per request (modes
+    no-auth / token / multi against ``users.toml``), publishes the identity
+    contextvar, and rejects with 401/403/429 JSON. crg tools consume the
+    identity through ``credential_state.get_current_sub`` for
+    ``subs/<namespace>/graph.db`` isolation.
     """
     from hull_core.auth.asgi import HullAuthMiddleware
+    from hull_core.auth.context import reset_current_user, set_current_user
     from hull_core.auth.middleware import Authenticator
     from hull_core.auth.users import load_users
-    from hull_core.limits.limiter import SlidingWindowLimiter
     from starlette.middleware import Middleware
 
     from .config import load_instance_settings
 
-    host = os.environ.get("MCP_HOST") or None
-    settings = load_instance_settings()
-    if port == 0:
-        port = int(os.environ.get("MCP_PORT", str(settings.server.port)))
-    if host is None:
-        host = settings.server.host
+    class _ScopeStampingAuthMiddleware(HullAuthMiddleware):
+        """Hull auth + ASGI-scope identity stamp.
 
-    users = load_users(settings.server.users_file) if settings.server.auth == "multi" else None
-    authenticator = Authenticator(settings, users=users, limiter=SlidingWindowLimiter())
-    app = mcp.http_app(
+        FastMCP's streamable-HTTP transport executes tools in a session task
+        created outside the per-request task, so the auth contextvar set by
+        hull's middleware never reaches tool handlers. Stamping the verified
+        ``AuthContext`` onto ``scope["state"]`` (which FastMCP exposes to
+        tools via ``get_http_request``) restores request-scoped identity for
+        per-sub storage isolation.
+        """
+
+        async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            authz = None
+            for name, value in scope.get("headers", []):
+                if name == b"authorization":
+                    authz = value.decode("latin-1")
+                    break
+
+            outcome = self.authenticator.authenticate(authz)
+            if not outcome.ok:
+                await self._reject(send, outcome.status or 500, outcome.detail)
+                return
+
+            scope.setdefault("state", {})[AUTH_CONTEXT_STATE_KEY] = outcome.context
+            token = set_current_user(outcome.context)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                reset_current_user(token)
+
+    settings = settings if settings is not None else load_instance_settings()
+    users = None
+    if settings.server.auth == "multi":
+        if settings.server.users_file is None:
+            raise RuntimeError("multi mode requires [server] users_file")
+        users = load_users(settings.server.users_file)
+    authenticator = Authenticator(settings, users=users)
+    return mcp.http_app(
         path="/mcp",
         transport="streamable-http",
-        middleware=[Middleware(HullAuthMiddleware, authenticator=authenticator)],
+        middleware=[
+            Middleware(_ScopeStampingAuthMiddleware, authenticator=authenticator)
+        ],
     )
 
-    import uvicorn
 
-    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    await server.serve()
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+# ASGI scope["state"] key carrying the verified hull AuthContext (see
+# _ScopeStampingAuthMiddleware in build_http_app).
+AUTH_CONTEXT_STATE_KEY = "hull_auth_context"
+
+
+def run_http_server_blocking(host: str | None = None, port: int | None = None) -> None:
+    """Serve HTTP until interrupted (hull-core ``server start`` pattern).
+
+    Acquires the cross-process lifecycle lock for ``(SERVER_NAME, port)``
+    before binding so two instances cannot race the same port; ``no-auth``
+    mode is refused any non-loopback bind (an unauthenticated listener must
+    never leave localhost).
+    """
+    import uvicorn
+    from hull_core.lifecycle.lock import LifecycleLock
+
+    from .config import load_instance_settings
+    from .credential_state import resolve_credential_state
+
+    settings = load_instance_settings()
+    bind_host = host or settings.server.host
+    bind_port = port or settings.server.port
+
+    if settings.server.auth == "no-auth" and bind_host not in _LOOPBACK_HOSTS:
+        raise SystemExit(
+            "crg refuses to start: auth = 'no-auth' only permits loopback binds; "
+            "set [server] auth to 'token' or 'multi' for a shared listener"
+        )
+
+    resolve_credential_state()
+    lock = LifecycleLock(SERVER_NAME, bind_port)
+    with lock:
+        app = build_http_app(settings)
+        uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
 
 
 def serve_main(repo_root: str | None = None) -> None:
     """Run the MCP server. Defaults to stdio; opt in to HTTP via flag/env.
 
-    Stdio mode (default): runs FastMCP stdio server directly. Reads cloud
-    API keys from env vars only. Universal MCP client compatibility.
+    Stdio mode (default): runs FastMCP stdio server directly. Universal
+    MCP client compatibility; model cells resolved lazily per call.
 
-    HTTP mode (opt-in): triggered by ``--http`` argv flag,
-    ``MCP_TRANSPORT=http``, or ``TRANSPORT_MODE=http``. Serves crg's tools
-    behind hull-core token auth (``[server] auth``: no-auth / token /
-    multi with ``users.toml``); each multi-mode namespace scopes the graph
-    DB under ``CRG_DATA_DIR``.
-
-    See: ~/projects/.superpower/mcp-core/specs/2026-05-01-stdio-pure-http-multiuser.md
+    HTTP mode (opt-in): ``--http`` argv flag, ``MCP_TRANSPORT=http``, or
+    ``TRANSPORT_MODE=http`` — hull-core token middleware + lifecycle lock,
+    bind from the instance config (``~/.crg/config.toml``).
     """
-    import asyncio
     import sys
 
     global _default_repo_root
@@ -1049,18 +1122,12 @@ def serve_main(repo_root: str | None = None) -> None:
     )
 
     if is_http:
-        # HTTP mode: resolve credentials so the relay form can hint current
-        # state. Stdio mode resolves lazily inside tool calls.
-        from .credential_state import resolve_credential_state
-
-        resolve_credential_state()
-
-        asyncio.run(run_http())
+        run_http_server_blocking()
         return
 
-    # Stdio mode (default): run FastMCP stdio server directly. No bridge
-    # layer. Cloud API keys come from env vars only -- CRG has a local
-    # fastretrieval local fallback so missing cloud creds is non-fatal.
+    # Stdio mode (default): run FastMCP stdio server directly. Single-user
+    # local process; repo-local graph.db; local ONNX embedding works with
+    # no keys, cloud cells are picked up from the instance config.
     mcp.run(transport="stdio")
 
 

@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from hull_core.providers.openai_spec import OpenAICompatClient, ProviderError
+from hull_core.providers.openai_spec import OpenAICompatClient
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,10 @@ async def summarize_node_async(
     prompt = _PROMPT_PREFIX + node.source_text
     try:
         content = await client.chat([{"role": "user", "content": prompt}])
-    except ProviderError as exc:
+    except Exception as exc:
+        # Contract: transport-level failures surface as RuntimeError wrapping
+        # the original error, regardless of the raising layer (ProviderError,
+        # SSRF guard, httpx transport).
         raise RuntimeError(f"summarize_node failed: {exc}") from exc
     if not content or not content.strip():
         raise RuntimeError(

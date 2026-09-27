@@ -150,8 +150,20 @@ def get_current_sub() -> str | None:
     try:
         ctx = current_user()
     except Exception:  # pragma: no cover - hull always present post de-host
-        return None
-    if ctx.mode == "multi" and ctx.namespace:
+        ctx = None
+    if ctx is None:
+        # FastMCP executes tools in a session task outside the per-request
+        # task, so the auth contextvar may be absent here; the scope-stamped
+        # copy (see server.build_http_app) survives the task boundary.
+        try:
+            from fastmcp.server.dependencies import get_http_request
+
+            from .server import AUTH_CONTEXT_STATE_KEY
+
+            ctx = get_http_request().scope.get("state", {}).get(AUTH_CONTEXT_STATE_KEY)
+        except Exception:  # pragma: no cover - stdio/CLI has no HTTP request
+            return None
+    if ctx is not None and ctx.mode == "multi" and ctx.namespace:
         sub = ctx.namespace
         # Reuse the path-safety validation so a hostile users.toml namespace
         # cannot escape the subs/ root.

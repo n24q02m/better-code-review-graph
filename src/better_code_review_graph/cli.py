@@ -1,14 +1,18 @@
-"""Console-script entry: local argparse dispatch (de-hosted, no shared core).
+"""Console-script entry: control plane + consumer (hull-core CLI pattern).
 
-Bare invocation and any leading-dash argv (e.g. --http) start the server;
-a leading positional argv[0] routes to a subcommand (``graph``, ``query``,
-``review``, ``security``) instead of the server.
+Bare invocation and any leading-dash argv (e.g. ``--http``) start the server
+exactly as before (stdio default, HTTP opt-in); a leading positional routes
+to a subcommand: ``graph``, ``query``, ``review``, ``security`` (consumers)
+or ``server start``, ``token hash``, ``config init|path|show``, ``db path``
+(host control plane). With the server down, HTTP consumers are told to start
+it first — there is no hidden local-core mode.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import Any
@@ -514,66 +518,147 @@ def _handle_security(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Host control plane (hull-core pattern)
+# ---------------------------------------------------------------------------
+
+
+def _handle_server_start(args: argparse.Namespace) -> int:
+    from .server import run_http_server_blocking
+
+    try:
+        run_http_server_blocking(host=args.host, port=args.port)
+    except SystemExit as exc:
+        if str(exc):
+            print(f"error: {exc}", file=sys.stderr)
+        return 2
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+def _handle_token_hash(args: argparse.Namespace) -> int:
+    from hull_core.auth.tokens import hash_token
+
+    print(hash_token(args.token))
+    return 0
+
+
+def _handle_config_init(args: argparse.Namespace) -> int:
+    from hull_core.config.settings import write_default_config
+
+    from .config import crg_config_dir
+
+    try:
+        path = write_default_config(config_dir=crg_config_dir(), force=args.force)
+    except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote {path}")
+    return 0
+
+
+def _handle_config_path(_args: argparse.Namespace) -> int:
+    from .config import crg_config_dir
+
+    print(crg_config_dir() / "config.toml")
+    return 0
+
+
+def _handle_config_show(_args: argparse.Namespace) -> int:
+    from hull_core.config.settings import CONFIG_TEMPLATE
+
+    from .config import crg_config_dir
+
+    path = crg_config_dir() / "config.toml"
+    if path.is_file():
+        print(path.read_text(encoding="utf-8"), end="")
+    else:
+        print(CONFIG_TEMPLATE, end="")
+    return 0
+
+
+def _handle_db_path(_args: argparse.Namespace) -> int:
+    from .incremental import find_project_root, get_db_path
+
+    print(get_db_path(find_project_root(None)))
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Main entrypoint
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    """Route argv: server start vs. local subcommands.
+_SUBCOMMANDS: dict[str, tuple[Any, Any]] = {
+    "graph": (_configure_graph, _handle_graph),
+    "query": (_configure_query, _handle_query),
+    "review": (_configure_review, _handle_review),
+    "security": (_configure_security, _handle_security),
+}
 
-    Same dispatch contract the shared core builder used to provide, now
-    local: bare or leading-dash argv goes to the server (``_serve``), a
-    known leading subcommand is parsed by its own argparse subparser and
-    handed to its handler, anything else is a clean rc-2 usage error.
-    """
-    import sys
 
-    handlers: dict[str, tuple[Any, Any]] = {
-        "graph": (_configure_graph, _handle_graph),
-        "query": (_configure_query, _handle_query),
-        "review": (_configure_review, _handle_review),
-        "security": (_configure_security, _handle_security),
-    }
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
 
-    argv = sys.argv[1:]
-    if not argv:
-        rc = _serve([])
-        return 0 if rc is None else rc
+    # Bare invocation or leading-dash argv (e.g. --http): serve.
+    if not argv or argv[0].startswith("-"):
+        return _serve(argv)
 
-    # Intercept bare flags before argparse: -h/--help/--version must print
-    # and exit instead of starting (and blocking on) the stdio server, and
-    # any other leading dash is passed through to the server untouched.
-    if argv[0] in ("-h", "--help"):
-        names = ", ".join(sorted(handlers))
-        print("usage: better-code-review-graph [-h] [--version] [<subcommand> ...]")
-        print("Any other flags/args are passed through to the MCP server (e.g. --http).")
-        print(f"subcommands: {names}")
-        return 0
-    if argv[0] in ("--version", "-V"):
-        print(f"better-code-review-graph {_version()}")
-        return 0
-    if argv[0].startswith("-"):
-        rc = _serve(argv)
-        return 0 if rc is None else rc
+    parser = argparse.ArgumentParser(
+        prog="crg", description="Better Code Review Graph control plane + consumer"
+    )
+    parser.add_argument("--version", action="version", version=_version())
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    spec = handlers.get(argv[0])
-    if spec is None:
-        names = ", ".join(sorted(handlers))
-        print(
-            f"better-code-review-graph: unknown subcommand {argv[0]!r} "
-            f"(expected one of: {names})",
-            file=sys.stderr,
-        )
-        return 2
+    for name, (configure, handle) in _SUBCOMMANDS.items():
+        p = sub.add_parser(name)
+        configure(p)
+        p.set_defaults(_handle=handle)
 
-    configure_fn, handler_fn = spec
-    parser = argparse.ArgumentParser(prog="better-code-review-graph")
-    subparsers = parser.add_subparsers(dest="subcommand")
-    sub = subparsers.add_parser(argv[0])
-    if configure_fn is not None:
-        configure_fn(sub)
-    ns = parser.parse_args(argv)
-    return handler_fn(ns)
+    server = sub.add_parser("server", help="server lifecycle (hull-core pattern)")
+    server_sub = server.add_subparsers(dest="server_command", required=True)
+    start = server_sub.add_parser(
+        "start", help="start the HTTP MCP server (blocking; Ctrl+C stops)"
+    )
+    start.add_argument("--host", default=None, help="bind host (default from config)")
+    start.add_argument(
+        "--port", type=int, default=None, help="bind port (default from config)"
+    )
+    start.set_defaults(_handle=_handle_server_start)
+
+    token = sub.add_parser("token", help="token utilities (for users.toml)")
+    token_sub = token.add_subparsers(dest="token_command", required=True)
+    token_hash_p = token_sub.add_parser(
+        "hash", help="mint a scrypt token_hash from a plaintext token"
+    )
+    token_hash_p.add_argument(
+        "token", help="plaintext token (keep it out of shell history)"
+    )
+    token_hash_p.set_defaults(_handle=_handle_token_hash)
+
+    config = sub.add_parser("config", help="instance config utilities")
+    config_sub = config.add_subparsers(dest="config_command", required=True)
+    init_p = config_sub.add_parser(
+        "init", help="write ~/.crg/config.toml from the template"
+    )
+    init_p.add_argument(
+        "--force", action="store_true", help="overwrite an existing config"
+    )
+    init_p.set_defaults(_handle=_handle_config_init)
+    path_p = config_sub.add_parser("path", help="print the config file path")
+    path_p.set_defaults(_handle=_handle_config_path)
+    show_p = config_sub.add_parser(
+        "show", help="print the effective config (template if absent)"
+    )
+    show_p.set_defaults(_handle=_handle_config_show)
+
+    db = sub.add_parser("db", help="storage utilities")
+    db_sub = db.add_subparsers(dest="db_command", required=True)
+    db_path_p = db_sub.add_parser("path", help="print the repo-local graph.db path")
+    db_path_p.set_defaults(_handle=_handle_db_path)
+
+    args = parser.parse_args(argv)
+    return int(args._handle(args))
 
 
 if __name__ == "__main__":

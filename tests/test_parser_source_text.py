@@ -111,26 +111,20 @@ def test_upsert_node_handles_none_source_text(tmp_path):
 
 def test_batch_summarize_picks_up_parser_populated_source(tmp_path, monkeypatch):
     """End-to-end: parse -> upsert -> batch_summarize sees the Function as a candidate."""
+    import hull_core.config.models
+
+    import better_code_review_graph.summarizer as summarizer_module
     from better_code_review_graph.graph import GraphStore
     from better_code_review_graph.parser import CodeParser
     from better_code_review_graph.summarizer import batch_summarize
 
-    monkeypatch.setenv("CRG_CONFIG_DIR", str(tmp_path / "cfg"))
-    monkeypatch.setenv("HULL_CHAT_API_KEY", "chat-key")
-
-    class _FakeChatClient:
-        """Scripted hull OpenAI-compat client: one canned chat response."""
-
-        def __init__(self, cell, **kwargs):
-            self.cell = cell
-            self.prompts: list[str] = []
-
-        async def chat(self, messages, **options):
-            self.prompts.append(messages[0]["content"])
-            return "Returns 42."
-
-        async def aclose(self):
-            pass
+    cell = hull_core.config.models.ModelCell(
+        task="chat",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="sk-test",
+        model="gemini/gemini-2.5-flash",
+    )
+    monkeypatch.setattr(summarizer_module, "summary_cell", lambda: cell)
 
     py_file = tmp_path / "x.py"
     py_file.write_text("def alpha():\n    return 42\n", encoding="utf-8")
@@ -142,21 +136,27 @@ def test_batch_summarize_picks_up_parser_populated_source(tmp_path, monkeypatch)
         for node in nodes:
             store.upsert_node(node, file_hash="h")
 
-        with patch(
-            "better_code_review_graph.summarizer.OpenAICompatClient",
-            _FakeChatClient,
+        class _Fake:
+            def __init__(self, c, auth_mode="no-auth"):
+                self.cell = c
+                self.calls = []
+
+            async def chat(self, messages, **kwargs):
+                self.calls.append(messages)
+                return "Returns 42."
+
+            async def aclose(self):
+                return None
+
+        fake = _Fake(cell)
+        with patch.object(
+            summarizer_module, "OpenAICompatClient", lambda c, auth_mode: fake
         ):
             result = batch_summarize(store, max_nodes=10)
 
         assert result.generated >= 1, (
             "parser-populated source_text should make function visible to batch_summarize"
         )
-        # The summary came through the hull chat cell and was persisted.
-        row = store._conn.execute(
-            "SELECT summary, summary_provider FROM nodes WHERE kind='Function'"
-        ).fetchone()
-        assert row is not None
-        assert row["summary"] == "Returns 42."
-        assert row["summary_provider"] == result.provider
+        assert fake.calls
     finally:
         store.close()

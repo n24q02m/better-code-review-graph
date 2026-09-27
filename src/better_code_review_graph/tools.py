@@ -2535,9 +2535,6 @@ def semantic_search_nodes(
             if as_of == "" and emb_store.available and emb_store.count() > 0:
                 # Vector search
                 search_mode = "semantic"
-                # Host-owned local rerank model (LOCAL_RERANK_MODEL env via the
-                # module Settings). The pre-de-host per-sub config lookup is
-                # gone — per-sub key buckets no longer exist (BYOK cut).
                 rerank_model = settings.local_rerank_model.strip()
                 if rerank_model and limit <= 0:
                     return {
@@ -2750,8 +2747,7 @@ def list_graph_stats(repo_root: str | None = None) -> dict[str, Any]:
 def embed_graph(repo_root: str | None = None) -> dict[str, Any]:
     """Compute vector embeddings for all graph nodes to enable semantic search.
 
-    Uses dual-mode embedding: local fastretrieval ONNX by default or cloud
-    via the hull ``[models.embed]`` cell (plain-HTTP OpenAI-spec).
+    Uses dual-mode embedding: local fastretrieval ONNX by default or cloud via the hull embed cell.
     Cohere embed-v4.0 stores exact 1024-dimensional vectors; other backends use 768.
 
     Only embeds nodes that don't already have up-to-date embeddings.
@@ -2951,8 +2947,9 @@ def summarize_graph_dispatch(
             "status": "skipped",
             "reason": "no_provider_configured",
             "summary": (
-                "Skipped: no summary model configured. Set SUMMARY_MODELS and its "
-                "provider credential to enable LLM summaries."
+                "Skipped: no chat model cell configured. Add a [models.chat] "
+                "cell (base_url + api_key + model) to config.toml or set "
+                "HULL_CHAT_API_KEY to enable LLM summaries."
             ),
         }
 
