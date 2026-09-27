@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.28.1 (2026-09-27)
+
+### Bug Fixes
+
+- Enforce no-auth loopback guard against config-sourced host
+  ([#1102](https://github.com/n24q02m/crg/pull/1102),
+  [`bf4afc3`](https://github.com/n24q02m/crg/commit/bf4afc338aa7443959fc522cfa980ef583d7e26d))
+
+
 ## v3.28.0 (2026-09-27)
 
 ### Code Style
