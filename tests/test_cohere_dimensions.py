@@ -10,7 +10,6 @@ are unchanged.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from unittest.mock import patch
 
@@ -44,9 +43,7 @@ def _dispatch(*vectors):
 def test_unsupported_cohere_width_is_rejected_without_dispatch():
     # The width-selection guard lives inside _post_embeddings and must fire
     # BEFORE any client is constructed / request is spent.
-    with patch(
-        "hull_core.providers.openai_spec.OpenAICompatClient"
-    ) as client_cls:
+    with patch("hull_core.providers.openai_spec.OpenAICompatClient") as client_cls:
         with pytest.raises(ValueError, match="requires dimensions"):
             _post_embeddings(
                 ["hello"],
@@ -152,9 +149,7 @@ def test_cohere_reopen_reembed_legacy_width_and_query(tmp_path):
                 assert [
                     call.kwargs["input_type"] for call in dispatch.call_args_list
                 ] == ["search_document", "search_query"]
-                assert all(
-                    call.args[2] == 1024 for call in dispatch.call_args_list
-                )
+                assert all(call.args[2] == 1024 for call in dispatch.call_args_list)
         finally:
             store.close()
         with sqlite3.connect(db) as conn:

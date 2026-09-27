@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -30,7 +29,6 @@ from better_code_review_graph.summarizer import (
     compute_summary_cache_key,
     summarize_node_async,
 )
-
 
 # ---------------------------------------------------------------------------
 # compute_source_hash
@@ -260,9 +258,7 @@ def _seed_function(store, name: str = "f", body: str = "def f(): return 1") -> i
         ),
         file_hash="h",
     )
-    store._conn.execute(
-        "UPDATE nodes SET source_text=? WHERE id=?", (body, node_id)
-    )
+    store._conn.execute("UPDATE nodes SET source_text=? WHERE id=?", (body, node_id))
     store._conn.commit()
     return node_id
 
