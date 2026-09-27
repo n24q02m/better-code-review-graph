@@ -73,7 +73,13 @@ def test_db_path_prints_graph_db(capsys) -> None:
     assert out.endswith("graph.db")
 
 
-def test_server_start_forces_http_transport(capsys, monkeypatch) -> None:
+def test_server_start_forces_http_transport(capsys, tmp_path, monkeypatch) -> None:
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / "config.toml").write_text(
+        '[server]\nhost = "127.0.0.1"\nport = 61000\nauth = "no-auth"\n'
+    )
+    monkeypatch.setenv("CRG_CONFIG_DIR", str(cfg))
     monkeypatch.delenv("MCP_TRANSPORT", raising=False)
     monkeypatch.delenv("MCP_HOST", raising=False)
     monkeypatch.delenv("MCP_PORT", raising=False)
@@ -110,6 +116,7 @@ def test_server_start_refuses_no_auth_off_loopback(
     )
     monkeypatch.setenv("CRG_CONFIG_DIR", str(cfg))
     monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+    monkeypatch.delenv("MCP_HOST", raising=False)
     serve_called = False
 
     def must_not_serve() -> None:
@@ -118,6 +125,32 @@ def test_server_start_refuses_no_auth_off_loopback(
 
     monkeypatch.setattr("better_code_review_graph.server.serve_main", must_not_serve)
     rc = _run(capsys, "server", "start", "--host", "0.0.0.0")
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "no-auth" in err and "loopback" in err
+    assert serve_called is False
+
+
+def test_server_start_refuses_no_auth_config_host_off_loopback(
+    capsys, tmp_path, monkeypatch
+) -> None:
+    """Bypass regression: no --host/MCP_HOST, config-sourced host binds."""
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / "config.toml").write_text(
+        '[server]\nhost = "0.0.0.0"\nport = 61000\nauth = "no-auth"\n'
+    )
+    monkeypatch.setenv("CRG_CONFIG_DIR", str(cfg))
+    monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+    monkeypatch.delenv("MCP_HOST", raising=False)
+    serve_called = False
+
+    def must_not_serve() -> None:
+        nonlocal serve_called  # noqa: F841
+        serve_called = True  # pragma: no cover
+
+    monkeypatch.setattr("better_code_review_graph.server.serve_main", must_not_serve)
+    rc = _run(capsys, "server", "start")
     err = capsys.readouterr().err
     assert rc == 2
     assert "no-auth" in err and "loopback" in err

@@ -537,18 +537,21 @@ def _handle_server_start(args: argparse.Namespace) -> int:
     from .server import serve_main
 
     os.environ["MCP_TRANSPORT"] = "http"
-    # run_http() resolves bind address from these (falls back to config).
-    host = args.host or os.environ.get("MCP_HOST")
+    # run_http() bind precedence: MCP_HOST env > settings.server.host; --port
+    # hands off via MCP_PORT (honored at server.py:986-989).
+    settings = load_instance_settings()
     if args.host:
         os.environ["MCP_HOST"] = args.host
     if args.port:
         os.environ["MCP_PORT"] = str(args.port)
     # Security property carried over from the wp2-wip line: an
     # unauthenticated (no-auth) listener must never bind off-loopback.
+    # Resolve the EFFECTIVE bind host the way run_http does.
+    host = args.host or os.environ.get("MCP_HOST") or settings.server.host
     if (
         host
         and host not in {"localhost", "127.0.0.1", "::1"}
-        and load_instance_settings().server.auth == "no-auth"
+        and settings.server.auth == "no-auth"
     ):
         print(
             "crg refuses to start: auth = 'no-auth' only permits loopback "
