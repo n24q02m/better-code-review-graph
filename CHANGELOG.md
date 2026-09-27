@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v3.28.0 (2026-09-27)
+
+### Code Style
+
+- Apply ruff format repo-wide (de-host format debt)
+  ([`de1a18f`](https://github.com/n24q02m/crg/commit/de1a18f0dcfa46bc53ce37e8f15898a927de16f6))
+
+- Fix ruff F401/I001 left by residuals scrub
+  ([`194ce5f`](https://github.com/n24q02m/crg/commit/194ce5f2298b0be9d3e67435c5cbdaa5d23ee5c8))
+
+### Features
+
+- Add host control-plane CLI (server start, token hash, config, db path)
+  ([#1101](https://github.com/n24q02m/crg/pull/1101),
+  [`ab10fb5`](https://github.com/n24q02m/crg/commit/ab10fb535c74b88d769d9ff94f654a127dd7cf36))
+
+### Testing
+
+- **wp2**: Add token-auth HTTP MCP e2e + per-sub storage/auth coverage
+  ([#1100](https://github.com/n24q02m/crg/pull/1100),
+  [`11cf315`](https://github.com/n24q02m/crg/commit/11cf3159af5ef90e133091344e12ad7d95eb4091))
+
+
 ## v3.27.3 (2026-09-26)
 
 ### Bug Fixes
