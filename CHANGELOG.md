@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v3.29.1 (2026-09-27)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1105](https://github.com/n24q02m/crg/pull/1105),
+  [`484055e`](https://github.com/n24q02m/crg/commit/484055e7bd55df6eb314e1de5e0f1d6a80eef38e))
+
+- **deps**: Update protobuf to >=7.36.2 ([#1104](https://github.com/n24q02m/crg/pull/1104),
+  [`99c8749`](https://github.com/n24q02m/crg/commit/99c8749868023b959d689c46f69aa696c1a2d2a2))
+
+### Chores
+
+- **deps**: Floor protobuf >= 5.29.6 — fix dependabot alert #20 (JSON recursion bypass, high);
+  resolves to 7.36.2 via semgrep/otel re-resolve
+  ([`c2e0d75`](https://github.com/n24q02m/crg/commit/c2e0d75a89876111599e973fad41e11a96ee797b))
+
+
 ## v3.29.0 (2026-09-27)
 
 ### Features
