@@ -98,7 +98,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.28.1"
+version = "3.29.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -144,7 +144,7 @@ requires-dist = [
     { name = "hull-core", git = "https://github.com/n24q02m/hull?subdirectory=packages%2Fcore-py&rev=14841d05488c801d303b0f3d3cd97426f94a6e1a" },
     { name = "mcp", specifier = ">=1.30.0,<2" },
     { name = "networkx", specifier = ">=3.7,<4" },
-    { name = "protobuf", specifier = ">=5.29.6" },
+    { name = "protobuf", specifier = ">=7.36.2" },
     { name = "pydantic-settings" },
     { name = "pygments", specifier = ">=2.21.0" },
     { name = "semgrep", marker = "extra == 'security'", specifier = ">=1.0,<1.162" },
