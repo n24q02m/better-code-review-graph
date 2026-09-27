@@ -24,6 +24,7 @@ from hull_core.providers.openai_spec import ProviderError
 
 from better_code_review_graph.summarizer import (
     NodeNeedingSummary,
+    _parse_jev_ranking,
     batch_summarize,
     compute_source_hash,
     compute_summary_cache_key,
@@ -460,5 +461,242 @@ def test_batch_summarize_rejects_nonpositive_max_nodes(tmp_path):
     try:
         with pytest.raises(ValueError, match="max_nodes"):
             batch_summarize(store, max_nodes=0)
+    finally:
+        store.close()
+
+
+# ---------------------------------------------------------------------------
+# jev queue ranking (spec §7 K4): base ORDER BY + advisory batch re-rank
+# ---------------------------------------------------------------------------
+
+
+class FakeJevClient:
+    """Stand-in jev client: scripted ranking replies, or a hard failure."""
+
+    def __init__(self, replies=None, error: Exception | None = None):
+        self.replies = list(replies or [])
+        self.error = error
+        self.prompts: list[str] = []
+        self.closed = False
+        self.cell = SimpleNamespace(model="z-ai/glm-5.3-flash", task="jev_score")
+
+    async def chat(self, messages, **options):
+        self.prompts.append(messages[0]["content"])
+        if self.error is not None:
+            raise self.error
+        return self.replies.pop(0)
+
+    async def aclose(self):
+        self.closed = True
+
+
+def _patched_chat_and_jev(chat_client: FakeClient, jev_client: FakeJevClient):
+    """Patch both cells + OpenAICompatClient, dispatching fakes on cell.task."""
+
+    def _factory(cell, **_kwargs):
+        return jev_client if getattr(cell, "task", None) == "jev_score" else chat_client
+
+    return (
+        patch("better_code_review_graph.summarizer.summary_cell", return_value=_cell()),
+        patch(
+            "better_code_review_graph.summarizer.jev_score_cell",
+            return_value=_cell(task="jev_score"),
+        ),
+        patch(
+            "better_code_review_graph.summarizer.OpenAICompatClient",
+            side_effect=_factory,
+        ),
+    )
+
+
+def _processed_order(names: list[str], client: FakeClient) -> list[str]:
+    """Map recorded LLM calls back to the function each prompt carried."""
+    order = []
+    for call in client.calls:
+        content = call[0]["content"]
+        order.append(next(n for n in names if f"def {n}()" in content))
+    return order
+
+
+def test_parse_jev_ranking_valid_permutation():
+    assert _parse_jev_ranking("Prioritized: [2, 0, 3, 1]", 4) == [2, 0, 3, 1]
+
+
+def test_parse_jev_ranking_tolerates_float_tokens():
+    # mnemo-wp4-writer precedent regex; float-looking tokens floor to indices
+    assert _parse_jev_ranking("[1.0, 0.0, 3.0, 2.0]", 4) == [1, 0, 3, 2]
+
+
+def test_parse_jev_ranking_skips_out_of_range_and_duplicates():
+    assert _parse_jev_ranking("[9, 0, 0, 1, 2]", 3) == [0, 1, 2]
+
+
+def test_parse_jev_ranking_raises_on_no_numbers():
+    with pytest.raises(ValueError, match="no numeric tokens"):
+        _parse_jev_ranking("I cannot rank these.", 2)
+
+
+def test_parse_jev_ranking_raises_on_incomplete_permutation():
+    with pytest.raises(ValueError, match="incomplete"):
+        _parse_jev_ranking("[0, 1]", 3)
+
+
+def test_batch_summarize_orders_queue_by_ascending_id(tmp_path):
+    """Base queue order is deterministic: ascending node id (spec §7 K4)."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = [f"fn{i}" for i in range(8)]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        client = FakeClient(replies=["s"] * 8)
+        p_cell, p_client = _patched_llm(client)
+        with p_cell, p_client:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.generated == 8
+        assert result.jev_ranking.used is False  # autouse fixture keeps jev off
+        assert _processed_order(names, client) == names
+    finally:
+        store.close()
+
+
+def test_batch_summarize_jev_ranking_reorders_queue_and_records_receipt(tmp_path):
+    """jev ranking re-orders processing; the receipt records it (spec §7 K4)."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = ["fn0", "fn1", "fn2", "fn3"]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        jev = FakeJevClient(replies=["[3, 1, 0, 2]"])
+        chat = FakeClient(replies=["s"] * 4)
+        p_cell, p_jev, p_client = _patched_chat_and_jev(chat, jev)
+        with p_cell, p_jev, p_client:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.jev_ranking.used is True
+        assert result.jev_ranking.batches == 1
+        assert result.jev_ranking.ranked_nodes == 4
+        assert result.jev_ranking.failopen_reason is None
+        assert len(jev.prompts) == 1, "one jev call per ~50-node batch"
+        assert _processed_order(names, chat) == ["fn3", "fn1", "fn0", "fn2"]
+        assert chat.closed and jev.closed, "both shared clients must be closed"
+        assert result.generated == 4
+        assert result.errors == 0
+    finally:
+        store.close()
+
+
+def test_batch_summarize_jev_ranks_in_batches_of_50_one_call_each(tmp_path):
+    """120 pending nodes → exactly 3 jev calls (50+50+20), one per batch."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = [f"fn{i}" for i in range(120)]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        def perm(n: int) -> str:
+            return "[" + ", ".join(str(i) for i in range(n - 1, -1, -1)) + "]"
+
+        jev = FakeJevClient(replies=[perm(50), perm(50), perm(20)])
+        chat = FakeClient(replies=["s"] * 120)
+        p_cell, p_jev, p_client = _patched_chat_and_jev(chat, jev)
+        with p_cell, p_jev, p_client:
+            result = batch_summarize(store, max_nodes=200)
+
+        assert result.jev_ranking.used is True
+        assert result.jev_ranking.batches == 3
+        assert result.jev_ranking.ranked_nodes == 120
+        assert len(jev.prompts) == 3, "exactly one jev call per ~50-node batch"
+        assert len(chat.calls) == 120
+        order = _processed_order(names, chat)
+        # each batch's reversed perm decides processing order inside the batch
+        assert order[0] == "fn49"
+        assert order[49] == "fn0"
+        assert order[50] == "fn99"
+        assert order[99] == "fn50"
+        assert order[100] == "fn119"
+        assert order[119] == "fn100"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_jev_failure_falls_open_to_base_order(tmp_path):
+    """jev call failure → queue processed in base ORDER BY order, run completes."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = ["fn0", "fn1", "fn2", "fn3"]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        jev = FakeJevClient(error=ProviderError(503, "jev unavailable"))
+        chat = FakeClient(replies=["s"] * 4)
+        p_cell, p_jev, p_client = _patched_chat_and_jev(chat, jev)
+        with p_cell, p_jev, p_client:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.jev_ranking.used is False
+        assert result.jev_ranking.failopen_reason is not None
+        assert result.generated == 4
+        assert result.errors == 0, "summary batch must be unaffected by jev failure"
+        assert _processed_order(names, chat) == names, "queue stays in base order"
+        assert jev.closed, "jev client must be closed even when ranking fails"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_jev_unparseable_reply_falls_open(tmp_path):
+    """A reply with no numeric tokens raises in the ranking layer → fail-open."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = ["fn0", "fn1", "fn2", "fn3"]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        jev = FakeJevClient(replies=["I cannot rank these functions."])
+        chat = FakeClient(replies=["s"] * 4)
+        p_cell, p_jev, p_client = _patched_chat_and_jev(chat, jev)
+        with p_cell, p_jev, p_client:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.jev_ranking.used is False
+        assert result.jev_ranking.failopen_reason is not None
+        assert "no numeric tokens" in result.jev_ranking.failopen_reason
+        assert result.generated == 4
+        assert _processed_order(names, chat) == names, "queue stays in base order"
+    finally:
+        store.close()
+
+
+def test_batch_summarize_without_jev_cell_skips_ranking_silently(tmp_path):
+    """No jev cell configured → base order; receipt says disabled, no reason."""
+    from better_code_review_graph.graph import GraphStore
+
+    store = GraphStore(str(tmp_path / "test.db"))
+    try:
+        names = ["fn0", "fn1", "fn2"]
+        for name in names:
+            _seed_function(store, name=name, body=f"def {name}(): return 1")
+
+        client = FakeClient(replies=["s"] * 3)
+        p_cell, p_client = _patched_llm(client)
+        with p_cell, p_client:
+            result = batch_summarize(store, max_nodes=10)
+
+        assert result.jev_ranking.used is False
+        assert result.jev_ranking.failopen_reason is None
+        assert result.generated == 3
+        assert _processed_order(names, client) == names
     finally:
         store.close()

@@ -5,7 +5,10 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.summarizer import BatchSummarizeResult
+from better_code_review_graph.summarizer import (
+    BatchSummarizeResult,
+    JevRankingReceipt,
+)
 from better_code_review_graph.tools import summarize_graph_dispatch
 
 
@@ -40,6 +43,7 @@ def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):
         skipped_no_provider=False,
         provider="gemini",
         errors=0,
+        jev_ranking=JevRankingReceipt(used=False),
     )
 
     with patch("better_code_review_graph.tools._get_store") as mock_get_store:
@@ -59,6 +63,12 @@ def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):
     assert result["generated"] == 3
     assert result["cached"] == 1
     assert result["errors"] == 0
+    assert result["jev_ranking"] == {
+        "used": False,
+        "batches": 0,
+        "ranked_nodes": 0,
+        "failopen_reason": None,
+    }
     assert "3 new" in result["summary"]
     assert "1 cached" in result["summary"]
     assert "gemini" in result["summary"]

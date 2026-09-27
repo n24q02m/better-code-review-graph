@@ -148,6 +148,7 @@ graph is unchanged. A provider key alone does not enable summaries.
 **Cost cap + caching:**
 - Default cap is 500 LLM calls per invocation. Tune with `max_nodes` for tighter budgets.
 - Repeat invocations skip nodes whose `source_hash` + full selected model match. `summary_provider` stores the `provider/model` identity, so switching models within one provider invalidates stale summaries too.
+- The work queue has a deterministic base order (`ORDER BY id`). When the host configures a `[models.jev_score]` cell, the pending queue is additionally re-prioritized by one advisory jev call per ~50-node batch (never one call per node); the result carries a `jev_ranking` receipt (`used`, `batches`, `ranked_nodes`, `failopen_reason`). Any jev failure is fail-open: the queue keeps its base order and only the receipt notes it.
 
 **Example:**
 ```json

@@ -8,10 +8,15 @@ fallback. The full selected model is persisted in ``summary_provider`` so
 switching models invalidates the cached summary.
 
 Dispatch goes through hull-core's ``OpenAICompatClient`` (async httpx, one
-client per batch). The batch queue keeps its exact historical shape: a
-single ``SELECT ... LIMIT ?`` over Function nodes with no ORDER BY (spec
-§7 K4 — the queue only lines work up; it does not reorder or change the
-schema), capped at ``max_nodes`` per run.
+client per batch). The batch queue is a single ``SELECT ... LIMIT ?`` over
+Function nodes with a deterministic base ordering (``ORDER BY id``, spec
+§7 K4). On top of that base order, an optional jev ranking layer re-orders
+the pending (cache-miss) queue in ~50-node batches — exactly one advisory
+``jev_score`` call per batch, never one call per node — and is strictly
+fail-open: any jev unavailability (cell not configured, call error,
+unparseable reply) leaves the queue in base order and is recorded in the
+run receipt only. The queue never changes the schema, only the processing
+order.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -79,6 +85,22 @@ def summary_cell() -> Any:
 
     cell = resolve_cells()["chat"]
     return cell if cell.configured else None
+
+
+def jev_score_cell() -> Any:
+    """The configured jev_score cell (host-only key), or ``None``.
+
+    Unlike :func:`summary_cell`, resolution failures also yield ``None``:
+    the ranking layer is advisory (spec §7 K4 fail-open), so an unreadable
+    config may only ever disable prioritization, never the queue itself.
+    """
+    try:
+        from .config import resolve_cells
+
+        cell = resolve_cells().get("jev_score")
+    except Exception:  # config problems must only disable ranking
+        return None
+    return cell if cell is not None and cell.configured else None
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +166,31 @@ def _auth_mode() -> str:
 # Default cap on per-run LLM calls. Override per-call via the max_nodes parameter.
 DEFAULT_MAX_NODES_PER_RUN = 500
 
+# jev ranking layer (spec §7 K4): the pending queue is re-ordered in batches
+# of this many nodes, with exactly one advisory jev_score call per batch.
+JEV_BATCH_SIZE = 50
+
+# Per-node excerpt handed to the ranking call, and the cap on the recorded
+# fail-open reason so a chatty provider error cannot bloat the receipt.
+_JEV_EXCERPT_CHARS = 160
+_FAILOPEN_REASON_MAX_CHARS = 200
+
+
+@dataclass(frozen=True)
+class JevRankingReceipt:
+    """Provenance of the jev ranking layer for one batch_summarize run.
+
+    ``used=True`` means jev re-ordered the queue. ``used=False`` with a
+    ``None`` ``failopen_reason`` means the layer was disabled (no jev cell,
+    or a single-node queue); a non-``None`` reason means jev was attempted,
+    failed, and the queue fell back to base order.
+    """
+
+    used: bool
+    batches: int = 0  # ranked batches; one jev call each
+    ranked_nodes: int = 0  # nodes whose queue position jev decided
+    failopen_reason: str | None = None  # why ranking was skipped, if attempted
+
 
 @dataclass(frozen=True)
 class BatchSummarizeResult:
@@ -154,6 +201,132 @@ class BatchSummarizeResult:
     skipped_no_provider: bool = False  # True iff no chat cell is configured
     provider: str | None = None  # provider used (None if skipped)
     errors: int = 0  # nodes where the chat call raised; counted, batch continues
+    jev_ranking: JevRankingReceipt | None = None  # queue ranking provenance
+
+
+# ---------------------------------------------------------------------------
+# jev queue ranking (spec §7 K4 — advisory, fail-open)
+# ---------------------------------------------------------------------------
+
+_JEV_RANK_PROMPT_PREFIX = (
+    "You are prioritizing a code-review summarization queue. Rank the "
+    "numbered functions below by value to a code reviewer: core logic, "
+    "complex control flow and public entry points first; trivial accessors, "
+    "constants and one-line wrappers last.\n"
+    "Reply with ONLY a JSON array of the indices in priority order, e.g. "
+    "[3, 1, 0, 2]. Every index must appear exactly once.\n\nFunctions:\n"
+)
+
+# Scan the reply for numeric tokens (mnemo-wp4-writer jev precedent:
+# ``[+-]?\\d*\\.\\d+|\\d+``); a reply without any number raises instead of
+# guessing an order.
+_NUMBER_RE = re.compile(r"[+-]?\d*\.\d+|\d+")
+
+
+def _parse_jev_ranking(content: str, batch_size: int) -> list[int]:
+    """Parse jev's priority order out of its reply.
+
+    Follows the mnemo-wp4-writer precedent: scan for numeric tokens, raise
+    when the reply carries no numbers at all. Indices outside
+    ``range(batch_size)`` and duplicates are ignored; an incomplete
+    permutation raises so the caller can fail open to base order.
+    """
+    tokens = _NUMBER_RE.findall(content)
+    if not tokens:
+        raise ValueError(f"jev ranking reply has no numeric tokens: {content[:80]!r}")
+    order: list[int] = []
+    seen: set[int] = set()
+    for token in tokens:
+        index = int(float(token))
+        if 0 <= index < batch_size and index not in seen:
+            seen.add(index)
+            order.append(index)
+    if len(order) != batch_size:
+        raise ValueError(
+            f"jev ranking incomplete: got {len(order)} of {batch_size} indices"
+        )
+    return order
+
+
+async def _jev_rank_batch(
+    client: Any,
+    batch: list[tuple[int, NodeNeedingSummary]],
+) -> list[tuple[int, NodeNeedingSummary]]:
+    """One advisory jev call: return ``batch`` re-ordered by review priority."""
+    listing = _JEV_RANK_PROMPT_PREFIX
+    for position, (_, node) in enumerate(batch):
+        condensed = " ".join(node.source_text.split())[:_JEV_EXCERPT_CHARS]
+        listing += (
+            f"{position}. ({len(node.source_text.splitlines())} lines) {condensed}\n"
+        )
+    content = await client.chat(
+        [{"role": "user", "content": listing}],
+        max_tokens=1024,
+        reasoning={"exclude": True},
+    )
+    order = _parse_jev_ranking(content, len(batch))
+    return [batch[index] for index in order]
+
+
+async def _jev_rank_queue(
+    client: Any,
+    pending: list[tuple[int, NodeNeedingSummary]],
+    batch_size: int = JEV_BATCH_SIZE,
+) -> tuple[list[tuple[int, NodeNeedingSummary]], int]:
+    """Rank the whole pending queue, one jev call per ``batch_size`` chunk.
+
+    Any failure propagates: the caller discards partial rankings and keeps
+    the queue in base order (fail-open is all-or-nothing per run).
+    """
+    ordered: list[tuple[int, NodeNeedingSummary]] = []
+    batches = 0
+    for start in range(0, len(pending), batch_size):
+        batch = pending[start : start + batch_size]
+        ordered.extend(await _jev_rank_batch(client, batch))
+        batches += 1
+    return ordered, batches
+
+
+def _maybe_jev_rank(
+    pending: list[tuple[int, NodeNeedingSummary]],
+) -> tuple[JevRankingReceipt, list[tuple[int, NodeNeedingSummary]]]:
+    """Re-order ``pending`` via the advisory jev ranking layer (spec §7 K4).
+
+    Fail-open: an unconfigured cell returns the queue unchanged silently;
+    any ranking failure logs a warning and returns the queue unchanged with
+    the reason on the receipt. Only a fully successful pass re-orders.
+    """
+    if len(pending) < 2:  # nothing to prioritize
+        return JevRankingReceipt(used=False), pending
+
+    jev_cell = jev_score_cell()
+    if jev_cell is None:
+        return JevRankingReceipt(used=False), pending
+
+    async def _rank() -> tuple[list[tuple[int, NodeNeedingSummary]], int]:
+        client = OpenAICompatClient(jev_cell, auth_mode=_auth_mode())
+        try:
+            return await _jev_rank_queue(client, pending, JEV_BATCH_SIZE)
+        finally:
+            await client.aclose()
+
+    try:
+        ordered, batches = asyncio.run(_rank())
+    except Exception as exc:  # ranking is advisory only — never block the queue
+        logger.warning("jev ranking failed; queue keeps base order: %s", exc)
+        return (
+            JevRankingReceipt(
+                used=False,
+                batches=0,
+                ranked_nodes=0,
+                failopen_reason=str(exc)[:_FAILOPEN_REASON_MAX_CHARS],
+            ),
+            pending,
+        )
+    return (
+        JevRankingReceipt(used=True, batches=batches, ranked_nodes=len(ordered)),
+        ordered,
+    )
 
 
 def batch_summarize(
@@ -165,8 +338,11 @@ def batch_summarize(
 
     Iteration scope: at most ``max_nodes`` Function-kind nodes whose
     ``source_text`` is non-null, selected by one ``SELECT ... LIMIT ?``
-    with no ORDER BY (queue order is the storage engine's row order —
-    spec §7 K4 keeps this exactly). For each candidate:
+    with deterministic base ordering (``ORDER BY id`` — spec §7 K4). When
+    the host configures a jev_score cell, the pending (cache-miss) queue is
+    additionally re-ordered by one advisory jev call per ~50-node batch;
+    any jev failure leaves the queue in base order (fail-open) and is
+    recorded in :attr:`BatchSummarizeResult.jev_ranking`. For each candidate:
 
     - If stored summary + ``summary_provider`` + ``source_hash`` all match
       the selected model + freshly-computed source hash, it's a cache hit
@@ -204,7 +380,8 @@ def batch_summarize(
     # because it copies large `source_text` columns.
     cursor = store._conn.execute(
         "SELECT id, source_text, source_hash, summary, summary_provider FROM nodes "
-        "WHERE kind='Function' AND source_text IS NOT NULL LIMIT ?",
+        "WHERE kind='Function' AND source_text IS NOT NULL "
+        "ORDER BY id LIMIT ?",
         (max_nodes,),
     )
 
@@ -240,6 +417,8 @@ def batch_summarize(
             )
         )
 
+    ranking, pending = _maybe_jev_rank(pending)
+
     if pending:
         generated, errors = asyncio.run(
             _summarize_pending(store, cell, cache_provider, pending)
@@ -253,6 +432,7 @@ def batch_summarize(
         skipped_no_provider=False,
         provider=cache_provider,
         errors=errors,
+        jev_ranking=ranking,
     )
 
 
@@ -264,8 +444,9 @@ async def _summarize_pending(
 ) -> tuple[int, int]:
     """Run the pending queue through one shared hull client.
 
-    Sequential, cursor order preserved. Each failure is logged + counted;
-    the batch continues (fail-open per-node, spec §7).
+    Sequential, queue order preserved (base ``ORDER BY id`` order,
+    optionally re-ranked by the jev layer). Each failure is logged and
+    counted; the batch continues (fail-open per-node, spec §7).
     """
     client = OpenAICompatClient(cell, auth_mode=_auth_mode())
     generated = 0

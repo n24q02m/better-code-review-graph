@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -2933,7 +2934,9 @@ def summarize_graph_dispatch(
         max_nodes: Max LLM calls per invocation. Default 500.
 
     Returns:
-        Dict with status, generated, cached, errors, provider, summary.
+        Dict with status, generated, cached, errors, provider, jev_ranking,
+        summary. ``jev_ranking`` carries the queue-ranking receipt (None on
+        the skipped path); see ``summarizer.JevRankingReceipt``.
     """
     from . import summarizer
 
@@ -2962,6 +2965,7 @@ def summarize_graph_dispatch(
         "generated": result.generated,
         "cached": result.cached,
         "errors": result.errors,
+        "jev_ranking": asdict(result.jev_ranking) if result.jev_ranking else None,
         "summary": (
             f"Summarized {result.generated} new + {result.cached} cached Function "
             f"node(s) via {result.provider}"

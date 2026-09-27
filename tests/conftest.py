@@ -14,6 +14,20 @@ import pytest
 REAL_HOME = Path.home()
 
 
+@pytest.fixture(autouse=True)
+def _jev_ranking_disabled_by_default(monkeypatch):
+    """Default every test to jev-ranking-off (spec §7 K4).
+
+    Ranking is an advisory layer driven by the host's ``[models.jev_score]``
+    cell; without this opt-out a developer/CI box with that cell configured
+    would leak live jev calls into unrelated queue tests. Tests exercising
+    the ranking layer re-patch ``summarizer.jev_score_cell`` themselves.
+    """
+    monkeypatch.setattr(
+        "better_code_review_graph.summarizer.jev_score_cell", lambda: None
+    )
+
+
 def pytest_addoption(parser):
     """Add --setup and --browser CLI options for E2E tests."""
     parser.addoption("--setup", choices=["relay", "env", "plugin"], default="env")
