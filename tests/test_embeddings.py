@@ -167,7 +167,9 @@ class TestResolveBackend:
         """
         import logging
 
-        with caplog.at_level(logging.WARNING, logger="better_code_review_graph.embeddings"):
+        with caplog.at_level(
+            logging.WARNING, logger="better_code_review_graph.embeddings"
+        ):
             with patch.dict(os.environ, {"EMBEDDING_BACKEND": "cloud"}, clear=True):
                 assert resolve_backend() == "local"
             with patch.dict(os.environ, {"EMBEDDING_BACKEND": "litellm"}, clear=True):
@@ -340,7 +342,9 @@ class TestResolveEmbeddingChain:
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
-        with caplog.at_level(logging.WARNING, logger="better_code_review_graph.embeddings"):
+        with caplog.at_level(
+            logging.WARNING, logger="better_code_review_graph.embeddings"
+        ):
             for legacy in ("cloud", "litellm", "local"):
                 monkeypatch.setenv("EMBEDDING_BACKEND", legacy)
                 assert resolve_backend() == "local"
@@ -610,9 +614,7 @@ class TestCloudEmbeddingBackend:
         with _patched_client(vectors=[]) as client_cls:
             with pytest.raises(ValueError, match="vector count"):
                 backend.embed_texts(["a"])
-        assert client_cls.instances[-1].calls == [
-            {"texts": ["a"], "dimensions": None}
-        ]
+        assert client_cls.instances[-1].calls == [{"texts": ["a"], "dimensions": None}]
 
     def test_width_mismatch_fails_closed(self):
         """Provider width != requested dimensions must fail loudly."""

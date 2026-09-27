@@ -58,12 +58,10 @@ def test_sub_stores_do_not_see_each_others_nodes(tmp_path, monkeypatch):
         _build(store_b, "bob")
 
         names_a = {
-            row["name"]
-            for row in store_a._conn.execute("SELECT name FROM nodes")
+            row["name"] for row in store_a._conn.execute("SELECT name FROM nodes")
         }
         names_b = {
-            row["name"]
-            for row in store_b._conn.execute("SELECT name FROM nodes")
+            row["name"] for row in store_b._conn.execute("SELECT name FROM nodes")
         }
         assert names_a == {"alice_fn"}
         assert names_b == {"bob_fn"}

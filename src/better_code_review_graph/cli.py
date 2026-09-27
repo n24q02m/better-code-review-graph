@@ -546,7 +546,9 @@ def main() -> int:
     if argv[0] in ("-h", "--help"):
         names = ", ".join(sorted(handlers))
         print("usage: better-code-review-graph [-h] [--version] [<subcommand> ...]")
-        print("Any other flags/args are passed through to the MCP server (e.g. --http).")
+        print(
+            "Any other flags/args are passed through to the MCP server (e.g. --http)."
+        )
         print(f"subcommands: {names}")
         return 0
     if argv[0] in ("--version", "-V"):

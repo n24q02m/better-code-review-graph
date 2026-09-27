@@ -990,7 +990,11 @@ async def run_http(port: int = 0) -> None:
     if host is None:
         host = settings.server.host
 
-    users = load_users(settings.server.users_file) if settings.server.auth == "multi" else None
+    users = (
+        load_users(settings.server.users_file)
+        if settings.server.auth == "multi"
+        else None
+    )
     authenticator = Authenticator(settings, users=users, limiter=SlidingWindowLimiter())
     app = mcp.http_app(
         path="/mcp",
