@@ -1,0 +1,7 @@
+# Normalize line endings: the Docker build copies pyproject.toml/uv.lock
+# verbatim and hatchling reads [project.scripts] + force-include from
+# pyproject.toml — CRLF in those files must never reach the image.
+* text=auto
+pyproject.toml text eol=lf
+uv.lock text eol=lf
+Dockerfile text eol=lf
