@@ -49,7 +49,12 @@ ENTRYPOINT ["python", "-m", "crg"]
 # Stage 3b: http target (multi-user remote daemon)
 # ========================
 FROM runtime AS http
+# MCP_HOST=0.0.0.0 so the container is reachable; the shared run_http()
+# loopback guard then requires the mounted instance config to set
+# [server] auth = "token"|"multi" (no-auth + off-loopback bind refuses
+# to start with rc 2 instead of serving unauthenticated).
 ENV MCP_TRANSPORT=http \
-    MCP_PORT=8080
+    MCP_PORT=8080 \
+    MCP_HOST=0.0.0.0
 EXPOSE 8080
-ENTRYPOINT ["crg", "serve"]
+ENTRYPOINT ["crg", "server", "start"]
