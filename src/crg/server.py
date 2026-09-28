@@ -981,7 +981,7 @@ async def run_http(port: int = 0) -> None:
     from hull_core.limits.limiter import SlidingWindowLimiter
     from starlette.middleware import Middleware
 
-    from .config import load_instance_settings
+    from .config import ServerConfigError, load_instance_settings
 
     host = os.environ.get("MCP_HOST") or None
     settings = load_instance_settings()
@@ -989,6 +989,21 @@ async def run_http(port: int = 0) -> None:
         port = int(os.environ.get("MCP_PORT", str(settings.server.port)))
     if host is None:
         host = settings.server.host
+
+    # Security property carried over from the wp2-wip line (mirrors the cli
+    # ``server start`` pre-check): an unauthenticated (no-auth) listener must
+    # never bind off-loopback. Enforced here on the SHARED path so every HTTP
+    # entry — ``server start``, module ``--http`` flag, ``MCP_TRANSPORT`` /
+    # ``TRANSPORT_MODE`` env — fails closed, not just the CLI one.
+    if (
+        settings.server.auth == "no-auth"
+        and host
+        and host not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise ServerConfigError(
+            "auth = 'no-auth' only permits loopback binds; set [server] auth "
+            "to 'token' or 'multi' for a shared listener"
+        )
 
     users_file = settings.server.users_file
     users = (

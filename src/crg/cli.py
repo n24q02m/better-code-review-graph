@@ -533,7 +533,7 @@ def _configure_server(sub: argparse.ArgumentParser) -> None:
 def _handle_server_start(args: argparse.Namespace) -> int:
     import sys
 
-    from .config import load_instance_settings
+    from .config import ServerConfigError, load_instance_settings
     from .server import serve_main
 
     os.environ["MCP_TRANSPORT"] = "http"
@@ -564,6 +564,12 @@ def _handle_server_start(args: argparse.Namespace) -> int:
         serve_main()
     except KeyboardInterrupt:
         pass
+    except ServerConfigError as exc:
+        # Backstop: the no-auth loopback refusal also lives on the shared
+        # run_http path; surface it with the same message and rc as the
+        # pre-check above if config flips between the two.
+        print(f"crg refuses to start: {exc}", file=sys.stderr)
+        return 2
     except SystemExit as exc:  # e.g. no-auth non-loopback bind refusal
         if str(exc):
             print(f"error: {exc}", file=sys.stderr)

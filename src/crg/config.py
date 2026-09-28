@@ -55,6 +55,16 @@ settings = Settings()
 # ---------------------------------------------------------------------------
 
 
+class ServerConfigError(ValueError):
+    """The HTTP listener configuration is unsafe or invalid.
+
+    Raised by the shared ``run_http`` path — e.g. ``auth = "no-auth"``
+    combined with a non-loopback bind host — so every HTTP entry point
+    (``server start`` CLI, module ``--http`` flag, ``MCP_TRANSPORT`` /
+    ``TRANSPORT_MODE`` env) fails closed.
+    """
+
+
 def crg_config_dir() -> Path:
     """Host-owned instance config directory: ``$CRG_CONFIG_DIR`` or ``~/.crg``.
 

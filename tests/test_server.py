@@ -7,6 +7,13 @@ import os
 import subprocess
 from unittest.mock import patch
 
+import sys
+
+import pytest
+import uvicorn
+
+from crg.config import ServerConfigError
+
 from crg.server import (
     config,
     graph,
@@ -661,3 +668,79 @@ class TestDefaultRepoRootResolution:
                 _get_store()
         finally:
             set_default_repo_root(None)
+
+
+# ---------------------------------------------------------------------------
+# no-auth loopback guard on the shared HTTP path (run_http)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingServer:
+    """Stands in for ``uvicorn.Server`` and records the bind it was given."""
+
+    attempts: list[tuple[str | None, int]] = []
+
+    def __init__(self, config_obj):
+        self.config = config_obj
+        _RecordingServer.attempts.append((config_obj.host, config_obj.port))
+
+    async def serve(self) -> None:
+        return None
+
+
+class TestHttpEntryNoAuthLoopbackGuard:
+    """Regression: the no-auth→loopback enforcement must live on the shared
+    ``run_http`` path so EVERY HTTP entry gets it — the alternate entries
+    (``python -m crg --http``, ``MCP_TRANSPORT=http``, ``TRANSPORT_MODE=http``)
+    bypass the ``server start`` CLI pre-check and used to bind unauthenticated
+    off-loopback.
+    """
+
+    @staticmethod
+    def _arm_http_entry(monkeypatch, tmp_path, *, host) -> list:
+        cfg = tmp_path / "cfg"
+        cfg.mkdir()
+        (cfg / "config.toml").write_text(
+            f'[server]\nhost = "{host}"\nport = 61000\nauth = "no-auth"\n'
+        )
+        monkeypatch.setenv("CRG_CONFIG_DIR", str(cfg))
+        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("TRANSPORT_MODE", raising=False)
+        monkeypatch.delenv("MCP_PORT", raising=False)  # other tests leak it
+        monkeypatch.setenv("MCP_HOST", host)
+        monkeypatch.setattr(sys, "argv", ["crg"])
+        _RecordingServer.attempts = []
+        monkeypatch.setattr(uvicorn, "Server", _RecordingServer)
+        return _RecordingServer.attempts
+
+    @pytest.mark.parametrize(
+        ("http_entry", "argv"),
+        [
+            ("mcp_transport", None),
+            ("transport_mode", None),
+            ("argv_flag", ["crg", "--http"]),
+        ],
+    )
+    def test_no_auth_off_loopback_refused_on_every_http_entry(
+        self, monkeypatch, tmp_path, http_entry, argv
+    ):
+        attempts = self._arm_http_entry(monkeypatch, tmp_path, host="0.0.0.0")
+        if http_entry == "mcp_transport":
+            monkeypatch.setenv("MCP_TRANSPORT", "http")
+        elif http_entry == "transport_mode":
+            monkeypatch.setenv("TRANSPORT_MODE", "http")
+        else:
+            monkeypatch.setattr(sys, "argv", argv)
+
+        with pytest.raises(ServerConfigError, match="loopback"):
+            serve_main()
+
+        assert attempts == []  # the unauthenticated bind must never be attempted
+
+    def test_no_auth_loopback_bind_allowed(self, monkeypatch, tmp_path):
+        attempts = self._arm_http_entry(monkeypatch, tmp_path, host="127.0.0.1")
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
+
+        serve_main()
+
+        assert attempts == [("127.0.0.1", 61000)]
