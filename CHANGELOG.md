@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v3.29.5 (2026-09-29)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1117](https://github.com/n24q02m/crg/pull/1117),
+  [`80449d9`](https://github.com/n24q02m/crg/commit/80449d9a393c1ed21dfea1c7fa130173ed263edc))
+
+- **deps**: Update ty to v0.0.83 ([#1116](https://github.com/n24q02m/crg/pull/1116),
+  [`28bdbd9`](https://github.com/n24q02m/crg/commit/28bdbd9d9252e2255204ce4b99836bcc77b5f7c1))
+
+
 ## v3.29.4 (2026-09-27)
 
 ### Bug Fixes
