@@ -27,6 +27,7 @@ services:
     image: crg:http
     ports:
       - "127.0.0.1:${CRG_PORT:-8772}:8080"
+    restart: unless-stopped
     environment:
       CRG_CONFIG_DIR: /data/config
       CRG_DATA_DIR: /data
