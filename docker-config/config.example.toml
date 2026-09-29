@@ -1,0 +1,51 @@
+# crg instance config (host-owned). Copy to config.toml and fill in real
+# values. Schema: hull-core's config.toml — [server] + per-task [models.<task>]
+# provider cells (OpenAI-spec base_url + api_key + model each; cloud or local
+# depending on the cell's base_url).
+#
+# This example is for the always-on docker deployment: the container binds
+# 0.0.0.0:8080 and the compose file publishes it on host loopback, so auth
+# MUST be "token" (or "multi") — no-auth is refused off-loopback.
+
+[server]
+host = "0.0.0.0"
+port = 8080
+auth = "token"
+
+# Mint a token + its hash with hull-core (the `hull` CLI ships with crg's
+# dependency tree; also available via `uvx --from git+https://github.com/n24q02m/hull hull`):
+#
+#   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   hull token hash "$TOKEN"      # -> scrypt$... : paste below
+#   # keep $TOKEN client-side; it is never stored server-side
+token_hash = "scrypt$REPLACE_WITH_OUTPUT_OF_hull_token_hash"
+
+# Optional shared-mode rate limit:
+# rpm = 120
+
+# Per-task provider cells: each task (embed / rerank / chat / jev_score) has
+# its own base_url + api_key + model. api_key may be left empty here and
+# supplied via env instead: HULL_EMBED_API_KEY / HULL_RERANK_API_KEY /
+# HULL_CHAT_API_KEY / HULL_JEV_SCORE_API_KEY (host-only, never end-user).
+# Models below are EXAMPLES via OpenRouter — point base_url/model at any
+# OpenAI-spec provider (cloud or your own local gateway).
+
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-REPLACE"
+model = "voyage-4-lite"
+
+[models.rerank]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-REPLACE"
+model = "voyage-2.5-lite-rerank"
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-REPLACE"
+model = "zai/glm-5.3-flash"
+
+[models.jev_score]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-REPLACE"
+model = "zai/glm-5.3-flash"

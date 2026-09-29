@@ -95,3 +95,6 @@ clean.ps1
 *.bak
 /*.patch
 /*.diff
+
+# local docker deployment config (secrets)
+docker-config/config.toml

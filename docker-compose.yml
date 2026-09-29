@@ -1,0 +1,38 @@
+# Self-contained HTTP deployment for the better-code-review-graph image.
+#
+#   docker compose up -d          # after preparing docker-config/config.toml
+#
+# Container layout: CRG_CONFIG_DIR and CRG_DATA_DIR are pinned to /data so
+# everything the server writes (graph DBs under subs/, runtime state) lands
+# in the `crg-data` named volume, while the instance config is mounted
+# read-only from the host.
+#
+# Auth + bind: the Dockerfile's http target binds 0.0.0.0:8080 (MCP_HOST /
+# MCP_PORT env), and the shared run_http() loopback guard refuses auth =
+# "no-auth" on any off-loopback bind. A published listener therefore must
+# use auth = "token" (shared token) or "multi" (+ users.toml). Prepare the
+# config first:
+#
+#   cp docker-config/config.example.toml docker-config/config.toml
+#   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   uvx --from git+https://github.com/n24q02m/hull hull token hash "$TOKEN"   # paste into token_hash
+#   # ...or, inside this repo's venv (hull-core is a dependency): hull token hash "$TOKEN"
+#
+# MCP endpoint: http://127.0.0.1:8772/mcp  (Authorization: Bearer <token>)
+services:
+  crg:
+    build:
+      context: .
+      target: http
+    image: crg:http
+    ports:
+      - "127.0.0.1:${CRG_PORT:-8772}:8080"
+    environment:
+      CRG_CONFIG_DIR: /data/config
+      CRG_DATA_DIR: /data
+    volumes:
+      - crg-data:/data
+      - ./docker-config/config.toml:/data/config/config.toml:ro
+      # - ./docker-config/users.toml:/data/config/users.toml:ro  # auth = "multi"
+volumes:
+  crg-data:

@@ -63,6 +63,7 @@ v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + ed
 
 - [v2.0 migration (BREAKING)](#v20-migration-breaking)
 - [Install](#install)
+- [Usage](#usage)
 - [Smithery](#smithery)
 - [Configuration](#configuration)
 - [Tools](#tools)
@@ -134,6 +135,69 @@ Install matrix (stdio unless noted; the CLI-first usage above stays the primary 
 
 Full CLI usage is in [CLI](#cli). Optional per-client MCP setup is at
 **[mcp.n24q02m.com/servers/better-code-review-graph/setup/](https://mcp.n24q02m.com/servers/better-code-review-graph/setup/)**.
+
+## Usage
+
+Two ways to run the server, plus the surfaces to consume it.
+
+### Dev: uv, no auth (loopback only)
+
+```bash
+# instance config lives at $CRG_CONFIG_DIR or ~/.crg (same schema as hull's
+# config.toml); a default no-auth template is fine for local dev
+uv run better-code-review-graph server start
+# -> http://127.0.0.1:8000/mcp  (no-auth is refused on any off-loopback bind)
+```
+
+### Always-on: docker (token auth)
+
+```bash
+cp docker-config/config.example.toml docker-config/config.toml
+# mint a token + hash (hull CLI ships with crg's dependency tree):
+#   TOKEN=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+#   hull token hash "$TOKEN"   # paste output into token_hash in config.toml
+docker compose up -d
+```
+
+The compose file builds the Dockerfile's `http` target (image `crg:http`),
+publishes the container on host loopback only
+(`127.0.0.1:${CRG_PORT:-8772}:8080`), and mounts
+`./docker-config/config.toml` read-only at the container's config dir
+(`CRG_CONFIG_DIR=/data/config`); graph state persists in the `crg-data`
+named volume. All state stays on your machine.
+
+### Consuming: CLI or MCP
+
+CLI (local graphs, no server needed):
+
+```bash
+crg graph build --full-rebuild --repo-root /path/to/repo
+crg query search --search-query "authentication" --repo-root /path/to/repo
+```
+
+MCP over HTTP (remote/always-on): point any MCP client at
+`http://127.0.0.1:8772/mcp` with `Authorization: Bearer <token>`:
+
+```json
+{
+  "mcpServers": {
+    "better-code-review-graph": {
+      "url": "http://127.0.0.1:8772/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+### Per-task model configuration
+
+Each task (embed / rerank / chat / jev_score) resolves its own OpenAI-spec
+provider cell from `[models.<task>]` in the instance config: an independent
+`base_url` + `api_key` + `model`. Cloud or local is purely a config choice —
+point `base_url` at OpenRouter, a vendor, or your own local gateway
+(e.g. `http://host.docker.internal:11434/v1`). API keys are host-only
+material: keep them in `config.toml` (gitignored under `docker-config/`) or
+supply via `HULL_<TASK>_API_KEY` env; they are never end-user supplied.
 
 ## Local-first boundary
 
