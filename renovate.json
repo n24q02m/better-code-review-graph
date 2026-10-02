@@ -24,12 +24,20 @@
   },
   "packageRules": [
     {
+      "description": "Hold every update for 7 days so a malicious or yanked release is caught before it lands",
+      "matchPackageNames": [
+        "*"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "description": "Group minor updates for review (prod scope by default)",
       "matchUpdateTypes": [
         "minor"
       ],
       "groupName": "minor dependencies",
-      "groupSlug": "all-minor"
+      "groupSlug": "all-minor",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Auto-merge dev-scope minor updates after cooldown",
@@ -67,7 +75,8 @@
         "tool.uv.dev-dependencies",
         "tool.pdm.dev-dependencies"
       ],
-      "rangeStrategy": "pin"
+      "rangeStrategy": "pin",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Auto-merge GitHub Actions digest updates after cooldown",
@@ -89,7 +98,8 @@
       "matchManagers": [
         "github-actions"
       ],
-      "pinDigests": true
+      "pinDigests": true,
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin PSR to v10 — block Renovate downgrades",
@@ -99,7 +109,8 @@
       "matchManagers": [
         "github-actions"
       ],
-      "allowedVersions": ">=10.0.0"
+      "allowedVersions": ">=10.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin semgrep <1.162 — semgrep >=1.162 pins mcp==1.23.3, which conflicts with the project's mcp floor and makes the [security] extra unresolvable (see pyproject.toml comment). Closed PRs #684, #703. rangeStrategy:in-range-only stops the global bump strategy from raising the floor to 1.161.0 (which ALSO pins mcp==1.23.3) — only lock refreshes inside the existing >=1.0,<1.162 range are allowed.",
@@ -107,28 +118,32 @@
         "semgrep"
       ],
       "allowedVersions": "<1.162",
-      "rangeStrategy": "in-range-only"
+      "rangeStrategy": "in-range-only",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Python runtime to 3.13.x",
       "matchPackageNames": [
         "python"
       ],
-      "allowedVersions": ">=3.13.0 <3.14.0"
+      "allowedVersions": ">=3.13.0 <3.14.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Node.js runtime to 24.x",
       "matchPackageNames": [
         "node"
       ],
-      "allowedVersions": ">=24.0.0 <25.0.0"
+      "allowedVersions": ">=24.0.0 <25.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Pin Java runtime to 21.x LTS",
       "matchPackageNames": [
         "java"
       ],
-      "allowedVersions": ">=21.0.0 <22.0.0"
+      "allowedVersions": ">=21.0.0 <22.0.0",
+      "minimumReleaseAge": "7 days"
     },
     {
       "description": "Disable runtime version updates from mise (pinned in CLAUDE.md)",
@@ -140,7 +155,8 @@
         "node",
         "java"
       ],
-      "enabled": false
+      "enabled": false,
+      "minimumReleaseAge": "7 days"
     }
   ],
   "semanticCommits": "enabled",
