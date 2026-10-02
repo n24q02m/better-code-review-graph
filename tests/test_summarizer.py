@@ -20,7 +20,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from hull_core.providers.openai_spec import ProviderError
+from hull_core.config.models import ModelCell
+from hull_core.providers.openai_spec import OpenAICompatClient, ProviderError
 
 from better_code_review_graph.summarizer import (
     NodeNeedingSummary,
@@ -62,7 +63,7 @@ def test_node_needing_summary_is_frozen():
         node_id="x.py::f", source_text="def f(): pass", source_hash=None
     )
     with pytest.raises(AttributeError):
-        node.source_text = "mutated"
+        node.__setattr__("source_text", "mutated")
 
 
 def test_cache_key_combines_source_hash_and_provider():
@@ -145,15 +146,25 @@ def test_summary_cell_returns_configured_cell(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-class FakeClient:
-    """Stand-in for hull's OpenAICompatClient (async chat + aclose)."""
+class FakeClient(OpenAICompatClient):
+    """Stand-in for hull's OpenAICompatClient (async chat + aclose).
+
+    Subclasses the real client so ``summarize_node_async``'s declared
+    contract holds; ``__init__`` deliberately skips the base SSRF/httpx
+    wiring because the scripted ``chat``/``aclose`` never touch the wire.
+    """
 
     def __init__(self, replies=None, error: Exception | None = None):
+        self.cell = ModelCell(
+            task="chat",
+            base_url="https://openrouter.ai/api/v1",
+            api_key="k-test",
+            model="openai/gpt-4o-mini",
+        )
         self.replies = list(replies or [])
         self.error = error
         self.calls: list[list[dict]] = []
         self.closed = False
-        self.cell = SimpleNamespace(model="openai/gpt-4o-mini")
 
     async def chat(self, messages, **options):
         self.calls.append(messages)
@@ -440,7 +451,7 @@ def test_batch_summarize_continues_after_per_node_error(tmp_path):
             async def chat(self, messages, **options):
                 if len(self.calls) == 0:
                     self.calls.append(messages)
-                    raise ProviderError("transient provider hiccup")
+                    raise ProviderError(503, "transient provider hiccup")
                 return self.replies.pop(0)
 
         client = FlakyClient(replies=["ok"])

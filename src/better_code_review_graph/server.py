@@ -990,9 +990,10 @@ async def run_http(port: int = 0) -> None:
     if host is None:
         host = settings.server.host
 
+    users_file = settings.server.users_file
     users = (
-        load_users(settings.server.users_file)
-        if settings.server.auth == "multi"
+        load_users(users_file)
+        if settings.server.auth == "multi" and users_file is not None
         else None
     )
     authenticator = Authenticator(settings, users=users, limiter=SlidingWindowLimiter())
