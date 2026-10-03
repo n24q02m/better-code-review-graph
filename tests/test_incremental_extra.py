@@ -5,8 +5,8 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import (
+from crg.graph import GraphStore
+from crg.incremental import (
     collect_all_files,
     find_dependents,
     full_build,
@@ -16,7 +16,7 @@ from better_code_review_graph.incremental import (
     incremental_update,
     watch,
 )
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.parser import EdgeInfo, NodeInfo
 
 # ---------------------------------------------------------------------------
 # collect_all_files
@@ -31,7 +31,7 @@ class TestCollectAllFiles:
         (tmp_path / "readme.txt").write_text("text\n")
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["main.py", "utils.py", "readme.txt"],
         ):
             files = collect_all_files(tmp_path)
@@ -48,7 +48,7 @@ class TestCollectAllFiles:
         (nm / "index.js").write_text("module.exports = {}")
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["node_modules/pkg/index.js"],
         ):
             files = collect_all_files(tmp_path)
@@ -61,7 +61,7 @@ class TestCollectAllFiles:
         binary.write_bytes(b"#!/usr/bin/python\x00binary")
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["data.py"],
         ):
             files = collect_all_files(tmp_path)
@@ -72,7 +72,7 @@ class TestCollectAllFiles:
         (tmp_path / "app.py").write_text("print('hi')\n")
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=[],
         ):
             files = collect_all_files(tmp_path)
@@ -87,7 +87,7 @@ class TestCollectAllFiles:
         link.symlink_to(real)
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["real.py", "link.py"],
         ):
             files = collect_all_files(tmp_path)
@@ -99,7 +99,7 @@ class TestCollectAllFiles:
         (tmp_path / ".git").mkdir()
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["nonexistent.py"],
         ):
             files = collect_all_files(tmp_path)
@@ -227,7 +227,7 @@ class TestFullBuildExtra:
 
         # Now build with no files
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=[],
         ):
             result = full_build(tmp_path, store)
@@ -247,10 +247,10 @@ class TestFullBuildExtra:
         store = GraphStore(str(db_path))
 
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["bad.py"],
         ):
-            with patch("better_code_review_graph.incremental.CodeParser") as MockParser:
+            with patch("crg.incremental.CodeParser") as MockParser:
                 parser_inst = MockParser.return_value
                 parser_inst.detect_language.return_value = "python"
                 parser_inst.parse_bytes.side_effect = RuntimeError("parse error")
@@ -267,11 +267,11 @@ class TestFullBuildExtra:
 
         # File that exists in listing but can't be read
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["noread.py"],
         ):
             with patch(
-                "better_code_review_graph.incremental.collect_all_files",
+                "crg.incremental.collect_all_files",
                 return_value=["noread.py"],
             ):
                 result = full_build(tmp_path, store)
@@ -327,7 +327,7 @@ class TestIncrementalUpdateExtra:
         db_path = tmp_path / "test.db"
         store = GraphStore(str(db_path))
 
-        with patch("better_code_review_graph.incremental.CodeParser") as MockParser:
+        with patch("crg.incremental.CodeParser") as MockParser:
             parser_inst = MockParser.return_value
             parser_inst.detect_language.return_value = "python"
             parser_inst.parse_bytes.side_effect = RuntimeError("parse fail")
@@ -343,43 +343,43 @@ class TestIncrementalUpdateExtra:
 
 
 class TestGitOperationsExtra:
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files_file_not_found(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_changed_files(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_staged_timeout(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_staged_and_unstaged(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_staged_file_not_found(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_staged_and_unstaged(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_all_tracked_timeout(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_all_tracked_files(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_all_tracked_file_not_found(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = FileNotFoundError("git not found")
         result = get_all_tracked_files(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_staged_short_lines_skipped(self, mock_run, mock_which, tmp_path):
         """Lines shorter than 4 chars should be skipped."""
         mock_run.return_value = MagicMock(returncode=0, stdout="AB\n M file.py\n")
@@ -413,9 +413,7 @@ class TestWatchMode:
             def join(self):
                 pass
 
-        with patch(
-            "better_code_review_graph.incremental.Observer", return_value=FakeObserver()
-        ):
+        with patch("crg.incremental.Observer", return_value=FakeObserver()):
             with patch("time.sleep", side_effect=KeyboardInterrupt()):
                 watch(tmp_path, store)
 
@@ -519,9 +517,7 @@ class TestWatchMode:
             def join(self):
                 pass
 
-        with patch(
-            "better_code_review_graph.incremental.Observer", return_value=FakeObserver()
-        ):
+        with patch("crg.incremental.Observer", return_value=FakeObserver()):
             with patch("time.sleep", side_effect=KeyboardInterrupt()):
                 watch(tmp_path, store)
 
@@ -548,8 +544,8 @@ class TestWatchMode:
 
 
 class TestGetChangedFilesErrors:
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files_fallback_timeout(self, mock_run, mock_which, tmp_path):
         # First call fails with non-zero return code, second call timeouts
         mock_run.side_effect = [
@@ -560,8 +556,8 @@ class TestGetChangedFilesErrors:
         assert result == []
         assert mock_run.call_count == 2
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files_fallback_file_not_found(
         self, mock_run, mock_which, tmp_path
     ):
@@ -577,60 +573,56 @@ class TestGetChangedFilesErrors:
 
 class TestMainModule:
     def test_main_module_calls_cli(self):
-        with patch("better_code_review_graph.cli.main"):
+        with patch("crg.cli.main"):
             # Importing __main__ triggers main()
             import importlib
 
-            import better_code_review_graph.__main__  # noqa: F401
+            import crg.__main__  # noqa: F401
 
             # Reload to trigger the call
-            with patch("better_code_review_graph.cli.main") as mock_main:
-                importlib.reload(
-                    __import__(
-                        "better_code_review_graph.__main__", fromlist=["__main__"]
-                    )
-                )
+            with patch("crg.cli.main") as mock_main:
+                importlib.reload(__import__("crg.__main__", fromlist=["__main__"]))
                 mock_main.assert_called_once()
 
 
 class TestGitHelpers:
     """Coverage for _run_git helper fallbacks used by local-commit detection."""
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    @patch("crg.incremental.shutil.which", return_value=None)
     def test_run_git_returns_none_without_git_binary(self, _mock_which, tmp_path):
-        from better_code_review_graph.incremental import _run_git
+        from crg.incremental import _run_git
 
         assert _run_git(tmp_path, ["rev-parse", "HEAD"]) is None
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value=None)
+    @patch("crg.incremental.shutil.which", return_value=None)
     def test_get_head_sha_returns_none_without_git(self, _mock_which, tmp_path):
-        from better_code_review_graph.incremental import get_head_sha
+        from crg.incremental import get_head_sha
 
         assert get_head_sha(tmp_path) is None
 
     def test_is_valid_commit_empty_sha(self, tmp_path):
-        from better_code_review_graph.incremental import is_valid_commit
+        from crg.incremental import is_valid_commit
 
         assert is_valid_commit(tmp_path, "") is False
 
     def test_is_valid_commit_argument_injection(self, tmp_path):
-        from better_code_review_graph.incremental import is_valid_commit
+        from crg.incremental import is_valid_commit
 
         # Should be rejected immediately without calling git
         assert is_valid_commit(tmp_path, "--batch") is False
 
-    @patch("better_code_review_graph.incremental.subprocess.run")
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
     def test_run_git_handles_timeout(self, _which, mock_run, tmp_path):
-        from better_code_review_graph.incremental import _run_git
+        from crg.incremental import _run_git
 
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
         assert _run_git(tmp_path, ["rev-parse", "HEAD"]) is None
 
-    @patch("better_code_review_graph.incremental.subprocess.run")
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
     def test_get_head_sha_returns_none_on_failure(self, _which, mock_run, tmp_path):
-        from better_code_review_graph.incremental import get_head_sha
+        from crg.incremental import get_head_sha
 
         mock_run.return_value = MagicMock(returncode=1, stdout="")
         assert get_head_sha(tmp_path) is None

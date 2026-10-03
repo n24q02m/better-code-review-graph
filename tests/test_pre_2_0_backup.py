@@ -37,8 +37,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-import better_code_review_graph.graph as graph_mod
-from better_code_review_graph.graph import GraphStore
+import crg.graph as graph_mod
+from crg.graph import GraphStore
 
 
 def _alembic_config_for(db_path: Path) -> Config:
@@ -517,7 +517,7 @@ def test_crosses_breaking_boundary_helper() -> None:
     crosses (when target is at/past 005).  ``None`` for target is
     treated as "alembic doesn't know" and never crosses.
     """
-    from better_code_review_graph.graph import _crosses_breaking_boundary
+    from crg.graph import _crosses_breaking_boundary
 
     # Pre-005 DB about to upgrade to 005+: triggers backup.
     assert _crosses_breaking_boundary(None, "005") is True

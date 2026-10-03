@@ -99,7 +99,7 @@ async def _run_cli(*args: str) -> tuple[int, str, str]:
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
-        "better_code_review_graph.cli",
+        "crg.cli",
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -125,7 +125,7 @@ async def test_mcp_protocol_and_cli_parity(repo_fixture: Path):
     }
     server_params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "better_code_review_graph"],
+        args=["-m", "crg"],
         env=env,
     )
 

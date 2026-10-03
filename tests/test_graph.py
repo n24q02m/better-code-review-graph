@@ -4,8 +4,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
 from tests.conftest import _make_edge, _make_node
 
 
@@ -110,7 +110,7 @@ class TestGraphStore:
         self.store.upsert_edge(edge)
         self.store.commit()
 
-        with patch("better_code_review_graph.graph.json.loads") as loads:
+        with patch("crg.graph.json.loads") as loads:
             result = self.store.get_node("/test/file.py")
             edges = self.store.get_edges_by_source("/test/file.py")
 

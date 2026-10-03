@@ -600,7 +600,7 @@ class CodeParser:
             provided, ``IMPORTS_FROM`` edges whose target can be
             resolved across the federated targets are rewritten to
             ``<other_repo_id>:<file>::<symbol>`` via
-            :func:`better_code_review_graph.resolver.resolve_cross_repo_imports`.
+            :func:`crg.resolver.resolve_cross_repo_imports`.
             Unresolved imports keep their original within-repo target.
         """
         try:

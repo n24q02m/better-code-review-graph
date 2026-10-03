@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from hull_core.providers.openai_spec import ProviderError
 
-from better_code_review_graph.embeddings import (
+from crg.embeddings import (
     _DEFAULT_DIMS,
     CloudEmbeddingBackend,
     EmbeddingStore,
@@ -28,15 +28,13 @@ from better_code_review_graph.embeddings import (
     resolve_embedding_chain,
     semantic_search,
 )
-from better_code_review_graph.graph import GraphNode, GraphStore
+from crg.graph import GraphNode, GraphStore
 
 
 @pytest.fixture(autouse=True)
 def mock_local_inference():
     """Mock local model inference to avoid downloads and real inference."""
-    with patch(
-        "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model"
-    ) as mock_get:
+    with patch("crg.embeddings.LocalEmbeddingBackend._get_model") as mock_get:
         mock_model = MagicMock()
         mock_get.return_value = mock_model
         # Mock embed and query_embed to return random vectors of requested dimension
@@ -167,9 +165,7 @@ class TestResolveBackend:
         """
         import logging
 
-        with caplog.at_level(
-            logging.WARNING, logger="better_code_review_graph.embeddings"
-        ):
+        with caplog.at_level(logging.WARNING, logger="crg.embeddings"):
             with patch.dict(os.environ, {"EMBEDDING_BACKEND": "cloud"}, clear=True):
                 assert resolve_backend() == "local"
             with patch.dict(os.environ, {"EMBEDDING_BACKEND": "litellm"}, clear=True):
@@ -201,7 +197,7 @@ class TestResolveBackend:
     def test_init_backend_unavailable_raises_clear_error(self):
         import pytest
 
-        from better_code_review_graph.embeddings import init_backend
+        from crg.embeddings import init_backend
 
         with patch.dict(os.environ, {"DISABLE_LOCAL_EMBED": "true"}, clear=True):
             with pytest.raises(ValueError, match="DISABLE_LOCAL_EMBED"):
@@ -211,7 +207,7 @@ class TestResolveBackend:
         with (
             patch.dict(os.environ, {"EMBEDDING_BACKEND": "local"}, clear=True),
             patch(
-                "better_code_review_graph.embeddings._first_supported_local_model_id",
+                "crg.embeddings._first_supported_local_model_id",
                 return_value="fastretrieval/reference",
             ),
         ):
@@ -342,9 +338,7 @@ class TestResolveEmbeddingChain:
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
-        with caplog.at_level(
-            logging.WARNING, logger="better_code_review_graph.embeddings"
-        ):
+        with caplog.at_level(logging.WARNING, logger="crg.embeddings"):
             for legacy in ("cloud", "litellm", "local"):
                 monkeypatch.setenv("EMBEDDING_BACKEND", legacy)
                 assert resolve_backend() == "local"
@@ -946,7 +940,7 @@ def _insert_file_and_functions(
     graph_store, file_path, function_names, language="python"
 ):
     """Helper: insert a File node and Function nodes into the graph store."""
-    from better_code_review_graph.parser import NodeInfo
+    from crg.parser import NodeInfo
 
     # File node is required for get_all_files() to find the file
     graph_store.upsert_node(

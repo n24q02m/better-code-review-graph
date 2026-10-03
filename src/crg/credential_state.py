@@ -26,7 +26,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SERVER_NAME = "better-code-review-graph"
+SERVER_NAME = "crg"
 
 
 class CredentialState(Enum):

@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from better_code_review_graph.tools import export_graph_dispatch
+from crg.tools import export_graph_dispatch
 
 
 def test_export_graph_dispatch_path_traversal_blocked(
     tmp_path, _allow_temporal_migration_without_git
 ):
-    (tmp_path / ".better-code-review-graph").mkdir()
+    (tmp_path / ".crg").mkdir()
     # Try to write outside the repo root
     output_path = str(tmp_path / "../out.graphml")
     result = export_graph_dispatch(
@@ -20,7 +20,7 @@ def test_export_graph_dispatch_path_traversal_blocked(
 def test_export_graph_dispatch_inside_repo_allowed(
     tmp_path, _allow_temporal_migration_without_git
 ):
-    (tmp_path / ".better-code-review-graph").mkdir()
+    (tmp_path / ".crg").mkdir()
     # Write inside the repo root
     output_path = str(tmp_path / "out.graphml")
     result = export_graph_dispatch(

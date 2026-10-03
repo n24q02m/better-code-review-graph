@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from better_code_review_graph.tools import get_docs_section
+from crg.tools import get_docs_section
 
 
 class TestGetDocsSectionErrorPath:
@@ -18,7 +18,7 @@ class TestGetDocsSectionErrorPath:
         )
 
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=ValueError("Store initialization failed"),
         ):
             result = get_docs_section("usage", repo_root=str(repo_root))
@@ -33,7 +33,7 @@ class TestGetDocsSectionErrorPath:
         the function handles it gracefully (returns not_found).
         """
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=RuntimeError("Generic failure"),
         ):
             result = get_docs_section("usage", repo_root=None)

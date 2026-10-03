@@ -1,4 +1,4 @@
-"""Shared fixtures and test helpers for better-code-review-graph tests."""
+"""Shared fixtures and test helpers for crg tests."""
 
 from __future__ import annotations
 
@@ -23,9 +23,7 @@ def _jev_ranking_disabled_by_default(monkeypatch):
     would leak live jev calls into unrelated queue tests. Tests exercising
     the ranking layer re-patch ``summarizer.jev_score_cell`` themselves.
     """
-    monkeypatch.setattr(
-        "better_code_review_graph.summarizer.jev_score_cell", lambda: None
-    )
+    monkeypatch.setattr("crg.summarizer.jev_score_cell", lambda: None)
 
 
 def pytest_addoption(parser):
@@ -34,8 +32,8 @@ def pytest_addoption(parser):
     parser.addoption("--browser", choices=["chrome", "brave", "edge"], default="chrome")
 
 
-from better_code_review_graph.graph import GraphStore  # noqa: E402
-from better_code_review_graph.parser import EdgeInfo, NodeInfo  # noqa: E402
+from crg.graph import GraphStore  # noqa: E402
+from crg.parser import EdgeInfo, NodeInfo  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -182,10 +180,10 @@ def mock_credential_state(monkeypatch):
     relay session. (The pre-de-host ``_maybe_include_setup_hint`` patch is
     gone: the BYOK cut removed the browser setup flow and its hint hook.)
     """
-    from better_code_review_graph.credential_state import CredentialState
+    from crg.credential_state import CredentialState
 
     monkeypatch.setattr(
-        "better_code_review_graph.credential_state._state",
+        "crg.credential_state._state",
         CredentialState.CONFIGURED,
     )
 

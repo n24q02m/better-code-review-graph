@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.credential_state import (
+from crg.credential_state import (
     SERVER_NAME,
     CredentialState,
     db_path_for_sub,
@@ -38,7 +38,7 @@ def _reset_sub_and_state():
 
 class TestConstantsAndEnum:
     def test_server_name(self):
-        assert SERVER_NAME == "better-code-review-graph"
+        assert SERVER_NAME == "crg"
 
     def test_credential_state_enum_values(self):
         # The BYOK cut collapsed the old awaiting_setup/setup_in_progress

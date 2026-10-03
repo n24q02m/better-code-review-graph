@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from better_code_review_graph.tools import get_docs_section
+from crg.tools import get_docs_section
 
 
 class TestGetDocsSectionCoverage:
@@ -12,9 +12,7 @@ class TestGetDocsSectionCoverage:
             '<section name="test">content</section>', encoding="utf-8"
         )
 
-        with patch(
-            "better_code_review_graph.tools._get_store", side_effect=ValueError("fail")
-        ):
+        with patch("crg.tools._get_store", side_effect=ValueError("fail")):
             result = get_docs_section("test", repo_root=str(tmp_path))
 
         assert result["status"] == "ok"
@@ -29,7 +27,7 @@ class TestGetDocsSectionCoverage:
         )
 
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=RuntimeError("fail"),
         ):
             result = get_docs_section("test", repo_root=str(tmp_path))
@@ -47,7 +45,7 @@ class TestGetDocsSectionCoverage:
 
         mock_store = MagicMock()
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             return_value=(mock_store, tmp_path),
         ):
             # repo_root=None is default
@@ -71,7 +69,7 @@ class TestGetDocsSectionCoverage:
         mock_store = MagicMock()
         # _get_store(subdir) returns (store, repo_root)
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             return_value=(mock_store, repo_root),
         ):
             result = get_docs_section("test", repo_root=str(subdir))
@@ -89,7 +87,7 @@ class TestGetDocsSectionCoverage:
 
         mock_store = MagicMock()
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             return_value=(mock_store, tmp_path),
         ):
             # repo_root is tmp_path, _get_store also returns tmp_path

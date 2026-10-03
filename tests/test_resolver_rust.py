@@ -1,6 +1,6 @@
 """Tests for the Rust cross-repo resolver (Phase 2 Task 6).
 
-Covers :mod:`better_code_review_graph.resolver.rust`:
+Covers :mod:`crg.resolver.rust`:
 
 * ``parse_use_statement`` — turns Rust ``use crate::module::Symbol;``
   declarations into a :class:`RustUse`.
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver.rust import (
+from crg.resolver.rust import (
     RustResolver,
     RustUse,
     TargetRepo,

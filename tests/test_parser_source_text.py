@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 def test_parser_populates_source_text_for_functions(tmp_path):
     """Function-kind NodeInfo must carry source_text matching the file content span."""
-    from better_code_review_graph.parser import CodeParser
+    from crg.parser import CodeParser
 
     py_file = tmp_path / "x.py"
     py_file.write_text(
@@ -35,7 +35,7 @@ def test_parser_populates_source_text_for_functions(tmp_path):
 
 def test_parser_skips_source_text_for_non_function_kinds(tmp_path):
     """Class/Type/Test nodes should NOT capture source_text (None) -- saves DB space."""
-    from better_code_review_graph.parser import CodeParser
+    from crg.parser import CodeParser
 
     py_file = tmp_path / "y.py"
     py_file.write_text(
@@ -56,8 +56,8 @@ def test_parser_skips_source_text_for_non_function_kinds(tmp_path):
 
 def test_upsert_node_persists_source_text(tmp_path):
     """GraphStore.upsert_node should write source_text from NodeInfo."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import NodeInfo
+    from crg.graph import GraphStore
+    from crg.parser import NodeInfo
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -84,8 +84,8 @@ def test_upsert_node_persists_source_text(tmp_path):
 
 def test_upsert_node_handles_none_source_text(tmp_path):
     """source_text=None (default) writes NULL -- Class/Type/Test path."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import NodeInfo
+    from crg.graph import GraphStore
+    from crg.parser import NodeInfo
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -111,9 +111,9 @@ def test_upsert_node_handles_none_source_text(tmp_path):
 
 def test_batch_summarize_picks_up_parser_populated_source(tmp_path, monkeypatch):
     """End-to-end: parse -> upsert -> batch_summarize sees the Function as a candidate."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import CodeParser
-    from better_code_review_graph.summarizer import batch_summarize
+    from crg.graph import GraphStore
+    from crg.parser import CodeParser
+    from crg.summarizer import batch_summarize
 
     monkeypatch.setenv("CRG_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.setenv("HULL_CHAT_API_KEY", "chat-key")
@@ -143,7 +143,7 @@ def test_batch_summarize_picks_up_parser_populated_source(tmp_path, monkeypatch)
             store.upsert_node(node, file_hash="h")
 
         with patch(
-            "better_code_review_graph.summarizer.OpenAICompatClient",
+            "crg.summarizer.OpenAICompatClient",
             _FakeChatClient,
         ):
             result = batch_summarize(store, max_nodes=10)

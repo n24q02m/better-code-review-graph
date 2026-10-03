@@ -24,7 +24,7 @@ You will receive acknowledgment within 48 hours.
 
 ## Security Best Practices
 
-When using better-code-review-graph:
+When using crg:
 
 - **Never commit API keys** to version control
 - Use environment variables for embedding configuration

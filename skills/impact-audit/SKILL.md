@@ -11,27 +11,27 @@ Scope a **planned** change before writing it. Answers "if I change this, what el
 Run this while the change is still a proposal. Once code is written, `review-delta` and `review-pr` review what actually changed.
 
 **Command surface:** run the local CLI through the coding harness shell. Examples
-use the installed `better-code-review-graph` command; from a source checkout,
+use the installed `crg` command; from a source checkout,
 prefix it with `uv run`. No MCP mapping is required. Use
-`better-code-review-graph query --help` for the actions reference.
+`crg query --help` for the actions reference.
 
 ## Steps
 
 1. **State the change under audit in one line** before querying anything -- for example "add a required `tenant_id` parameter to `create_session`". The audit is only meaningful against a specific proposed edit, because the risky part differs: adding a required parameter breaks callers, changing a return type breaks consumers, renaming breaks both plus anything resolving the name dynamically.
 
 2. **Make sure every repository that could be affected is in the graph.** A blast radius is only as wide as the graph:
-   - `better-code-review-graph graph stats --repo-root "<path-a>"` -- confirm the graph exists and note `files_count`.
-   - `better-code-review-graph graph build --full-rebuild --repo-root "<path-a>" --roots "<path-b>"` -- federate the additional repositories into the same graph. Each root is registered and its files tagged with a `repo_id`.
+   - `crg graph stats --repo-root "<path-a>"` -- confirm the graph exists and note `files_count`.
+   - `crg graph build --full-rebuild --repo-root "<path-a>" --roots "<path-b>"` -- federate the additional repositories into the same graph. Each root is registered and its files tagged with a `repo_id`.
    - Without federation, a cross-repo audit will report a clean radius simply because the consumers were never indexed. Say so in the report rather than implying the change is contained.
 
-3. **Locate every definition of the symbol** with `better-code-review-graph query search --search-query "<name>" --repo-root "<path-a>"`, leaving `--repo` unset so the search spans all federated repositories. Two repositories may define the same name for unrelated purposes -- resolve which definition is actually the target before tracing, and note any same-named decoys so a later reader does not re-open the question.
+3. **Locate every definition of the symbol** with `crg query search --search-query "<name>" --repo-root "<path-a>"`, leaving `--repo` unset so the search spans all federated repositories. Two repositories may define the same name for unrelated purposes -- resolve which definition is actually the target before tracing, and note any same-named decoys so a later reader does not re-open the question.
 
 4. **Map direct consumers**, unscoped across the federation:
-   - `better-code-review-graph query query --pattern callers_of --target "<name>" --repo-root "<path-a>"` -- who calls it
-   - `better-code-review-graph query query --pattern importers_of --target "<file_path>" --repo-root "<path-a>"` -- which files import the module
+   - `crg query query --pattern callers_of --target "<name>" --repo-root "<path-a>"` -- who calls it
+   - `crg query query --pattern importers_of --target "<file_path>" --repo-root "<path-a>"` -- which files import the module
    - use `--pattern inheritors_of` and `--pattern children_of` when the target is a class -- subclasses inherit the change whether or not they call it
 
-5. **Measure the full radius** with `better-code-review-graph query impact --changed-files "<file>" --max-depth 2 --repo-root "<path-a>"`. Raise `--max-depth` to 3 when step 4 shows the direct consumers are themselves widely used; leave it at 2 otherwise, since depth costs tokens and the tail is mostly noise.
+5. **Measure the full radius** with `crg query impact --changed-files "<file>" --max-depth 2 --repo-root "<path-a>"`. Raise `--max-depth` to 3 when step 4 shows the direct consumers are themselves widely used; leave it at 2 otherwise, since depth costs tokens and the tail is mostly noise.
 
 6. **Split the radius per repository.** Re-run the impact command with `--repo "<repo_id>"` for each federated repository. The per-repo split is the deliverable: it converts "47 impacted files" into "3 repositories, one of which is published and consumed elsewhere", which is what determines release ordering.
 
@@ -42,7 +42,7 @@ prefix it with `uv run`. No MCP mapping is required. Use
 
    These are exactly the places a cross-repo change breaks silently. List them as unverified rather than reporting a radius that looks complete.
 
-8. **Check the radius is tested** with `better-code-review-graph query query --pattern tests_for --target "<name>" --repo-root "<path-a>"` for the target and its direct consumers. An impacted call site with no test is a site that will not tell you when the change is wrong.
+8. **Check the radius is tested** with `crg query query --pattern tests_for --target "<name>" --repo-root "<path-a>"` for the target and its direct consumers. An impacted call site with no test is a site that will not tell you when the change is wrong.
 
 9. **Report**:
 

@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from better_code_review_graph.tools import build_or_update_graph
+from crg.tools import build_or_update_graph
 
 
 def _run_git(repo: str, *args: str) -> None:

@@ -59,7 +59,7 @@ def _run_hook(script: str, cwd: Path, stdin_text: str = "", **env_extra):
 
 
 def _make_graph_db(repo_root: Path, last_built_head: str | None = None) -> Path:
-    crg_dir = repo_root / ".better-code-review-graph"
+    crg_dir = repo_root / ".crg"
     crg_dir.mkdir(parents=True, exist_ok=True)
     db_path = crg_dir / "graph.db"
     conn = sqlite3.connect(db_path)
@@ -201,7 +201,7 @@ def test_local_rerank_model_is_optional_and_forwarded():
     assert field["type"] == "string"
     assert field["required"] is False
     assert (
-        plugin["mcpServers"]["better-code-review-graph"]["env"]["LOCAL_RERANK_MODEL"]
+        plugin["mcpServers"]["crg"]["env"]["LOCAL_RERANK_MODEL"]
         == "${user_config.LOCAL_RERANK_MODEL}"
     )
 
@@ -267,7 +267,7 @@ class TestStaleGraphCheck:
         assert result.stdout == ""
 
     def test_survives_an_unreadable_graph(self, tmp_path):
-        crg_dir = tmp_path / ".better-code-review-graph"
+        crg_dir = tmp_path / ".crg"
         crg_dir.mkdir()
         (crg_dir / "graph.db").write_text("not a database")
         _fake_git_head(tmp_path, FAKE_SHA)

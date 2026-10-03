@@ -22,7 +22,7 @@ add ``py_app`` as the importer of ``py_lib``):
 
     workspace/
     .git/                           # primary root (where the DB lives)
-    .better-code-review-graph/
+    .crg/
     py_lib/                         # Python library
         .git/
         pyproject.toml              # name = "py_lib"
@@ -50,10 +50,10 @@ from typing import Any
 
 import pytest
 
-from better_code_review_graph.federation import RepoRegistry
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import incremental_update
-from better_code_review_graph.tools import (
+from crg.federation import RepoRegistry
+from crg.graph import GraphStore
+from crg.incremental import incremental_update
+from crg.tools import (
     build_or_update_graph,
     semantic_search_nodes,
 )
@@ -153,7 +153,7 @@ def federation_workspace(tmp_path: Path) -> Iterator[dict[str, Any]]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    (workspace / ".better-code-review-graph").mkdir()
+    (workspace / ".crg").mkdir()
 
     py_lib = workspace / "py_lib"
     py_app = workspace / "py_app"
@@ -172,7 +172,7 @@ def federation_workspace(tmp_path: Path) -> Iterator[dict[str, Any]]:
     )
     assert result["status"] == "ok", result
 
-    db_path = workspace / ".better-code-review-graph" / "graph.db"
+    db_path = workspace / ".crg" / "graph.db"
     store = GraphStore(str(db_path))
 
     # Map every registered path -> repo_id so tests can look up by name.
@@ -276,7 +276,7 @@ def test_three_repo_federation_emits_cross_repo_imports_from_edge(
     """``from py_lib.retry import retry`` -> federated qualified target.
 
     Expected target shape from
-    :class:`better_code_review_graph.resolver.python.PythonResolver`:
+    :class:`crg.resolver.python.PythonResolver`:
     ``<py_lib_id>:src/py_lib/retry.py::retry``.
     """
     store: GraphStore = federation_workspace["store"]
@@ -433,7 +433,7 @@ def test_three_repo_federation_last_indexed_sha_recorded(
     ).stdout.strip()
     assert head, "git rev-parse HEAD returned empty"
 
-    crg_dir = repo / ".better-code-review-graph"
+    crg_dir = repo / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 

@@ -5,9 +5,9 @@ language-specific resolver, with a generic suffix-match fallback for
 tier-2 languages without dedicated support.
 
 The canonical :class:`TargetRepo` dataclass lives in
-:mod:`better_code_review_graph.resolver._types` and is re-exported by
+:mod:`crg.resolver._types` and is re-exported by
 this module and by every language resolver. Downstream callers should
-import from this module (``from better_code_review_graph.resolver
+import from this module (``from crg.resolver
 import TargetRepo, resolve_cross_repo_imports``) to avoid coupling to a
 specific resolver.
 """
@@ -28,7 +28,7 @@ from .typescript import TypeScriptResolver
 # Source language hint -> resolver class *attribute name on this module*.
 # We dereference the attribute at call time (rather than caching the
 # class object) so test patches on
-# ``better_code_review_graph.resolver.PythonResolver`` (etc.) are
+# ``crg.resolver.PythonResolver`` (etc.) are
 # honoured by the dispatcher.
 #
 # JavaScript reuses TypeScript because the import syntax and project

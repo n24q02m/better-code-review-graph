@@ -1,7 +1,7 @@
 import time
 from typing import cast
 
-from better_code_review_graph.embeddings import EmbeddingBackend, EmbeddingStore
+from crg.embeddings import EmbeddingBackend, EmbeddingStore
 from tests.test_embeddings import _make_node
 
 

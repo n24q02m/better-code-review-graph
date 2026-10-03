@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import (
     _build_response_header,
     query_graph,
     semantic_search_nodes,
@@ -22,7 +22,7 @@ from better_code_review_graph.tools import (
 def repo_with_graph(tmp_path):
     """Minimal repo + graph fixture for header tests."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".better-code-review-graph"
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 

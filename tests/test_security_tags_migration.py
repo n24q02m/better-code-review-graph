@@ -34,8 +34,8 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
 
 
 def _alembic_config_for(db_path: Path) -> Config:

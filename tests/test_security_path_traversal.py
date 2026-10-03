@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from better_code_review_graph.credential_state import _sub_data_dir
+from crg.credential_state import _sub_data_dir
 
 
 def test_sub_data_dir_path_traversal(monkeypatch, tmp_path):

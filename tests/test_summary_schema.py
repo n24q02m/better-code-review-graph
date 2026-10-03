@@ -10,7 +10,7 @@ summaries:
 
 import sqlite3
 
-from better_code_review_graph.graph import GraphStore
+from crg.graph import GraphStore
 
 
 def test_summary_columns_exist(tmp_path):

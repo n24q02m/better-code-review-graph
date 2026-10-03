@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from better_code_review_graph.graph import (
+from crg.graph import (
     GraphStore,
     _sanitize_name,
     edge_to_dict,
     node_to_dict,
 )
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.parser import EdgeInfo, NodeInfo
 
 # ---------------------------------------------------------------------------
 # _sanitize_name

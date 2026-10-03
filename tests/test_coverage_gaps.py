@@ -14,18 +14,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.embeddings import (
+from crg.embeddings import (
     _MAX_RETRIES,
     CloudEmbeddingBackend,
     EmbeddingStore,
     _is_retryable,
 )
-from better_code_review_graph.graph import GraphNode, GraphStore
-from better_code_review_graph.incremental import (
+from crg.graph import GraphNode, GraphStore
+from crg.incremental import (
     find_repo_root,
     get_changed_files,
 )
-from better_code_review_graph.parser import CodeParser
+from crg.parser import CodeParser
 from tests.test_embeddings import _patched_client
 
 # ---------------------------------------------------------------------------
@@ -237,18 +237,18 @@ class TestIsRetryable:
 class TestConfigStatusVersionFallback:
     async def test_version_dev_fallback(self):
         """Cover lines 350-351: version = 'dev' when package not installed."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
-        with patch("better_code_review_graph.server._config_status") as mock_status:
+        with patch("crg.server._config_status") as mock_status:
             mock_status.return_value = {"status": "ok", "version": "dev"}
             result = await config(action="status")
             assert result["version"] == "dev"
 
     def test_version_fallback_direct(self):
         """Test _config_status reports the module-level resolved version."""
-        from better_code_review_graph.server import _config_status
+        from crg.server import _config_status
 
-        with patch("better_code_review_graph.server._pkg_version", "dev"):
+        with patch("crg.server._pkg_version", "dev"):
             result = _config_status(repo_root=None)
             assert result["version"] == "dev"
 
@@ -261,11 +261,11 @@ class TestConfigStatusVersionFallback:
 class TestHelpFallbackContent:
     def test_help_fallback_returns_content(self):
         """Cover line 507: help returns content from LLM-OPTIMIZED-REFERENCE."""
-        from better_code_review_graph.server import help
+        from crg.server import help
 
-        with patch("better_code_review_graph.server.files") as mock_files:
+        with patch("crg.server.files") as mock_files:
             mock_files.side_effect = FileNotFoundError("no docs")
-            with patch("better_code_review_graph.server.get_docs_section") as mock_docs:
+            with patch("crg.server.get_docs_section") as mock_docs:
                 mock_docs.return_value = {
                     "status": "ok",
                     "content": "Full documentation content here.",
@@ -275,9 +275,9 @@ class TestHelpFallbackContent:
 
     def test_help_non_graph_query_fallback(self):
         """Cover help fallback for non-graph/query topics (review, config)."""
-        from better_code_review_graph.server import help
+        from crg.server import help
 
-        with patch("better_code_review_graph.server.files") as mock_files:
+        with patch("crg.server.files") as mock_files:
             mock_files.side_effect = FileNotFoundError("no docs")
             # For 'review' topic, it should NOT try get_docs_section
             result = help(topic="review")
@@ -311,7 +311,7 @@ class TestIncrementalEdgeCases:
 class TestGraphCacheHit:
     def test_networkx_cache_reused(self, tmp_path):
         """Cover line 580: _build_networkx_graph returns cached graph."""
-        from better_code_review_graph.parser import EdgeInfo, NodeInfo
+        from crg.parser import EdgeInfo, NodeInfo
 
         db = tmp_path / "graph.db"
         store = GraphStore(str(db))
@@ -471,7 +471,7 @@ function main() {
 class TestIncrementalDeletedFile:
     def test_incremental_update_deleted_file(self, tmp_path):
         """Cover lines 353-356: handle deleted file in incremental update."""
-        from better_code_review_graph.incremental import incremental_update
+        from crg.incremental import incremental_update
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -499,11 +499,11 @@ class TestIncrementalDeletedFile:
             check=True,
         )
 
-        db = repo / ".better-code-review-graph" / "graph.db"
+        db = repo / ".crg" / "graph.db"
         store = GraphStore(str(db))
         try:
             # Build full graph first
-            from better_code_review_graph.incremental import full_build
+            from crg.incremental import full_build
 
             full_build(repo, store)
 
@@ -526,7 +526,7 @@ class TestIncrementalDeletedFile:
 class TestIncrementalNonParseableFile:
     def test_incremental_update_non_parseable(self, tmp_path):
         """Cover lines 359-360: skip files with no parseable language."""
-        from better_code_review_graph.incremental import incremental_update
+        from crg.incremental import incremental_update
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -553,7 +553,7 @@ class TestIncrementalNonParseableFile:
             check=True,
         )
 
-        db = repo / ".better-code-review-graph" / "graph.db"
+        db = repo / ".crg" / "graph.db"
         store = GraphStore(str(db))
         try:
             result = incremental_update(repo, store, changed_files=["readme.txt"])
@@ -572,7 +572,7 @@ class TestIncrementalNonParseableFile:
 class TestConfigCacheClearFallback:
     async def test_cache_clear_runtime_error(self):
         """Cover lines 447-448: cache_clear handles RuntimeError."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         # Use a nonexistent path that will trigger RuntimeError
         result = await config(action="cache_clear", repo_root="/nonexistent/path/xyz")
@@ -588,7 +588,7 @@ class TestConfigCacheClearFallback:
 class TestConfigStatusFallback:
     async def test_status_runtime_error(self):
         """Cover lines 381-382: _config_status handles RuntimeError."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         result = await config(action="status", repo_root="/nonexistent/path/xyz")
         # Should return ok with 0 nodes (no graph found)

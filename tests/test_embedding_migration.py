@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from better_code_review_graph.embeddings import EmbeddingStore
+from crg.embeddings import EmbeddingStore
 
 
 def test_migration_adds_provider_column(tmp_path):

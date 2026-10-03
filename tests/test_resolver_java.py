@@ -1,6 +1,6 @@
 """Tests for the Java cross-repo resolver (Phase 2 Task 7).
 
-Covers :mod:`better_code_review_graph.resolver.java`:
+Covers :mod:`crg.resolver.java`:
 
 * ``parse_import_statement`` — turns Java ``import com.example.a.Util;``
   declarations (including ``import static`` form) into a
@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver.java import (
+from crg.resolver.java import (
     JavaImport,
     JavaResolver,
     TargetRepo,

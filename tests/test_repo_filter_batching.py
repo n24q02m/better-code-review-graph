@@ -18,8 +18,8 @@ import json
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
 
 
 @pytest.fixture

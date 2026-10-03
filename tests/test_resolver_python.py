@@ -1,6 +1,6 @@
 """Tests for the Python cross-repo resolver (Phase 2 Task 3).
 
-Covers :mod:`better_code_review_graph.resolver.python`:
+Covers :mod:`crg.resolver.python`:
 
 * ``parse_import_statement`` — turns ``from X import Y`` / ``import X.Y``
   source lines into a structured :class:`PythonImport`.
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver.python import (
+from crg.resolver.python import (
     PythonImport,
     PythonResolver,
     TargetRepo,

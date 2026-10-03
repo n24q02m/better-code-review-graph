@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import (
     _LAST_CALLERS_RESULT,
     query_graph,
     spot_check_last_callers,
@@ -30,7 +30,7 @@ def _clear_cache():
 def repo_with_callers(tmp_path):
     """Repo where 5 callers reference one Function across multiple files."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".better-code-review-graph"
+    crg = tmp_path / ".crg"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
 

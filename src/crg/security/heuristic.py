@@ -167,13 +167,13 @@ def _default_rules_dir() -> Path:
     """Locate the bundled rules directory.
 
     First tries the wheel-installed location (top-level package
-    ``better_code_review_graph_security_rules`` populated by the
+    ``crg_security_rules`` populated by the
     ``[tool.hatch.build.targets.wheel.force-include]`` mapping), then falls
     back to the repository checkout layout used during ``uv sync``.
     """
 
     try:
-        ref = files("better_code_review_graph_security_rules").joinpath("heuristic")
+        ref = files("crg_security_rules").joinpath("heuristic")
         if isinstance(ref, Path) and ref.joinpath("hardcoded-secret.yaml").is_file():
             return ref
     except (ModuleNotFoundError, OSError):
@@ -211,7 +211,7 @@ class HeuristicScanner:
 
         ``node`` is duck-typed: it must expose ``source_text`` (``str | None``),
         ``language`` (``str``), and ``line_start`` (``int | None``) attributes.
-        :class:`better_code_review_graph.parser.NodeInfo` satisfies this
+        :class:`crg.parser.NodeInfo` satisfies this
         contract.
         """
 

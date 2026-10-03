@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.credential_state import _current_sub
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import get_db_path
-from better_code_review_graph.parser import NodeInfo
+from crg.credential_state import _current_sub
+from crg.graph import GraphStore
+from crg.incremental import get_db_path
+from crg.parser import NodeInfo
 
 
 @pytest.fixture(autouse=True)
@@ -59,11 +59,11 @@ def test_stdio_no_sub_uses_repo_relative_path(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    from better_code_review_graph.credential_state import set_current_sub
+    from crg.credential_state import set_current_sub
 
     set_current_sub(None)
     path = get_db_path(repo)
-    assert path == repo / ".better-code-review-graph" / "graph.db"
+    assert path == repo / ".crg" / "graph.db"
 
 
 def test_bound_sub_uses_per_sub_path(tmp_path, monkeypatch):
@@ -72,7 +72,7 @@ def test_bound_sub_uses_per_sub_path(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    from better_code_review_graph.credential_state import (
+    from crg.credential_state import (
         db_path_for_sub,
         set_current_sub,
     )
@@ -81,7 +81,7 @@ def test_bound_sub_uses_per_sub_path(tmp_path, monkeypatch):
     path = get_db_path(repo)
     assert path == db_path_for_sub("user-a")
     # The analyzed-repo path must NOT be used for a bound sub.
-    assert path != repo / ".better-code-review-graph" / "graph.db"
+    assert path != repo / ".crg" / "graph.db"
     assert "user-a" in str(path)
 
 
@@ -91,7 +91,7 @@ def test_two_subs_get_distinct_db_paths(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    from better_code_review_graph.credential_state import set_current_sub
+    from crg.credential_state import set_current_sub
 
     set_current_sub("user-a")
     pa = get_db_path(repo)
@@ -114,7 +114,7 @@ def test_sub_b_query_does_not_see_sub_a_nodes(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
 
-    from better_code_review_graph.credential_state import set_current_sub
+    from crg.credential_state import set_current_sub
 
     # sub A writes a node into its own graph DB.
     set_current_sub("user-a")

@@ -1,6 +1,6 @@
 """Tests for the cross-repo resolver dispatcher (Phase 2 Task 8).
 
-Covers :func:`better_code_review_graph.resolver.resolve_cross_repo_imports`:
+Covers :func:`crg.resolver.resolve_cross_repo_imports`:
 
 * Dispatch table — Python / TypeScript / JavaScript / Go / Rust / Java
   / Kotlin all route to the expected resolver class.
@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from better_code_review_graph.resolver import (
+from crg.resolver import (
     FallbackResolver,
     GoResolver,
     JavaResolver,
@@ -56,7 +56,7 @@ def test_dispatcher_routes_python(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.PythonResolver",
+        "crg.resolver.PythonResolver",
         wraps=PythonResolver,
     ) as cls:
         result = resolve_cross_repo_imports(
@@ -75,7 +75,7 @@ def test_dispatcher_routes_typescript(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.TypeScriptResolver",
+        "crg.resolver.TypeScriptResolver",
         wraps=TypeScriptResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -93,7 +93,7 @@ def test_dispatcher_routes_javascript_to_typescript(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.TypeScriptResolver",
+        "crg.resolver.TypeScriptResolver",
         wraps=TypeScriptResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -111,7 +111,7 @@ def test_dispatcher_routes_go(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.GoResolver",
+        "crg.resolver.GoResolver",
         wraps=GoResolver,
     ) as cls:
         result = resolve_cross_repo_imports(
@@ -132,7 +132,7 @@ def test_dispatcher_routes_rust(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.RustResolver",
+        "crg.resolver.RustResolver",
         wraps=RustResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -150,7 +150,7 @@ def test_dispatcher_routes_java(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.JavaResolver",
+        "crg.resolver.JavaResolver",
         wraps=JavaResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -168,7 +168,7 @@ def test_dispatcher_routes_kotlin_to_java(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.JavaResolver",
+        "crg.resolver.JavaResolver",
         wraps=JavaResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -186,7 +186,7 @@ def test_dispatcher_falls_back_for_unknown_lang(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.FallbackResolver",
+        "crg.resolver.FallbackResolver",
         wraps=FallbackResolver,
     ) as cls:
         resolve_cross_repo_imports(
@@ -205,7 +205,7 @@ def test_dispatcher_lang_is_case_insensitive(tmp_path: Path) -> None:
     target = _make_target(tmp_path)
     for variant in ("Python", "PYTHON", "  python  "):
         with patch(
-            "better_code_review_graph.resolver.PythonResolver",
+            "crg.resolver.PythonResolver",
             wraps=PythonResolver,
         ) as cls:
             resolve_cross_repo_imports(
@@ -223,7 +223,7 @@ def test_dispatcher_go_without_symbol_returns_none(tmp_path: Path) -> None:
     source = _make_source_repo(tmp_path)
     target = _make_target(tmp_path)
     with patch(
-        "better_code_review_graph.resolver.GoResolver",
+        "crg.resolver.GoResolver",
         wraps=GoResolver,
     ) as cls:
         result = resolve_cross_repo_imports(

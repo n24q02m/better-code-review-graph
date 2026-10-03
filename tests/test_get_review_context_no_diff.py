@@ -45,8 +45,8 @@ def setup_mocks():
 
 # Apply mocks before importing the tool
 with patch.dict(sys.modules, setup_mocks()):
-    import better_code_review_graph.tools as tools_module
-    from better_code_review_graph.tools import get_review_context
+    import crg.tools as tools_module
+    from crg.tools import get_review_context
 
 
 class TestGetReviewContextNoDiff(unittest.TestCase):

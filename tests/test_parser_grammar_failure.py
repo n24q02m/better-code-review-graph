@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.parser import (
+from crg.parser import (
     CodeParser,
     GrammarUnavailableError,
 )
@@ -39,7 +39,7 @@ def broken_grammar(monkeypatch):
         raise RuntimeError(_CACHE_ERROR)
 
     monkeypatch.setattr(
-        "better_code_review_graph.parser.tslp.get_parser",
+        "crg.parser.tslp.get_parser",
         _boom,
     )
 
@@ -93,8 +93,8 @@ class TestGrammarFailureIsLoud:
         returned ``errors`` list; swallowing inside ``_get_parser`` meant that
         channel stayed empty while the graph came out empty too.
         """
-        from better_code_review_graph.graph import GraphStore
-        from better_code_review_graph.incremental import full_build
+        from crg.graph import GraphStore
+        from crg.incremental import full_build
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -200,7 +200,7 @@ class TestReviewDeltaDoesNotSwallowGrammarFailure:
 
     def test_get_symbol_lines_reraises_grammar_failure(self, broken_grammar):
         """The helper must not convert a host fault into "no symbols"."""
-        from better_code_review_graph.tools import _get_symbol_lines
+        from crg.tools import _get_symbol_lines
 
         with pytest.raises(GrammarUnavailableError):
             _get_symbol_lines(CodeParser(), Path("module.py"), b"def alpha():\n")
@@ -212,7 +212,7 @@ class TestReviewDeltaDoesNotSwallowGrammarFailure:
         parse error is skipped rather than failing the whole tool. That
         best-effort contract stays exactly as it was.
         """
-        from better_code_review_graph.tools import _get_symbol_lines
+        from crg.tools import _get_symbol_lines
 
         parser = CodeParser()
         with patch.object(
@@ -224,7 +224,7 @@ class TestReviewDeltaDoesNotSwallowGrammarFailure:
         self, broken_grammar, shifted_repo
     ):
         """The tool result must name the fault, not claim an empty diff."""
-        from better_code_review_graph.tools import renamed_in_diff
+        from crg.tools import renamed_in_diff
 
         result = renamed_in_diff(base="HEAD~1", repo_root=str(shifted_repo))
 
@@ -237,7 +237,7 @@ class TestReviewDeltaDoesNotSwallowGrammarFailure:
 
     def test_renamed_in_diff_still_works_on_a_healthy_host(self, shifted_repo):
         """Regression guard: the real path is untouched."""
-        from better_code_review_graph.tools import renamed_in_diff
+        from crg.tools import renamed_in_diff
 
         result = renamed_in_diff(base="HEAD~1", repo_root=str(shifted_repo))
         assert result["status"] == "ok"

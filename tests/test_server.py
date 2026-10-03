@@ -7,7 +7,7 @@ import os
 import subprocess
 from unittest.mock import patch
 
-from better_code_review_graph.server import (
+from crg.server import (
     config,
     graph,
     help,
@@ -20,7 +20,7 @@ from better_code_review_graph.server import (
 
 class TestMCPServerSetup:
     def test_mcp_server_name(self):
-        assert mcp.name == "better-code-review-graph"
+        assert mcp.name == "crg"
 
     def test_mcp_instructions_present(self):
         instructions = getattr(mcp, "instructions", None) or getattr(
@@ -29,7 +29,7 @@ class TestMCPServerSetup:
         if instructions is None:
             instructions = getattr(getattr(mcp, "settings", None), "instructions", None)
         if instructions is None:
-            assert mcp.name == "better-code-review-graph"
+            assert mcp.name == "crg"
         else:
             assert "knowledge graph" in instructions.lower()
 
@@ -52,7 +52,7 @@ class TestMCPServerSetup:
 
 
 class TestGraphTool:
-    @patch("better_code_review_graph.server.build_or_update_graph")
+    @patch("crg.server.build_or_update_graph")
     def test_build_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "full"}
         result = graph(action="build", full_rebuild=True, repo_root="/test")
@@ -61,7 +61,7 @@ class TestGraphTool:
         )
         assert result["status"] == "ok"
 
-    @patch("better_code_review_graph.server.build_or_update_graph")
+    @patch("crg.server.build_or_update_graph")
     def test_update_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "build_type": "incremental"}
         result = graph(action="update", repo_root="/test")
@@ -70,14 +70,14 @@ class TestGraphTool:
         )
         assert result["status"] == "ok"
 
-    @patch("better_code_review_graph.server.list_graph_stats")
+    @patch("crg.server.list_graph_stats")
     def test_stats_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "total_nodes": 42}
         result = graph(action="stats", repo_root="/test")
         mock_fn.assert_called_once_with(repo_root="/test")
         assert result["status"] == "ok"
 
-    @patch("better_code_review_graph.server.embed_graph")
+    @patch("crg.server.embed_graph")
     def test_embed_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "newly_embedded": 10}
         result = graph(action="embed", repo_root="/test")
@@ -96,7 +96,7 @@ class TestGraphTool:
 
 
 class TestQueryTool:
-    @patch("better_code_review_graph.server.query_graph")
+    @patch("crg.server.query_graph")
     def test_query_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = query(
@@ -122,7 +122,7 @@ class TestQueryTool:
         assert "error" in result
         assert "target" in result["error"]
 
-    @patch("better_code_review_graph.server.semantic_search_nodes")
+    @patch("crg.server.semantic_search_nodes")
     def test_search_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = query(
@@ -147,7 +147,7 @@ class TestQueryTool:
         assert "error" in result
         assert "search_query" in result["error"]
 
-    @patch("better_code_review_graph.server.get_impact_radius")
+    @patch("crg.server.get_impact_radius")
     def test_impact_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
         result = query(
@@ -170,7 +170,7 @@ class TestQueryTool:
         )
         assert result["status"] == "ok"
 
-    @patch("better_code_review_graph.server.find_large_functions")
+    @patch("crg.server.find_large_functions")
     def test_large_functions_action(self, mock_fn):
         mock_fn.return_value = {"status": "ok", "results": []}
         result = query(
@@ -203,7 +203,7 @@ class TestQueryTool:
 
 
 class TestReviewTool:
-    @patch("better_code_review_graph.server.get_review_context")
+    @patch("crg.server.get_review_context")
     def test_review(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
         result = review(
@@ -226,7 +226,7 @@ class TestReviewTool:
         )
         assert result["status"] == "ok"
 
-    @patch("better_code_review_graph.server.get_review_context")
+    @patch("crg.server.get_review_context")
     def test_review_defaults(self, mock_fn):
         mock_fn.return_value = {"status": "ok"}
         result = review()
@@ -250,8 +250,8 @@ class TestReviewTool:
 
 def _make_mini_repo(tmp_path):
     """Helper: create a mini git repo with a built graph."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.incremental import full_build, get_db_path
+    from crg.graph import GraphStore
+    from crg.incremental import full_build, get_db_path
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -307,7 +307,7 @@ class TestConfigTool:
         """
         repo = _make_mini_repo(tmp_path)
         with patch(
-            "better_code_review_graph.embeddings.init_backend",
+            "crg.embeddings.init_backend",
             side_effect=AssertionError("status must not init the embedding backend"),
         ):
             result = await config(action="status", repo_root=str(repo))
@@ -323,7 +323,7 @@ class TestConfigTool:
         """config(cache_clear) only counts + deletes rows: no model load."""
         repo = _make_mini_repo(tmp_path)
         with patch(
-            "better_code_review_graph.embeddings.init_backend",
+            "crg.embeddings.init_backend",
             side_effect=AssertionError(
                 "cache_clear must not init the embedding backend"
             ),
@@ -371,7 +371,7 @@ class TestConfigTool:
 
     async def test_status_error_handling(self):
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=ValueError("No graph found"),
         ):
             result = await config(action="status")
@@ -385,7 +385,7 @@ class TestConfigTool:
 
     async def test_cache_clear_error_handling(self):
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=ValueError("No repo found"),
         ):
             result = await config(action="cache_clear")
@@ -410,7 +410,7 @@ class TestConfigTool:
         and no ``<PUBLIC_URL>/authorize`` relay: end users never supply
         keys, the host configures ``[models.<task>]`` cells instead.
         """
-        from better_code_review_graph import credential_state as cs
+        from crg import credential_state as cs
 
         monkeypatch.setattr(cs, "_state", cs.CredentialState.LOCAL)
         monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
@@ -464,7 +464,7 @@ class TestHelpTool:
         else:
             assert "# config Tool Documentation" in result
 
-    @patch("better_code_review_graph.server.files")
+    @patch("crg.server.files")
     def test_fallback_to_llm_ref(self, mock_files):
         mock_files.side_effect = FileNotFoundError("no docs")
         result = help(topic="graph")
@@ -481,7 +481,7 @@ class TestServeMain:
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_sets_repo_root(self):
         """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
-        import better_code_review_graph.server as server_module
+        import crg.server as server_module
 
         with patch.object(server_module.mcp, "run") as mock_run:
             serve_main(repo_root="/my/repo")
@@ -491,7 +491,7 @@ class TestServeMain:
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_none_repo_root(self):
         """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
-        import better_code_review_graph.server as server_module
+        import crg.server as server_module
 
         with patch.object(server_module.mcp, "run") as mock_run:
             serve_main(repo_root=None)
@@ -505,7 +505,7 @@ class TestServeMain:
         C-extension import deadlock, not a hard requirement to serve)."""
         import sys
 
-        import better_code_review_graph.server as server_module
+        import crg.server as server_module
 
         # ``sys.modules[name] = None`` makes ``import name`` raise ImportError.
         with patch.dict(sys.modules, {"numpy": None}):

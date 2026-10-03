@@ -1,4 +1,4 @@
-"""E2E test for better-code-review-graph -- all tools except embed."""
+"""E2E test for crg -- all tools except embed."""
 
 import json
 import os
@@ -34,7 +34,7 @@ async def test_all_tools(tmp_path):
     rp = str(r)
     sp = StdioServerParameters(
         command="uv",
-        args=["run", "better-code-review-graph"],
+        args=["run", "crg"],
         env={**os.environ, "EMBEDDING_BACKEND": "local"},
     )
     async with stdio_client(sp) as (rd, wr):

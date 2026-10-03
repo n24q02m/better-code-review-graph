@@ -1,6 +1,6 @@
 """Task 6: round-trip `crg` export format + `graph import` action.
 
-Covers :mod:`better_code_review_graph.importer`:
+Covers :mod:`crg.importer`:
 
 * Full round trip -- export a populated store as ``crg``, import into an
   empty store, get back the same node/edge counts.
@@ -17,11 +17,11 @@ import json
 
 import pytest
 
-from better_code_review_graph.exporter import export_graph
-from better_code_review_graph.federation import RepoRegistry
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.importer import import_graph
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.exporter import export_graph
+from crg.federation import RepoRegistry
+from crg.graph import GraphStore
+from crg.importer import import_graph
+from crg.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture

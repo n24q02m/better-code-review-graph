@@ -9,9 +9,9 @@ argument-hint: "[PR number or branch name]"
 Comprehensive code review of a pull request or branch diff against its base. Unlike review-delta (quick review of uncommitted local changes), this reviews ALL commits in a branch for PR submission readiness.
 
 **Command surface:** run the local CLI through the coding harness shell. Examples
-use the installed `better-code-review-graph` command; from a source checkout,
+use the installed `crg` command; from a source checkout,
 prefix it with `uv run`. No MCP mapping is required. Use
-`better-code-review-graph review --help` for the command reference. Never
+`crg review --help` for the command reference. Never
 include full files unless explicitly asked.
 
 ## Steps
@@ -20,7 +20,7 @@ include full files unless explicitly asked.
    - If a PR number or branch is provided, use `git diff main...<branch>` to get changed files
    - Otherwise auto-detect from the current branch vs main/master
 
-2. **Update the graph** with `better-code-review-graph graph build --base main --repo-root "<path>"` so it reflects the current branch.
+2. **Update the graph** with `crg graph build --base main --repo-root "<path>"` so it reflects the current branch.
 
 3. **Commit-by-commit analysis** (for PRs with >3 commits):
    - `git log --oneline main..HEAD` to list all commits
@@ -28,23 +28,23 @@ include full files unless explicitly asked.
    - Verify each commit message follows Conventional Commits (`type(scope): description`)
    - Flag commits that mix unrelated changes
 
-4. **Get the full review context** with `better-code-review-graph review context --base main --repo-root "<path>"`:
+4. **Get the full review context** with `crg review context --base main --repo-root "<path>"`:
    - Returns all changed files across all commits in the PR
    - Includes impacted nodes and blast radius
 
-5. **Analyze impact** with `better-code-review-graph query impact --base main --repo-root "<path>"`:
+5. **Analyze impact** with `crg query impact --base main --repo-root "<path>"`:
    - Review the blast radius across the entire PR
    - Identify high-risk areas (widely depended-upon code)
 
 6. **Breaking change detection** for public APIs:
    - Identify exported/public functions, classes, types that changed
    - Check for: removed parameters, changed return types, renamed exports, removed functions
-   - Use `better-code-review-graph query query --pattern callers_of --target "<function>" --repo-root "<path>"` to find all consumers
+   - Use `crg query query --pattern callers_of --target "<function>" --repo-root "<path>"` to find all consumers
    - Flag any change where callers outside the PR would break
 
 7. **Deep-dive each changed file**:
    - Read the full source of files with significant changes
-   - Use `better-code-review-graph query query --pattern tests_for --target "<function>" --repo-root "<path>"` to verify test coverage
+   - Use `crg query query --pattern tests_for --target "<function>" --repo-root "<path>"` to verify test coverage
    - Check for untested new functions
 
 8. **Generate structured review output**:
@@ -91,5 +91,5 @@ include full files unless explicitly asked.
 ## Tips
 
 - For large PRs (>10 files), focus on the highest-impact files first (most dependents)
-- Use `better-code-review-graph query search --search-query "<term>" --repo-root "<path>"` to find related code the PR might have missed
+- Use `crg query search --search-query "<term>" --repo-root "<path>"` to find related code the PR might have missed
 - Check if renamed/moved functions have updated all callers

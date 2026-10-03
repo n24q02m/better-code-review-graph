@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import export_graph_dispatch
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import export_graph_dispatch
 
 
 def _populate_store(store: GraphStore) -> None:
@@ -45,7 +45,7 @@ def _populate_store(store: GraphStore) -> None:
 
 def test_dispatch_unknown_format_returns_error(tmp_path):
     """Unknown format should be caught + returned as status='error' with helpful message."""
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             mock_get_store.return_value = (store, tmp_path)
@@ -58,7 +58,7 @@ def test_dispatch_unknown_format_returns_error(tmp_path):
 
 def test_dispatch_inline_returns_payload(tmp_path):
     """output_path=None → returns inline payload + bytes count."""
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             _populate_store(store)
@@ -77,7 +77,7 @@ def test_dispatch_inline_returns_payload(tmp_path):
 def test_dispatch_with_output_path_writes_file(tmp_path):
     """output_path provided → writes file, returns metadata only (no inline payload)."""
     out_file = tmp_path / "out.graphml"
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             _populate_store(store)
@@ -104,7 +104,7 @@ def test_dispatch_with_output_path_writes_file(tmp_path):
 
 def test_dispatch_format_alias_jsonld_works(tmp_path):
     """'jsonld' (no hyphen) should be normalized + dispatched same as 'json-ld'."""
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             _populate_store(store)

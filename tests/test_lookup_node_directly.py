@@ -1,8 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.tools import _lookup_node_directly
+from crg.parser import NodeInfo
+from crg.tools import _lookup_node_directly
 
 
 def test_lookup_node_by_qualified_name(tmp_graph_store, tmp_path):

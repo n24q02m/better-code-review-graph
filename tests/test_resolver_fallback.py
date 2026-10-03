@@ -1,6 +1,6 @@
 """Tests for the tier-2 fallback resolver (Phase 2 Task 8).
 
-Covers :mod:`better_code_review_graph.resolver.fallback`:
+Covers :mod:`crg.resolver.fallback`:
 
 * :func:`parse_generic_qualified` — extracts the longest qualified
   token from a raw import line, recognising dotted, double-colon and
@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver import (
+from crg.resolver import (
     TargetRepo,
     resolve_cross_repo_imports,
 )
-from better_code_review_graph.resolver.fallback import (
+from crg.resolver.fallback import (
     FallbackResolver,
     GenericImport,
     parse_generic_qualified,

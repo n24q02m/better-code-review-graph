@@ -19,7 +19,7 @@ import asyncio
 
 import pytest
 
-from better_code_review_graph.credential_state import (
+from crg.credential_state import (
     _current_sub,
     get_current_sub,
     set_current_sub,
@@ -102,7 +102,7 @@ def test_hull_shared_modes_do_not_bind(monkeypatch):
 
 def test_hostile_namespace_rejected(monkeypatch, tmp_path):
     """A namespace carrying path separators must fail closed, not escape."""
-    from better_code_review_graph.credential_state import db_path_for_sub
+    from crg.credential_state import db_path_for_sub
 
     _bind_hull_identity(monkeypatch, mode="multi", namespace="../evil")
     with pytest.raises(ValueError):

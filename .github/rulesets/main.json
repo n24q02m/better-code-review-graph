@@ -2,7 +2,7 @@
   "name": "Main Ruleset",
   "target": "branch",
   "source_type": "Repository",
-  "source": "n24q02m/better-code-review-graph",
+  "source": "n24q02m/crg",
   "enforcement": "active",
   "bypass_actors": [
     {

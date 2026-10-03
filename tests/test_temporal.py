@@ -27,9 +27,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.temporal import TemporalIndex, TemporalUpsertResult
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.temporal import TemporalIndex, TemporalUpsertResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -424,7 +424,7 @@ def test_temporal_index_can_query_history_after_supersede(
 
 def test_hash_source_basics() -> None:
     """_hash_source handles empty/None and produces stable hex for text."""
-    from better_code_review_graph.temporal import _hash_source
+    from crg.temporal import _hash_source
 
     assert _hash_source(None) == ""
     assert _hash_source("") == ""
@@ -435,7 +435,7 @@ def test_hash_source_basics() -> None:
 
 def test_quote_identifier_basics() -> None:
     """_quote_identifier wraps in double quotes and escapes existing quotes."""
-    from better_code_review_graph.temporal import _quote_identifier
+    from crg.temporal import _quote_identifier
 
     assert _quote_identifier("foo") == '"foo"'
     assert _quote_identifier('f"o"o') == '"f""o""o"'

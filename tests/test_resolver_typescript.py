@@ -1,6 +1,6 @@
 """Tests for the TypeScript cross-repo resolver (Phase 2 Task 4).
 
-Covers :mod:`better_code_review_graph.resolver.typescript`:
+Covers :mod:`crg.resolver.typescript`:
 
 * ``parse_import_statement`` — turns ``import { x } from 'mod'`` /
   ``import x from 'mod'`` / ``import * as ns from 'mod'`` /
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver.typescript import (
+from crg.resolver.typescript import (
     TargetRepo,
     TypeScriptImport,
     TypeScriptResolver,

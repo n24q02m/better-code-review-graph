@@ -15,14 +15,14 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.embeddings import (
+from crg.embeddings import (
     CloudEmbeddingBackend,
     EmbeddingStore,
     _encode_vector,
     _post_embeddings,
 )
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
 
 
 @pytest.fixture(autouse=True)
@@ -35,7 +35,7 @@ def _embed_cell_key(monkeypatch, tmp_path):
 def _dispatch(*vectors):
     """Patch the dispatch seam to return pre-baked vectors."""
     return patch(
-        "better_code_review_graph.embeddings._post_embeddings",
+        "crg.embeddings._post_embeddings",
         return_value=list(vectors),
     )
 
@@ -116,7 +116,7 @@ def test_cohere_reopen_reembed_legacy_width_and_query(tmp_path):
         store = EmbeddingStore(db, backend)
         try:
             with patch(
-                "better_code_review_graph.embeddings._post_embeddings",
+                "crg.embeddings._post_embeddings",
                 return_value=[[1.0] * 1024],
             ) as dispatch:
                 assert store.embed_nodes(nodes) == 1
@@ -138,7 +138,7 @@ def test_cohere_reopen_reembed_legacy_width_and_query(tmp_path):
                     store.search("authenticate a user")
                 dispatch.assert_not_called()
             with patch(
-                "better_code_review_graph.embeddings._post_embeddings",
+                "crg.embeddings._post_embeddings",
                 return_value=[[1.0] * 1024],
             ) as dispatch:
                 assert store.embed_nodes(nodes) == 1

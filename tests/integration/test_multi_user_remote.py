@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.credential_state import db_path_for_sub
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
+from crg.credential_state import db_path_for_sub
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
 
 
 @pytest.mark.integration

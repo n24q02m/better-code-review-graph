@@ -67,8 +67,8 @@ def test_registry_metadata_is_pypi_only():
 
     assert [package["registryType"] for package in metadata["packages"]] == ["pypi"]
     serialized = json.dumps(metadata)
-    assert "docker.io/n24q02m/better-code-review-graph" not in serialized
-    assert "ghcr.io/n24q02m/better-code-review-graph" not in serialized
+    assert "docker.io/n24q02m/crg" not in serialized
+    assert "ghcr.io/n24q02m/crg" not in serialized
 
 
 def test_registry_description_matches_project_metadata_and_limit():

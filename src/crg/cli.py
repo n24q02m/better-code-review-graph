@@ -695,14 +695,14 @@ def main() -> int:
     # any other leading dash is passed through to the server untouched.
     if argv[0] in ("-h", "--help"):
         names = ", ".join(sorted(handlers))
-        print("usage: better-code-review-graph [-h] [--version] [<subcommand> ...]")
+        print("usage: crg [-h] [--version] [<subcommand> ...]")
         print(
             "Any other flags/args are passed through to the MCP server (e.g. --http)."
         )
         print(f"subcommands: {names}")
         return 0
     if argv[0] in ("--version", "-V"):
-        print(f"better-code-review-graph {_version()}")
+        print(f"crg {_version()}")
         return 0
     if argv[0].startswith("-"):
         rc = _serve(argv)
@@ -712,14 +712,13 @@ def main() -> int:
     if spec is None:
         names = ", ".join(sorted(handlers))
         print(
-            f"better-code-review-graph: unknown subcommand {argv[0]!r} "
-            f"(expected one of: {names})",
+            f"crg: unknown subcommand {argv[0]!r} (expected one of: {names})",
             file=sys.stderr,
         )
         return 2
 
     configure_fn, handler_fn = spec
-    parser = argparse.ArgumentParser(prog="better-code-review-graph")
+    parser = argparse.ArgumentParser(prog="crg")
     subparsers = parser.add_subparsers(dest="subcommand")
     sub = subparsers.add_parser(argv[0])
     if configure_fn is not None:

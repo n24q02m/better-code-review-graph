@@ -3,8 +3,8 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import (
+from crg.graph import GraphStore
+from crg.incremental import (
     _is_binary,
     _load_ignore_patterns,
     _should_ignore,
@@ -52,12 +52,12 @@ class TestFindProjectRoot:
 class TestGetDbPath:
     def test_creates_directory_and_db_path(self, tmp_path):
         db_path = get_db_path(tmp_path)
-        assert db_path == tmp_path / ".better-code-review-graph" / "graph.db"
-        assert (tmp_path / ".better-code-review-graph").is_dir()
+        assert db_path == tmp_path / ".crg" / "graph.db"
+        assert (tmp_path / ".crg").is_dir()
 
     def test_creates_gitignore(self, tmp_path):
         get_db_path(tmp_path)
-        gi = tmp_path / ".better-code-review-graph" / ".gitignore"
+        gi = tmp_path / ".crg" / ".gitignore"
         assert gi.exists()
         assert "*\n" in gi.read_text()
 
@@ -76,7 +76,7 @@ class TestGetDbPath:
 
         db_path = get_db_path(tmp_path)
 
-        assert db_path == tmp_path / ".better-code-review-graph" / "graph.db"
+        assert db_path == tmp_path / ".crg" / "graph.db"
         assert not db_path.exists()
         for old_path in old_paths:
             assert old_path.read_bytes() == b"owned by another package"
@@ -136,8 +136,8 @@ class TestIsBinary:
 
 
 class TestGitOperations:
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files(self, mock_run, mock_which, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -150,8 +150,8 @@ class TestGitOperations:
         assert any("git" in arg for arg in call_args[0][0])
         assert call_args[1].get("timeout") == 30
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files_fallback(self, mock_run, mock_which, tmp_path):
         # First call fails, second succeeds
         mock_run.side_effect = [
@@ -162,15 +162,15 @@ class TestGitOperations:
         assert result == ["staged.py"]
         assert mock_run.call_count == 2
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_changed_files_timeout(self, mock_run, mock_which, tmp_path):
         mock_run.side_effect = subprocess.TimeoutExpired("git", 30)
         result = get_changed_files(tmp_path)
         assert result == []
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_staged_and_unstaged(self, mock_run, mock_which, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -183,8 +183,8 @@ class TestGitOperations:
         # old.py should NOT be in results (renamed away)
         assert "old.py" not in result
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_get_all_tracked_files(self, mock_run, mock_which, tmp_path):
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -193,8 +193,8 @@ class TestGitOperations:
         result = get_all_tracked_files(tmp_path)
         assert result == ["a.py", "b.py", "c.go"]
 
-    @patch("better_code_review_graph.incremental.shutil.which", return_value="git")
-    @patch("better_code_review_graph.incremental.subprocess.run")
+    @patch("crg.incremental.shutil.which", return_value="git")
+    @patch("crg.incremental.subprocess.run")
     def test_git_calls_detach_stdin(self, mock_run, mock_which, tmp_path):
         """Every git subprocess passes stdin=DEVNULL so an inherited stdio pipe
         cannot stall the output reader inside the MCP worker thread on Windows."""
@@ -222,7 +222,7 @@ class TestFullBuild:
         db_path = tmp_path / "test.db"
         store = GraphStore(db_path)
         try:
-            mock_target = "better_code_review_graph.incremental.get_all_tracked_files"
+            mock_target = "crg.incremental.get_all_tracked_files"
             with patch(mock_target, return_value=["sample.py"]):
                 result = full_build(tmp_path, store)
             assert result["files_parsed"] == 1
@@ -310,7 +310,7 @@ class TestIncrementalUpdateFromHook:
         monkeypatch.chdir(tmp_path)
         incremental_update_from_hook()  # Should not raise
         # Verify graph was created
-        db_path = tmp_path / ".better-code-review-graph" / "graph.db"
+        db_path = tmp_path / ".crg" / "graph.db"
         assert db_path.exists()
 
 
@@ -356,7 +356,7 @@ class TestIncrementalUpdateRefreshesLastIndexedSha:
 
     def test_refreshes_last_indexed_sha_in_git_repo(self, tmp_path):
         """When repo_registry is provided + git is available, write HEAD SHA."""
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         head_sha = self._git_init_with_commit(tmp_path)
 
@@ -397,7 +397,7 @@ class TestIncrementalUpdateRefreshesLastIndexedSha:
 
     def test_skips_sha_refresh_without_git(self, tmp_path):
         """Non-git directory: no SHA available, last_indexed_sha stays None."""
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         # NOTE: tmp_path has NO .git directory.
         py_file = tmp_path / "mod.py"
@@ -427,7 +427,7 @@ class TestIncrementalUpdateRefreshesLastIndexedSha:
 
     def test_no_changes_path_still_refreshes_sha_with_registry(self, tmp_path):
         """Even on the early-return ``no changes`` path, SHA is refreshed."""
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         head_sha = self._git_init_with_commit(tmp_path)
 
@@ -458,7 +458,7 @@ class TestIncrementalUpdateRefreshesLastIndexedSha:
 
     def test_no_changes_path_skips_sha_refresh_when_repo_not_registered(self, tmp_path):
         """Early-return path with registry but unregistered root: silent skip."""
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         self._git_init_with_commit(tmp_path)
 
@@ -567,7 +567,7 @@ class TestPhpCallResolution:
         finally:
             store.close()
 
-        from better_code_review_graph.tools import get_impact_radius
+        from crg.tools import get_impact_radius
 
         impact = get_impact_radius(
             changed_files=[str(caller)], repo_root=str(tmp_path), max_depth=2
@@ -617,7 +617,7 @@ class TestPhpCallResolution:
             store.close()
 
     def test_php_symbols_remain_repo_scoped_after_incremental_update(self, tmp_path):
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         root_a, root_b = tmp_path / "a", tmp_path / "b"
         root_a.mkdir()
@@ -672,7 +672,7 @@ class TestBareCallResolution:
         finally:
             store.close()
 
-        from better_code_review_graph.tools import get_impact_radius
+        from crg.tools import get_impact_radius
 
         impact = get_impact_radius(
             changed_files=[str(store_js)], repo_root=str(tmp_path), max_depth=2
@@ -729,7 +729,7 @@ class TestBareCallResolution:
             store.close()
 
     def test_bare_symbols_remain_repo_scoped(self, tmp_path):
-        from better_code_review_graph.federation import RepoRegistry
+        from crg.federation import RepoRegistry
 
         root_a, root_b = tmp_path / "a", tmp_path / "b"
         root_a.mkdir()

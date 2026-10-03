@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import export_graph_dispatch, import_graph_dispatch
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import export_graph_dispatch, import_graph_dispatch
 
 
 def _populate_store(store: GraphStore) -> None:
@@ -54,7 +54,7 @@ def test_import_dispatch_reads_export_file_and_merges(tmp_path):
     """Full round trip through the dispatch layer: export to a file, import it."""
     export_file = tmp_path / "export.json"
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         source_store = GraphStore(str(tmp_path / "source.db"))
         try:
             _populate_store(source_store)
@@ -66,7 +66,7 @@ def test_import_dispatch_reads_export_file_and_merges(tmp_path):
             source_store.close()
     assert export_result["status"] == "ok"
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         target_store = GraphStore(str(tmp_path / "target.db"))
         try:
             mock_get_store.return_value = (target_store, tmp_path)
@@ -88,7 +88,7 @@ def test_import_dispatch_malformed_json_returns_error(tmp_path):
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("{not valid json", encoding="utf-8")
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             mock_get_store.return_value = (store, tmp_path)
@@ -109,7 +109,7 @@ def test_import_dispatch_bad_schema_version_returns_error(tmp_path):
         encoding="utf-8",
     )
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         try:
             mock_get_store.return_value = (store, tmp_path)
@@ -126,7 +126,7 @@ def test_import_dispatch_bad_schema_version_returns_error(tmp_path):
 def test_import_dispatch_path_traversal_blocked(
     tmp_path, _allow_temporal_migration_without_git
 ):
-    (tmp_path / ".better-code-review-graph").mkdir()
+    (tmp_path / ".crg").mkdir()
     outside_file = tmp_path.parent / "outside_import.json"
     outside_file.write_text(
         json.dumps({"schema_version": 1, "repo_id": "x", "nodes": [], "edges": []}),
