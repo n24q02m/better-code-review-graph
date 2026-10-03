@@ -1,8 +1,8 @@
 """Source-to-graph coverage for IMPLEMENTS edge production."""
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import full_build, get_db_path
-from better_code_review_graph.tools import query_graph
+from crg.graph import GraphStore
+from crg.incremental import full_build, get_db_path
+from crg.tools import query_graph
 
 
 def test_implements_edge_is_produced_by_full_build(tmp_path):

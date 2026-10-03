@@ -2,7 +2,7 @@
 
 Previously the FastMCP constructor was called without ``version=``, so the
 reported version defaulted to the fastmcp framework version (e.g. "3.4.2")
-instead of the better-code-review-graph package version.
+instead of the crg package version.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from unittest.mock import patch
 
-from better_code_review_graph.server import _resolve_version, mcp
+from crg.server import _resolve_version, mcp
 
 
 def test_serverinfo_reports_package_version():
@@ -28,7 +28,7 @@ def test_serverinfo_not_fastmcp_version():
 
 def test_resolve_version_fallback_when_not_installed():
     with patch(
-        "better_code_review_graph.server.pkg_version",
+        "crg.server.pkg_version",
         side_effect=PackageNotFoundError("better-code-review-graph"),
     ):
         assert _resolve_version() == "dev"

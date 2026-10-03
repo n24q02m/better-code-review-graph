@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.tools import (
+from crg.tools import (
     _LAST_CALLERS_RESULT,
     _build_response_header,
     _filter_valid_paths,
@@ -50,7 +50,7 @@ def _run_git(repo: Path, *args: str) -> None:
 def _make_minimal_repo(tmp_path: Path) -> Path:
     """Create a minimal repo with a .code-review-graph dir for graph storage."""
     (tmp_path / ".git").mkdir(exist_ok=True)
-    crg = tmp_path / ".better-code-review-graph"
+    crg = tmp_path / ".crg"
     crg.mkdir(exist_ok=True)
     (crg / ".gitignore").write_text("*\n")
     return tmp_path
@@ -73,7 +73,7 @@ class TestBuildResponseHeader:
     def test_init_backend_exception_yields_zero_count(self, tmp_path):
         """When init_backend raises, the count is unknown, not zero."""
         with patch(
-            "better_code_review_graph.tools.init_backend",
+            "crg.tools.init_backend",
             side_effect=RuntimeError("backend boom"),
         ):
             header = _build_response_header(None, tmp_path / "graph.db")
@@ -485,11 +485,9 @@ class TestReviewContextHelpers:
 
 class TestServerSpotCheckAndRenamedInDiff:
     def test_query_spot_check_action(self):
-        from better_code_review_graph.server import query
+        from crg.server import query
 
-        with patch(
-            "better_code_review_graph.server.spot_check_last_callers"
-        ) as mock_fn:
+        with patch("crg.server.spot_check_last_callers") as mock_fn:
             mock_fn.return_value = {"status": "ok", "samples": []}
             result = query(
                 action="spot_check",
@@ -501,9 +499,9 @@ class TestServerSpotCheckAndRenamedInDiff:
         assert result["status"] == "ok"
 
     def test_query_renamed_in_diff_action(self):
-        from better_code_review_graph.server import query
+        from crg.server import query
 
-        with patch("better_code_review_graph.server.renamed_in_diff") as mock_fn:
+        with patch("crg.server.renamed_in_diff") as mock_fn:
             mock_fn.return_value = {"status": "ok", "shifts": []}
             result = query(
                 action="renamed_in_diff",
@@ -522,7 +520,7 @@ class TestServerSpotCheckAndRenamedInDiff:
         """Cover the LOCAL state branch in setup_status (line 427)."""
         import asyncio
 
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         # Ensure no cell keys, and no ambient BYOK-era provider env keys.
         for k in (
@@ -541,7 +539,7 @@ class TestServerSpotCheckAndRenamedInDiff:
         monkeypatch.setenv("CRG_CONFIG_DIR", str(tmp_path / "cfg"))
 
         # Force credential_state to LOCAL so the LOCAL branch is hit.
-        from better_code_review_graph import credential_state as cs
+        from crg import credential_state as cs
 
         with patch.object(cs, "get_state", return_value=cs.CredentialState.LOCAL):
             result = asyncio.run(config(action="setup_status"))

@@ -124,7 +124,7 @@ _SHA_RE = re.compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
 #    graph to its own data-directory DB precisely so it does NOT
 #    live inside any analyzed repo — there is no single HEAD to
 #    backfill with, so the sentinel is the correct value. Repo
-#    stores (``<repo>/.better-code-review-graph/graph.db``) still
+#    stores (``<repo>/.crg/graph.db``) still
 #    require git.
 #
 # Production code paths leave ``CRG_TEST_ALLOW_NO_GIT`` unset, so the
@@ -181,7 +181,7 @@ def _is_data_dir_store(db_path: Path) -> bool:
     repo directory is not a safe shared location for a per-tenant DB).
     Such a store has no single HEAD to backfill ``valid_from_sha``
     with, so the 40-zero sentinel applies. Repo stores
-    (``<repo>/.better-code-review-graph/graph.db``) keep the hard git
+    (``<repo>/.crg/graph.db``) keep the hard git
     requirement enforced by :func:`_find_repo_root`.
     """
     try:

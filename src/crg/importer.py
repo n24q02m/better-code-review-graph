@@ -1,6 +1,6 @@
 """Import a `crg`-format export back into a GraphStore (Task 6).
 
-Pairs with :func:`better_code_review_graph.exporter.export_crg`: a graph
+Pairs with :func:`crg.exporter.export_crg`: a graph
 built and exported on one machine (e.g. a CI runner) can be merged into a
 store on another (e.g. a laptop) without its ids colliding with whatever
 that store already has, by namespacing every id with the exporting
@@ -213,7 +213,7 @@ def import_graph(
             imported repo as a known participant (see
             :func:`_register_repo_if_absent`).
         payload: Parsed JSON produced by
-            :func:`better_code_review_graph.exporter.export_crg`.
+            :func:`crg.exporter.export_crg`.
 
     Returns:
         Dict with ``nodes_added``, ``nodes_updated``, ``edges_added``, and

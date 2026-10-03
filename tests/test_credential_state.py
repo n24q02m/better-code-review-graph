@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-import better_code_review_graph.credential_state as cs
-from better_code_review_graph.credential_state import (
+import crg.credential_state as cs
+from crg.credential_state import (
     SERVER_NAME,
     CredentialState,
     get_current_sub,
@@ -49,7 +49,7 @@ def _write_config(tmp_path, body: str):
 
 class TestConstants:
     def test_server_name(self):
-        assert SERVER_NAME == "better-code-review-graph"
+        assert SERVER_NAME == "crg"
 
     def test_credential_state_enum_values(self):
         assert CredentialState.CONFIGURED.value == "configured"
@@ -117,7 +117,7 @@ class TestResolveCredentialState:
 
 
 class TestCredentialIsolation:
-    """better-code-review-graph must not write to peer MCP servers' configs."""
+    """crg must not write to peer MCP servers' configs."""
 
     def test_no_peer_key_sharing_helper(self):
         assert not hasattr(cs, "_share_cloud_keys_to_peers")

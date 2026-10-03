@@ -32,7 +32,7 @@ a backup saved to `graph.db.pre-2.0.bak` for rollback.
 ## Rollback
 
 ```bash
-CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph
+CRG_DOWNGRADE_TO_1_X=1 uv run crg
 ```
 
 This restores `graph.db.pre-2.0.bak` and archives the v2 db as

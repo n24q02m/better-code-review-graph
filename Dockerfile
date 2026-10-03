@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Stage 2: Runtime base (shared by stdio + http targets)
 # ========================
 FROM python:3.13-slim-bookworm@sha256:2325bb286ec344af3e5898cc224b5844e2707ac6e26b1632516fd3edc84a5e26 AS runtime
-LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/better-code-review-graph"
+LABEL io.modelcontextprotocol.server.name="io.github.n24q02m/crg"
 RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
@@ -43,7 +43,7 @@ USER appuser
 # ========================
 FROM runtime AS stdio
 ENV MCP_TRANSPORT=stdio
-ENTRYPOINT ["python", "-m", "better_code_review_graph"]
+ENTRYPOINT ["python", "-m", "crg"]
 
 # ========================
 # Stage 3b: http target (multi-user remote daemon)
@@ -52,4 +52,4 @@ FROM runtime AS http
 ENV MCP_TRANSPORT=http \
     MCP_PORT=8080
 EXPOSE 8080
-ENTRYPOINT ["better-code-review-graph", "serve"]
+ENTRYPOINT ["crg", "serve"]

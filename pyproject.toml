@@ -43,8 +43,8 @@ dependencies = [
 hull-core = { git = "https://github.com/n24q02m/hull", rev = "abc27ed4acc5f6033795342a1c0d9a3d28adcfe7" }
 
 [project.scripts]
-better-code-review-graph = "better_code_review_graph.cli:main"
-crg = "better_code_review_graph.cli:main"
+better-code-review-graph = "crg.cli:main"  # legacy command alias
+crg = "crg.cli:main"
 
 [project.optional-dependencies]
 security = [
@@ -68,15 +68,15 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/better_code_review_graph"]
+packages = ["src/crg"]
 
 # Ship the alembic migrations directory inside the installed wheel as the
-# top-level package ``better_code_review_graph_migrations`` so that
+# top-level package ``crg_migrations`` so that
 # ``GraphStore._run_alembic_upgrade`` can locate it via importlib.resources
 # regardless of the install location.
 [tool.hatch.build.targets.wheel.force-include]
-"migrations" = "better_code_review_graph_migrations"
-"rules" = "better_code_review_graph_security_rules"
+"migrations" = "crg_migrations"
+"rules" = "crg_security_rules"
 
 [tool.ruff]
 line-length = 88
@@ -105,7 +105,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/better_code_review_graph"]
+source = ["src/crg"]
 branch = true
 
 [tool.coverage.report]

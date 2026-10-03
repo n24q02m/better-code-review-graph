@@ -12,7 +12,7 @@ import subprocess
 
 import pytest
 
-from better_code_review_graph.tools import renamed_in_diff
+from crg.tools import renamed_in_diff
 
 
 def _run_git(repo: str, *args: str) -> None:

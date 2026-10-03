@@ -9,7 +9,7 @@ Formats:
     - dot: Graphviz DOT, supported by Graphviz + dot2tex + xdot
     - cypher: Neo4j Cypher CREATE statements, replay-able into a Neo4j database
     - crg: JSON, the only format that round-trips back into a GraphStore via
-      ``better_code_review_graph.importer.import_graph`` (see Task 6)
+      ``crg.importer.import_graph`` (see Task 6)
 
 Streaming uses iter helpers on the GraphStore. Output is a single string
 return value; callers wanting file output write the string to disk.
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 GRAPHML_NS = "http://graphml.graphdrawing.org/xmlns"
 
 JSONLD_CONTEXT = {
-    "@vocab": "https://better-code-review-graph.n24q02m.dev/schema#",
+    "@vocab": "https://crg.n24q02m.dev/schema#",
     "kind": "@type",
     "name": "name",
     "filePath": "filePath",
@@ -246,7 +246,7 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     dumps every column of the ``nodes`` / ``edges`` tables verbatim --
     including ``source_text``, the summarizer columns, and the temporal
     ``valid_from_sha``/``valid_to_sha`` columns -- so
-    :func:`better_code_review_graph.importer.import_graph` can reconstruct
+    :func:`crg.importer.import_graph` can reconstruct
     an equivalent subgraph in a different store (e.g. built on a CI runner,
     imported on a laptop; the crg format is not used by the CF-hosted
     deployment).
@@ -254,7 +254,7 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     ``repo_id`` identifies the exporting graph and becomes the namespace
     prefix an importer uses to keep re-imported ids from colliding with
     locally-parsed nodes. It is derived via
-    :func:`better_code_review_graph.federation.derive_repo_id` from ``root``
+    :func:`crg.federation.derive_repo_id` from ``root``
     when the caller supplies it (``export_graph_dispatch`` always does,
     since it already resolves the repo root) -- this is the same id a
     federated ``graph(action='build', roots=[...])`` would register for
@@ -264,7 +264,7 @@ def export_crg(store: GraphStore, root: Path | None = None) -> str:
     store's own db directory so the id stays deterministic per store; note
     that fallback is *not* guaranteed to match a federated id for a real
     root, since ``store.db_path`` normally lives at
-    ``<root>/.better-code-review-graph/graph.db`` -- one directory below ``root``.
+    ``<root>/.crg/graph.db`` -- one directory below ``root``.
     """
     from .federation import derive_repo_id
 

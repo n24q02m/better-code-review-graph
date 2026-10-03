@@ -8,14 +8,14 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.cli import main
+from crg.cli import main
 
 
 class TestServeDispatch:
     def test_starts_server(self):
         with (
-            patch.object(sys, "argv", ["better-code-review-graph"]),
-            patch("better_code_review_graph.server.serve_main") as mock_serve,
+            patch.object(sys, "argv", ["crg"]),
+            patch("crg.server.serve_main") as mock_serve,
         ):
             rc = main()
 
@@ -24,8 +24,8 @@ class TestServeDispatch:
 
     def test_http_flag_passes_through_argv_unchanged(self):
         with (
-            patch.object(sys, "argv", ["better-code-review-graph", "--http"]),
-            patch("better_code_review_graph.server.serve_main") as mock_serve,
+            patch.object(sys, "argv", ["crg", "--http"]),
+            patch("crg.server.serve_main") as mock_serve,
         ):
             rc = main()
 
@@ -34,10 +34,10 @@ class TestServeDispatch:
 
     def test_main_runs_stdio_directly(self):
         """serve_main(stdio) invokes FastMCP stdio directly (no bridge layer)."""
-        from better_code_review_graph import server as server_module
+        from crg import server as server_module
 
         with (
-            patch.object(sys, "argv", ["better-code-review-graph"]),
+            patch.object(sys, "argv", ["crg"]),
             patch.object(server_module.mcp, "run") as mock_run,
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
@@ -46,12 +46,12 @@ class TestServeDispatch:
 
     def test_main_continues_on_relay_error(self):
         with (
-            patch.object(sys, "argv", ["better-code-review-graph"]),
+            patch.object(sys, "argv", ["crg"]),
             patch(
-                "better_code_review_graph.credential_state.resolve_credential_state",
+                "crg.credential_state.resolve_credential_state",
                 side_effect=Exception("relay broken"),
             ),
-            patch("better_code_review_graph.server.mcp"),
+            patch("crg.server.mcp"),
             patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"}),
         ):
             try:
@@ -61,7 +61,7 @@ class TestServeDispatch:
 
 
 class TestGraphSubcommand:
-    """`better-code-review-graph graph build|embed` -- lazy tools.py calls."""
+    """`crg graph build|embed` -- lazy tools.py calls."""
 
     def test_build_passes_args_and_prints_json(self, capsys):
         result = {"status": "ok", "build_type": "full", "files_parsed": 3}
@@ -69,10 +69,10 @@ class TestGraphSubcommand:
             patch.object(
                 sys,
                 "argv",
-                ["better-code-review-graph", "graph", "build", "--full-rebuild"],
+                ["crg", "graph", "build", "--full-rebuild"],
             ),
             patch(
-                "better_code_review_graph.tools.build_or_update_graph",
+                "crg.tools.build_or_update_graph",
                 return_value=result,
             ) as mock_build,
         ):
@@ -91,7 +91,7 @@ class TestGraphSubcommand:
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "build",
                     "--repo-root",
@@ -101,7 +101,7 @@ class TestGraphSubcommand:
                 ],
             ),
             patch(
-                "better_code_review_graph.tools.build_or_update_graph",
+                "crg.tools.build_or_update_graph",
                 return_value=result,
             ) as mock_build,
         ):
@@ -115,9 +115,9 @@ class TestGraphSubcommand:
     def test_build_error_status_returns_nonzero(self, capsys):
         result = {"status": "error", "error": "boom"}
         with (
-            patch.object(sys, "argv", ["better-code-review-graph", "graph", "build"]),
+            patch.object(sys, "argv", ["crg", "graph", "build"]),
             patch(
-                "better_code_review_graph.tools.build_or_update_graph",
+                "crg.tools.build_or_update_graph",
                 return_value=result,
             ),
         ):
@@ -138,16 +138,14 @@ class TestGraphSubcommand:
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "embed",
                     "--repo-root",
                     "/tmp/repo",
                 ],
             ),
-            patch(
-                "better_code_review_graph.tools.embed_graph", return_value=result
-            ) as mock_embed,
+            patch("crg.tools.embed_graph", return_value=result) as mock_embed,
         ):
             rc = main()
 
@@ -156,7 +154,7 @@ class TestGraphSubcommand:
         assert '"backend": "local"' in capsys.readouterr().out
 
     def test_unknown_graph_action_exits_2(self):
-        with patch.object(sys, "argv", ["better-code-review-graph", "graph", "bogus"]):
+        with patch.object(sys, "argv", ["crg", "graph", "bogus"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
@@ -167,10 +165,10 @@ class TestCliCoverageExtensions:
     def test_version_fallback_on_package_not_found(self):
         from importlib.metadata import PackageNotFoundError
 
-        from better_code_review_graph.cli import _version
+        from crg.cli import _version
 
         with patch(
-            "better_code_review_graph.cli.pkg_version",
+            "crg.cli.pkg_version",
             side_effect=PackageNotFoundError("pkg"),
         ):
             assert _version() == "dev"
@@ -180,10 +178,10 @@ class TestCliCoverageExtensions:
             patch.object(
                 sys,
                 "argv",
-                ["better-code-review-graph", "query", "spot_check", "--n", "5"],
+                ["crg", "query", "spot_check", "--n", "5"],
             ),
             patch(
-                "better_code_review_graph.tools.spot_check_last_callers",
+                "crg.tools.spot_check_last_callers",
                 return_value={"status": "ok"},
             ) as mock_spot,
         ):
@@ -196,7 +194,7 @@ class TestCliCoverageExtensions:
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "query",
                     "renamed_in_diff",
                     "--base",
@@ -204,7 +202,7 @@ class TestCliCoverageExtensions:
                 ],
             ),
             patch(
-                "better_code_review_graph.tools.renamed_in_diff",
+                "crg.tools.renamed_in_diff",
                 return_value={"status": "ok"},
             ) as mock_renamed,
         ):

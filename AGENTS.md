@@ -1,4 +1,4 @@
-# better-code-review-graph
+# crg
 
 Fork of code-review-graph with fixed multi-word search, qualified call resolution,
 dual-mode embedding (ONNX local + cloud chain via `EMBEDDING_MODELS`), and output pagination.
@@ -6,7 +6,7 @@ See `AGENTS.md` va `README.md` de hieu architecture va configuration.
 
 ## Cau truc
 
-- `src/better_code_review_graph/` -- Package chinh (src layout)
+- `src/crg/` -- Package chinh (src layout)
   - `server.py` -- FastMCP server, 6 tools: graph + query + review (3 main) + config + security + help
   - `tools.py` -- MCP tool implementations (build, query, impact, review, search, embed, stats, docs, large functions)
   - `parser.py` -- Tree-sitter parsing (14 langs) + call target resolution
@@ -44,7 +44,7 @@ uv run ruff check .                # Lint
 uv run ruff format .               # Format
 uv run ruff check --fix . && uv run ruff format .  # Fix
 uv run ty check                    # Type check (ty lenient config)
-uv run better-code-review-graph        # Chay MCP server (stdio, default)
+uv run crg        # Chay MCP server (stdio, default)
 ```
 
 ## Cau hinh quan trong

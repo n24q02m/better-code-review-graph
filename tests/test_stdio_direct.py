@@ -1,6 +1,6 @@
-"""Verify better-code-review-graph runs in stdio direct mode (no smart_stdio bridge).
+"""Verify crg runs in stdio direct mode (no smart_stdio bridge).
 
-Spawns ``python -m better_code_review_graph`` with ``MCP_TRANSPORT=stdio`` and
+Spawns ``python -m crg`` with ``MCP_TRANSPORT=stdio`` and
 exercises the JSON-RPC handshake plus ``tools/list`` to prove the FastMCP stdio
 server is wired directly (no daemon-spawn bridge layer in front of it).
 
@@ -22,13 +22,13 @@ pytestmark = [pytest.mark.full, pytest.mark.timeout(60)]
 
 
 def _spawn_stdio_server() -> subprocess.Popen[str]:
-    """Start ``python -m better_code_review_graph`` with stdio transport.
+    """Start ``python -m crg`` with stdio transport.
 
     Returns the running subprocess. Caller is responsible for terminating it.
     """
     env = {**os.environ, "MCP_TRANSPORT": "stdio"}
     return subprocess.Popen(
-        [sys.executable, "-m", "better_code_review_graph"],
+        [sys.executable, "-m", "crg"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -77,7 +77,7 @@ def test_stdio_direct_init_responds():
         assert "result" in response, f"unexpected response: {response}"
         # FastMCP negotiates protocol version; just assert it returned one.
         assert "protocolVersion" in response["result"]
-        assert response["result"]["serverInfo"]["name"] == "better-code-review-graph"
+        assert response["result"]["serverInfo"]["name"] == "crg"
     finally:
         proc.terminate()
         try:

@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.tools import query_graph
+from crg.tools import query_graph
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def mock_store_and_root(tmp_path):
 
 def test_query_graph_path_resolve_oserror(mock_store_and_root):
     store, root = mock_store_and_root
-    with patch("better_code_review_graph.tools._get_store", return_value=(store, root)):
+    with patch("crg.tools._get_store", return_value=(store, root)):
         with patch("pathlib.Path.resolve", side_effect=OSError("Mocked OSError")):
             result = query_graph(pattern="file_summary", target="some/path")
 
@@ -32,7 +32,7 @@ def test_query_graph_path_resolve_oserror(mock_store_and_root):
 
 def test_query_graph_path_resolve_valueerror(mock_store_and_root):
     store, root = mock_store_and_root
-    with patch("better_code_review_graph.tools._get_store", return_value=(store, root)):
+    with patch("crg.tools._get_store", return_value=(store, root)):
         with patch("pathlib.Path.resolve", side_effect=ValueError("Mocked ValueError")):
             result = query_graph(pattern="file_summary", target="some/path")
 
@@ -44,7 +44,7 @@ def test_query_graph_path_resolve_valueerror(mock_store_and_root):
 
 def test_query_graph_path_not_relative(mock_store_and_root):
     store, root = mock_store_and_root
-    with patch("better_code_review_graph.tools._get_store", return_value=(store, root)):
+    with patch("crg.tools._get_store", return_value=(store, root)):
         # Using an absolute path that is not under root
         # /etc/passwd is a good candidate on unix-like systems
         result = query_graph(pattern="file_summary", target="/etc/passwd")
@@ -64,7 +64,7 @@ def test_query_graph_path_is_symlink(mock_store_and_root):
     link_file = root / "link_file.py"
     link_file.symlink_to(target_file)
 
-    with patch("better_code_review_graph.tools._get_store", return_value=(store, root)):
+    with patch("crg.tools._get_store", return_value=(store, root)):
         result = query_graph(pattern="file_summary", target="link_file.py")
 
         assert result == {
@@ -75,7 +75,7 @@ def test_query_graph_path_is_symlink(mock_store_and_root):
 
 def test_query_graph_path_fallback_importers_of_error(mock_store_and_root):
     store, root = mock_store_and_root
-    with patch("better_code_review_graph.tools._get_store", return_value=(store, root)):
+    with patch("crg.tools._get_store", return_value=(store, root)):
         with patch("pathlib.Path.resolve", side_effect=OSError("Mocked OSError")):
             result = query_graph(pattern="importers_of", target="some/path")
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from better_code_review_graph.parser import (
+from crg.parser import (
     CodeParser,
     _is_test_function,
     file_hash,

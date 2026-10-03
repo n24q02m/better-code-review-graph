@@ -9,10 +9,10 @@ no ``TESTED_BY`` edge at all.
 
 from pathlib import Path
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.incremental import full_build, get_db_path
-from better_code_review_graph.parser import CodeParser, _is_test_file
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.incremental import full_build, get_db_path
+from crg.parser import CodeParser, _is_test_file
+from crg.tools import (
     _compute_untested_functions,
     query_graph,
 )

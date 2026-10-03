@@ -18,10 +18,10 @@ from typing import Any
 
 import pytest
 
-from better_code_review_graph.federation import RepoRegistry
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import (
+from crg.federation import RepoRegistry
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import (
     build_or_update_graph,
     get_impact_radius,
     get_review_context,
@@ -150,7 +150,7 @@ def two_repo_setup(tmp_path: Path) -> Iterator[dict[str, Any]]:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    crg_dir = workspace / ".better-code-review-graph"
+    crg_dir = workspace / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -362,7 +362,7 @@ def test_build_or_update_graph_with_multiple_roots(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    (workspace / ".better-code-review-graph").mkdir()
+    (workspace / ".crg").mkdir()
 
     repo_a = _make_real_repo(workspace, "repo_a")
     repo_b = _make_real_repo(workspace, "repo_b")
@@ -376,7 +376,7 @@ def test_build_or_update_graph_with_multiple_roots(tmp_path: Path) -> None:
     assert result["status"] == "ok", result
 
     # Verify the registry has both repos.
-    db_path = workspace / ".better-code-review-graph" / "graph.db"
+    db_path = workspace / ".crg" / "graph.db"
     store = GraphStore(str(db_path))
     try:
         registry = RepoRegistry(store)
@@ -433,7 +433,7 @@ def test_build_or_update_graph_single_root_backwards_compat(tmp_path: Path) -> N
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    (workspace / ".better-code-review-graph").mkdir()
+    (workspace / ".crg").mkdir()
     (workspace / "main.py").write_text("def retry():\n    return 1\n")
 
     result = build_or_update_graph(

@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
-from better_code_review_graph.graph import GraphNode
-from better_code_review_graph.tools import _resolve_search_candidates
+from crg.graph import GraphNode
+from crg.tools import _resolve_search_candidates
 
 
 def make_node(kind, name, qualified_name):

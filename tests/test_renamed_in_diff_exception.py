@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.tools import renamed_in_diff
+from crg.tools import renamed_in_diff
 
 
 def _run_git(repo: str, *args: str) -> None:
@@ -30,7 +30,7 @@ def repo_with_file(tmp_path):
 
 def test_renamed_in_diff_parse_exception(repo_with_file):
     # Patch CodeParser in the parser module since it is imported locally in renamed_in_diff
-    with patch("better_code_review_graph.parser.CodeParser") as MockParser:
+    with patch("crg.parser.CodeParser") as MockParser:
         mock_instance = MockParser.return_value
         # Ensure detect_language returns something so it doesn't skip
         mock_instance.detect_language.return_value = "python"

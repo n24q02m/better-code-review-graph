@@ -10,16 +10,16 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import get_review_context, query_graph
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import get_review_context, query_graph
 
 
 @pytest.fixture
 def mixed_lang_repo(tmp_path, monkeypatch):
     """Repo with a Python function + a TSX function, both flagged as untested."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".better-code-review-graph"
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -80,7 +80,7 @@ def mixed_lang_repo(tmp_path, monkeypatch):
 
     # Stub git diff so review_context picks both files as "changed" without
     # actually creating a git commit history.
-    from better_code_review_graph import tools as _tools
+    from crg import tools as _tools
 
     def _fake_changed_files(root, base):
         return ["service.py", "Component.tsx"]
@@ -159,7 +159,7 @@ class TestTestsForLanguagesFilter:
     def test_tests_for_no_languages_returns_all(self, tmp_path):
         """tests_for without languages returns all test nodes (existing behavior)."""
         (tmp_path / ".git").mkdir()
-        crg_dir = tmp_path / ".better-code-review-graph"
+        crg_dir = tmp_path / ".crg"
         crg_dir.mkdir()
 
         impl_py = tmp_path / "impl.py"
@@ -232,7 +232,7 @@ class TestTestsForLanguagesFilter:
 
     def test_tests_for_languages_python_filter(self, tmp_path):
         (tmp_path / ".git").mkdir()
-        crg_dir = tmp_path / ".better-code-review-graph"
+        crg_dir = tmp_path / ".crg"
         crg_dir.mkdir()
 
         impl_py = tmp_path / "impl.py"
@@ -313,7 +313,7 @@ class TestTestsForLanguagesFilter:
 
     def test_tests_for_invalid_language_returns_error(self, tmp_path):
         (tmp_path / ".git").mkdir()
-        crg_dir = tmp_path / ".better-code-review-graph"
+        crg_dir = tmp_path / ".crg"
         crg_dir.mkdir()
         db_path = crg_dir / "graph.db"
         store = GraphStore(str(db_path))

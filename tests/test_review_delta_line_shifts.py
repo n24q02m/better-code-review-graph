@@ -33,10 +33,10 @@ from pathlib import Path
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.temporal import TemporalIndex
-from better_code_review_graph.tools import review_delta
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.temporal import TemporalIndex
+from crg.tools import review_delta
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,11 +76,11 @@ def _make_function_node(
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Iterator[Path]:
-    """Build a fake repo workspace with .git + .better-code-review-graph/graph.db."""
+    """Build a fake repo workspace with .git + .crg/graph.db."""
     ws = tmp_path / "workspace"
     ws.mkdir()
     (ws / ".git").mkdir()
-    crg_dir = ws / ".better-code-review-graph"
+    crg_dir = ws / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
     yield ws
@@ -89,7 +89,7 @@ def workspace(tmp_path: Path) -> Iterator[Path]:
 @pytest.fixture
 def store(workspace: Path) -> Iterator[GraphStore]:
     """File-backed GraphStore inside the fake workspace."""
-    db_path = workspace / ".better-code-review-graph" / "graph.db"
+    db_path = workspace / ".crg" / "graph.db"
     s = GraphStore(str(db_path))
     yield s
     s.close()
@@ -349,7 +349,7 @@ def test_server_review_tool_dispatches_show_line_shifts(
     workspace: Path, store: GraphStore
 ) -> None:
     """The MCP `review` tool with action='delta' surfaces line_shifts."""
-    from better_code_review_graph.server import review as review_tool
+    from crg.server import review as review_tool
 
     idx_a = TemporalIndex(store, current_sha=_SHA_A)
     idx_a.upsert_node(

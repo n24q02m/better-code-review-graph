@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from better_code_review_graph.tools import _list_kinds_in_graph
+from crg.tools import _list_kinds_in_graph
 
 
 def test_list_kinds_in_graph_success():

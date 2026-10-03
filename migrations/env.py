@@ -1,4 +1,4 @@
-"""Alembic environment for better-code-review-graph.
+"""Alembic environment for crg.
 
 The SQLAlchemy URL is supplied at runtime by ``GraphStore._init_schema()``
 (via ``Config.set_main_option("sqlalchemy.url", ...)``) so the same env.py
@@ -23,7 +23,7 @@ config = context.config
 if config.config_file_name is not None:
     # ``disable_existing_loggers`` defaults to True, which sets
     # ``disabled = True`` on every logger created before this point --
-    # including every ``better_code_review_graph.*`` logger, since the
+    # including every ``crg.*`` logger, since the
     # package is imported long before any migration runs. The effect is
     # permanent for the life of the process: crg stops logging entirely,
     # silently, with no error.

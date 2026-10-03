@@ -1,8 +1,8 @@
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import (
     _handle_importers_of,
     _handle_inheritors_of,
     _handle_tests_for,

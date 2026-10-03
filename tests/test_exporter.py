@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from better_code_review_graph.exporter import (
+from crg.exporter import (
     export_crg,
     export_cypher,
     export_dot,
@@ -16,8 +16,8 @@ from better_code_review_graph.exporter import (
     export_graphml,
     export_jsonld,
 )
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture
@@ -180,11 +180,11 @@ def test_export_crg_includes_source_text(tmp_path):
 def test_export_crg_repo_id_matches_federation_for_same_root(tmp_path):
     """repo_id must be derived from the repo root, not the .code-review-graph
     subdir the db file happens to live in (they hash to different ids)."""
-    from better_code_review_graph.federation import RepoRegistry, derive_repo_id
+    from crg.federation import RepoRegistry, derive_repo_id
 
     root = tmp_path / "myrepo"
-    (root / ".better-code-review-graph").mkdir(parents=True)
-    db_path = root / ".better-code-review-graph" / "graph.db"
+    (root / ".crg").mkdir(parents=True)
+    db_path = root / ".crg" / "graph.db"
 
     store = GraphStore(str(db_path))
     try:
@@ -222,11 +222,11 @@ def test_export_graph_dispatch_passes_root_for_crg_repo_id(tmp_path):
     """export_graph(format='crg') without root falls back to the db dir --
     export_graph_dispatch always supplies root so production callers get
     the correct (root-derived) repo_id."""
-    from better_code_review_graph.federation import derive_repo_id
+    from crg.federation import derive_repo_id
 
     root = tmp_path / "myrepo"
-    (root / ".better-code-review-graph").mkdir(parents=True)
-    db_path = root / ".better-code-review-graph" / "graph.db"
+    (root / ".crg").mkdir(parents=True)
+    db_path = root / ".crg" / "graph.db"
     store = GraphStore(str(db_path))
     try:
         with_root = json.loads(export_graph(store, format="crg", root=root))

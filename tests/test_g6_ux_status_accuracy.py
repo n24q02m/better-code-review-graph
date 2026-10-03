@@ -21,7 +21,7 @@ def _call_config_setup_status_sync() -> dict[str, Any]:
     """Invoke the async server config action and return parsed dict."""
     import asyncio
 
-    from better_code_review_graph.server import config
+    from crg.server import config
 
     return asyncio.run(config(action="setup_status"))
 
@@ -52,8 +52,8 @@ def _hermetic_config_dir(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     CONFIGURED, which would mask the cell-derived status semantics under
     test here.
     """
-    from better_code_review_graph import credential_state as cs
-    from better_code_review_graph.credential_state import CredentialState
+    from crg import credential_state as cs
+    from crg.credential_state import CredentialState
 
     monkeypatch.setenv("CRG_CONFIG_DIR", str(tmp_path / "cfg"))
     _clear_cell_env(monkeypatch)

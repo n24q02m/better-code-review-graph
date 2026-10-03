@@ -1,6 +1,6 @@
 import json
 
-from better_code_review_graph.tools import _estimate_payload_bytes
+from crg.tools import _estimate_payload_bytes
 
 
 def test_estimate_payload_bytes_empty():

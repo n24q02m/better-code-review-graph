@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-from better_code_review_graph.cli import main
+from crg.cli import main
 
 
 class TestCLIGraphContract:
@@ -27,14 +27,12 @@ class TestCLIGraphContract:
             "files_count": 5,
         }
         with (
-            patch(
-                "better_code_review_graph.tools.list_graph_stats", return_value=payload
-            ) as mock_stats,
+            patch("crg.tools.list_graph_stats", return_value=payload) as mock_stats,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "stats",
                     "--repo-root",
@@ -53,14 +51,14 @@ class TestCLIGraphContract:
         payload = {"status": "ok", "format": "crg", "nodes_count": 10}
         with (
             patch(
-                "better_code_review_graph.tools.export_graph_dispatch",
+                "crg.tools.export_graph_dispatch",
                 return_value=payload,
             ) as mock_exp,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "export",
                     "--format",
@@ -82,14 +80,14 @@ class TestCLIGraphContract:
         payload = {"status": "ok", "imported_nodes": 10}
         with (
             patch(
-                "better_code_review_graph.tools.import_graph_dispatch",
+                "crg.tools.import_graph_dispatch",
                 return_value=payload,
             ) as mock_imp,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "import",
                     "--input-path",
@@ -107,14 +105,14 @@ class TestCLIGraphContract:
         payload = {"status": "ok", "summarized": 3}
         with (
             patch(
-                "better_code_review_graph.tools.summarize_graph_dispatch",
+                "crg.tools.summarize_graph_dispatch",
                 return_value=payload,
             ) as mock_summarize,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "graph",
                     "summarize",
                     "--max-nodes",
@@ -137,14 +135,12 @@ class TestCLIQueryContract:
             "results": [{"name": "entry"}],
         }
         with (
-            patch(
-                "better_code_review_graph.tools.query_graph", return_value=payload
-            ) as mock_q,
+            patch("crg.tools.query_graph", return_value=payload) as mock_q,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "query",
                     "query",
                     "--pattern",
@@ -171,14 +167,14 @@ class TestCLIQueryContract:
         payload = {"query": "auth", "results": [{"name": "authenticate"}]}
         with (
             patch(
-                "better_code_review_graph.tools.semantic_search_nodes",
+                "crg.tools.semantic_search_nodes",
                 return_value=payload,
             ) as mock_s,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "query",
                     "search",
                     "--search-query",
@@ -204,14 +200,12 @@ class TestCLIQueryContract:
     def test_cli_query_impact(self, capsys):
         payload = {"changed_files": ["app.py"], "impacted_files": ["main.py"]}
         with (
-            patch(
-                "better_code_review_graph.tools.get_impact_radius", return_value=payload
-            ) as mock_imp,
+            patch("crg.tools.get_impact_radius", return_value=payload) as mock_imp,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "query",
                     "impact",
                     "--changed-files",
@@ -241,14 +235,14 @@ class TestCLIQueryContract:
         payload = {"results": [{"name": "huge_fn", "lines": 150}]}
         with (
             patch(
-                "better_code_review_graph.tools.find_large_functions",
+                "crg.tools.find_large_functions",
                 return_value=payload,
             ) as mock_lf,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "query",
                     "large_functions",
                     "--min-lines",
@@ -275,14 +269,14 @@ class TestCLIReviewContract:
         payload = {"summary": "1 file changed", "impacted_nodes": []}
         with (
             patch(
-                "better_code_review_graph.tools.get_review_context",
+                "crg.tools.get_review_context",
                 return_value=payload,
             ) as mock_rc,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "review",
                     "context",
                     "--changed-files",
@@ -313,14 +307,12 @@ class TestCLIReviewContract:
             "nodes_added": [],
         }
         with (
-            patch(
-                "better_code_review_graph.tools.review_delta", return_value=payload
-            ) as mock_rd,
+            patch("crg.tools.review_delta", return_value=payload) as mock_rd,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "review",
                     "delta",
                     "--from-sha",
@@ -346,14 +338,12 @@ class TestCLISecurityContract:
     def test_cli_security_scan(self, capsys):
         payload = {"status": "ok", "total": 0, "findings": []}
         with (
-            patch(
-                "better_code_review_graph.tools.security_scan", return_value=payload
-            ) as mock_ss,
+            patch("crg.tools.security_scan", return_value=payload) as mock_ss,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "security",
                     "scan",
                     "--engine",
@@ -372,14 +362,12 @@ class TestCLISecurityContract:
     def test_cli_security_report(self, capsys):
         payload = {"status": "ok", "sarif": {"version": "2.1.0"}}
         with (
-            patch(
-                "better_code_review_graph.tools.security_report", return_value=payload
-            ) as mock_sr,
+            patch("crg.tools.security_report", return_value=payload) as mock_sr,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "security",
                     "report",
                     "--format",
@@ -396,14 +384,12 @@ class TestCLISecurityContract:
     def test_cli_security_suppress(self, capsys):
         payload = {"status": "ok", "suppressions": ["CRG001"]}
         with (
-            patch(
-                "better_code_review_graph.tools.security_suppress", return_value=payload
-            ) as mock_sup,
+            patch("crg.tools.security_suppress", return_value=payload) as mock_sup,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "security",
                     "suppress",
                     "--rule-id",
@@ -421,14 +407,14 @@ class TestCLISecurityContract:
         payload = {"engine": "heuristic", "rules": []}
         with (
             patch(
-                "better_code_review_graph.tools.security_rule_list",
+                "crg.tools.security_rule_list",
                 return_value=payload,
             ) as mock_rl,
             patch.object(
                 sys,
                 "argv",
                 [
-                    "better-code-review-graph",
+                    "crg",
                     "security",
                     "rule_list",
                     "--engine",
@@ -445,10 +431,8 @@ class TestCLISecurityContract:
     def test_cli_error_exits_nonzero(self, capsys):
         payload = {"error": "Repository not found"}
         with (
-            patch(
-                "better_code_review_graph.tools.list_graph_stats", return_value=payload
-            ),
-            patch.object(sys, "argv", ["better-code-review-graph", "graph", "stats"]),
+            patch("crg.tools.list_graph_stats", return_value=payload),
+            patch.object(sys, "argv", ["crg", "graph", "stats"]),
         ):
             rc = main()
 
@@ -465,7 +449,7 @@ def test_bundled_skills_use_local_cli_without_mcp_tool_calls():
     bare_subcommand = re.compile(r"`(?:graph|query|review|security|config)\s")
     for skill_file in skill_files:
         content = skill_file.read_text(encoding="utf-8")
-        assert "better-code-review-graph" in content, skill_file
+        assert "crg" in content, skill_file
         assert not mcp_call.findall(content), skill_file
         assert not bare_subcommand.findall(content), skill_file
 

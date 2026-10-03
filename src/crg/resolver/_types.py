@@ -2,7 +2,7 @@
 
 The :class:`TargetRepo` dataclass was originally duplicated across each
 language resolver module. Task 8 consolidates it here so the dispatcher
-in :mod:`better_code_review_graph.resolver` and every language module
+in :mod:`crg.resolver` and every language module
 share the exact same type. Each language module re-exports the symbol
 to preserve backwards compatibility for callers importing
 ``TargetRepo`` directly from a specific resolver.

@@ -2,7 +2,7 @@
 
 import tree_sitter_language_pack as tslp
 
-from better_code_review_graph.parser import (
+from crg.parser import (
     CodeParser,
     _collect_module_state,
     _scan_state_access,

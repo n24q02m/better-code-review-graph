@@ -32,12 +32,12 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from better_code_review_graph.federation import (
+from crg.federation import (
     RepoRegistry,
     backfill_commits_for_repo,
 )
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.tools import build_or_update_graph
+from crg.graph import GraphStore
+from crg.tools import build_or_update_graph
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,12 +129,12 @@ def _git_init_with_commits(repo_root: Path, count: int) -> list[str]:
 def repo_with_db(tmp_path: Path) -> tuple[Path, Path, list[str]]:
     """Build a real git repo containing a CRG-style ``graph.db`` location.
 
-    Layout mirrors production: ``<repo>/.better-code-review-graph/graph.db``.
+    Layout mirrors production: ``<repo>/.crg/graph.db``.
     Returns ``(db_path, repo_root, commit_shas)``.
     """
     repo_root = tmp_path / "myrepo"
     shas = _git_init_with_commits(repo_root, count=3)
-    crg_dir = repo_root / ".better-code-review-graph"
+    crg_dir = repo_root / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     return db_path, repo_root, shas
@@ -404,7 +404,7 @@ def test_backfill_commits_first_parent_only(tmp_path: Path) -> None:
     _git(repo_root, "merge", "--no-ff", "feature", "-m", "merge feature")
     merge_sha = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
 
-    crg_dir = repo_root / ".better-code-review-graph"
+    crg_dir = repo_root / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     cfg = _alembic_config_for(db_path)
@@ -508,7 +508,7 @@ def test_backfill_commits_handles_orphan_root_commit(tmp_path: Path) -> None:
     repo_root = tmp_path / "orphan_repo"
     shas = _git_init_with_commits(repo_root, count=1)
     assert len(shas) == 1
-    crg_dir = repo_root / ".better-code-review-graph"
+    crg_dir = repo_root / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     cfg = _alembic_config_for(db_path)
@@ -552,7 +552,7 @@ def test_backfill_commits_handles_subprocess_failure(
     cfg = _alembic_config_for(db_path)
     command.upgrade(cfg, "head")
 
-    from better_code_review_graph import federation as fed
+    from crg import federation as fed
 
     def _boom(*_a, **_kw):
         raise OSError("git not on PATH")
@@ -577,7 +577,7 @@ def test_backfill_commits_handles_nonzero_returncode(
     cfg = _alembic_config_for(db_path)
     command.upgrade(cfg, "head")
 
-    from better_code_review_graph import federation as fed
+    from crg import federation as fed
 
     class _FakeProc:
         returncode = 128
@@ -611,7 +611,7 @@ def test_backfill_commits_skips_malformed_lines(
     cfg = _alembic_config_for(db_path)
     command.upgrade(cfg, "head")
 
-    from better_code_review_graph import federation as fed
+    from crg import federation as fed
 
     valid_sha = "d" * 40
     parent_sha = "e" * 40
@@ -665,7 +665,7 @@ def test_full_build_federated_backfills_commits_per_repo(tmp_path: Path) -> None
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / ".git").mkdir()
-    (workspace / ".better-code-review-graph").mkdir()
+    (workspace / ".crg").mkdir()
 
     repo_a = workspace / "repo_a"
     repo_a_shas = _git_init_with_commits(repo_a, count=2)
@@ -692,7 +692,7 @@ def test_full_build_federated_backfills_commits_per_repo(tmp_path: Path) -> None
     )
     assert result["status"] == "ok", result
 
-    db_path = workspace / ".better-code-review-graph" / "graph.db"
+    db_path = workspace / ".crg" / "graph.db"
     store = GraphStore(str(db_path))
     try:
         # Group the rows by repo_id and count.

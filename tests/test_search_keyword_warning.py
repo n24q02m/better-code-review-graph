@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.tools import (
     _looks_like_literal_identifier,
     semantic_search_nodes,
 )
@@ -41,7 +41,7 @@ def test_looks_like_literal_identifier(query, is_literal):
 @pytest.fixture
 def repo_with_graph(tmp_path):
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".better-code-review-graph"
+    crg = tmp_path / ".crg"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     db = crg / "graph.db"

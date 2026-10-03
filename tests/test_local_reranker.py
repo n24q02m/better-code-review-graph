@@ -3,8 +3,8 @@ from itertools import count
 
 import pytest
 
-import better_code_review_graph.reranker as reranker
-from better_code_review_graph.reranker import LocalRerankError, rerank_candidates
+import crg.reranker as reranker
+from crg.reranker import LocalRerankError, rerank_candidates
 
 CANDIDATES = [
     {

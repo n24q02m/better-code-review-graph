@@ -2,17 +2,17 @@
 
 ## Current operation
 
-- Package: `better-code-review-graph`; local-first code intelligence graph.
+- Package: `crg`; local-first code intelligence graph.
 - Runtime: Python 3.13, SQLite graph state, Tree-sitter parser, optional local Fastretrieval embeddings, optional cloud embedding and summary adapters through `mcp_core.llm`.
-- Primary surfaces: `better-code-review-graph` CLI and MCP stdio adapter. HTTP is opt-in and uses authenticated subject-scoped storage.
-- Default graph state: `<repository>/.better-code-review-graph/graph.db`. Existing `.code-review-graph` state is preserved and is never adopted or deleted automatically.
+- Primary surfaces: `crg` CLI and MCP stdio adapter. HTTP is opt-in and uses authenticated subject-scoped storage.
+- Default graph state: `<repository>/.crg/graph.db`. Existing `.better-code-review-graph` and `.code-review-graph` state is preserved and is never adopted or deleted automatically.
 - Cloud model configuration is explicit per task. Empty embedding configuration uses local Fastretrieval; empty summary configuration disables summaries. Cohere `embed-v4.0` uses 1024 dimensions and explicit document/query input types.
 
 ## Build, run, and verify
 
 ```bash
 uv sync --locked --group dev --no-sources
-uv run better-code-review-graph
+uv run crg
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .

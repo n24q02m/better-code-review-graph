@@ -122,7 +122,7 @@ def main() -> int:
         return 0
 
     emit(
-        "[better-code-review-graph] The branch moved and the commit the graph "
+        "[crg] The branch moved and the commit the graph "
         f"was built from ({last_built[:8]}) no longer exists in this "
         "repository, so the incremental update could not diff against it and "
         "indexed only the last commit. Graph answers about anything else the "

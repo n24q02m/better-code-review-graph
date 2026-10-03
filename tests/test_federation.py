@@ -1,6 +1,6 @@
 """Tests for the cross-repo federation registry (Phase 2 Task 2).
 
-Covers :mod:`better_code_review_graph.federation`:
+Covers :mod:`crg.federation`:
 
 * ``derive_repo_id`` — deterministic, path-derived identifier.
 * ``RepoRegistry.add`` — persists a repo to the ``repos`` table, idempotent
@@ -21,11 +21,11 @@ from pathlib import Path
 
 import pytest
 
-from better_code_review_graph.federation import (
+from crg.federation import (
     RepoRegistry,
     derive_repo_id,
 )
-from better_code_review_graph.graph import GraphStore
+from crg.graph import GraphStore
 
 # ---------------------------------------------------------------------------
 # derive_repo_id

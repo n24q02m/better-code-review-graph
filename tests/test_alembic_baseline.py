@@ -32,7 +32,7 @@ from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
-from better_code_review_graph.graph import (
+from crg.graph import (
     _SCHEMA_SQL,
     GraphStore,
     _resolve_migrations_dir,
@@ -484,7 +484,7 @@ def test_resolve_migrations_dir_raises_when_nothing_resolves(
     # Redirect the source-checkout fallback at a directory missing env.py.
     # We patch __file__ via a fake module path so `Path(__file__).parent.parent.parent / "migrations"`
     # lands in tmp_path/<missing>.
-    fake_root = tmp_path / "src" / "better_code_review_graph"
+    fake_root = tmp_path / "src" / "crg"
     fake_root.mkdir(parents=True)
     fake_graph = fake_root / "graph.py"
     fake_graph.write_text("")
@@ -494,7 +494,7 @@ def test_resolve_migrations_dir_raises_when_nothing_resolves(
 
     # Patch the module-level __file__ so the source fallback resolves into
     # tmp_path (where there is no migrations/env.py).
-    import better_code_review_graph.graph as graph_mod
+    import crg.graph as graph_mod
 
     monkeypatch.setattr(graph_mod, "__file__", str(fake_graph))
 
@@ -575,7 +575,7 @@ def test_resolve_migrations_dir_handles_multiplexed_path_repr(
         return _FakeMultiplexedPath(fake_dir)
 
     monkeypatch.setattr(_resources, "files", _files)
-    obj = _files("better_code_review_graph_migrations")
+    obj = _files("crg_migrations")
     # Some library versions had an issue where __str__ behavior was altered.
     # returns an object whose ``__str__`` is the repr (the historical bug).
     assert str(obj) == f"MultiplexedPath('{fake_dir}')"

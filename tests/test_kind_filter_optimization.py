@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
 
 
 @pytest.fixture

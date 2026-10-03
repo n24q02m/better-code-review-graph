@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from better_code_review_graph.temporal import TemporalIndex
+from crg.temporal import TemporalIndex
 
 
 def test_ensure_temporal_friendly_schema_rejects_malicious_type():

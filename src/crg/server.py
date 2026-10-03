@@ -2,7 +2,7 @@
 
 6-tool architecture: graph + query + review (3 main) + config + security
 + help.
-Run as: better-code-review-graph serve
+Run as: crg serve
 """
 
 from __future__ import annotations
@@ -159,7 +159,7 @@ def _maybe_register_custom_embed(local_model: str) -> None:
 
 
 mcp = FastMCP(
-    "better-code-review-graph",
+    "crg",
     version=_pkg_version,
     instructions=(
         "Persistent incremental knowledge graph for token-efficient, "
@@ -873,7 +873,7 @@ def help(topic: str = "graph") -> str:
         )
 
     try:
-        doc_file = files("better_code_review_graph.docs").joinpath(filename)
+        doc_file = files("crg.docs").joinpath(filename)
         return doc_file.read_text()
     except (FileNotFoundError, ModuleNotFoundError):
         if topic in ("graph", "query"):
@@ -931,7 +931,7 @@ def security(
       payload as JSON (default) or SARIF v2.1.0.
     - suppress (rule_id -> remove=false, repo_root): Add or remove a rule_id
       from the persistent suppression list at
-      ``.better-code-review-graph/security-suppressions.json``.
+      ``.crg/security-suppressions.json``.
     - rule_list (-> engine='heuristic'|'semgrep'): Enumerate active rules.
     """
     match action:

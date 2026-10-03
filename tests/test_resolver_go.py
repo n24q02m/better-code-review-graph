@@ -1,6 +1,6 @@
 """Tests for the Go cross-repo resolver (Phase 2 Task 5).
 
-Covers :mod:`better_code_review_graph.resolver.go`:
+Covers :mod:`crg.resolver.go`:
 
 * ``parse_import_statement`` — turns ``import "example.com/a/util"`` /
   ``import u "example.com/a/util"`` / single-line block form lines
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from better_code_review_graph.resolver.go import (
+from crg.resolver.go import (
     GoImport,
     GoResolver,
     TargetRepo,

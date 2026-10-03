@@ -1,6 +1,6 @@
 """XPIA (cross-prompt-injection) envelope for third-party code content.
 
-better-code-review-graph reads and returns source code from repositories it
+crg reads and returns source code from repositories it
 reviews (source snippets, callsite context). That code is untrusted input --
 an attacker who controls a reviewed repo could plant text like "ignore all
 previous instructions..." inside a docstring or comment. This module wraps
@@ -13,7 +13,7 @@ instructions, mirroring the pattern used by wet-mcp's ``security.py``:
   return payload, once its content fields have already been wrapped
 
 Named ``xpia.py`` rather than ``security.py`` (the shape wet-mcp uses)
-because ``better_code_review_graph.security`` is already a package (the
+because ``crg.security`` is already a package (the
 heuristic/semgrep vulnerability scanner) -- a different concern from XPIA
 envelope wrapping of untrusted content returned to the LLM.
 """

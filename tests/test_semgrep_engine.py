@@ -15,13 +15,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.security import (
+from crg.security import (
     SemgrepNotAvailable,
     SemgrepResult,
     SemgrepScanner,
     Tag,
 )
-from better_code_review_graph.security.semgrep_engine import (
+from crg.security.semgrep_engine import (
     _parse_semgrep_findings,
     _resolve_overlay_rules_dir,
     _semgrep_executable,
@@ -35,7 +35,7 @@ from better_code_review_graph.security.semgrep_engine import (
 
 def test_semgrep_scanner_raises_when_cli_not_found():
     with patch(
-        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        "crg.security.semgrep_engine.shutil.which",
         return_value=None,
     ):
         with pytest.raises(SemgrepNotAvailable, match="semgrep CLI not found"):
@@ -44,7 +44,7 @@ def test_semgrep_scanner_raises_when_cli_not_found():
 
 def test_semgrep_executable_found():
     with patch(
-        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        "crg.security.semgrep_engine.shutil.which",
         return_value="/usr/bin/semgrep",
     ):
         assert _semgrep_executable() == "/usr/bin/semgrep"
@@ -52,7 +52,7 @@ def test_semgrep_executable_found():
 
 def test_semgrep_executable_not_found():
     with patch(
-        "better_code_review_graph.security.semgrep_engine.shutil.which",
+        "crg.security.semgrep_engine.shutil.which",
         return_value=None,
     ):
         assert _semgrep_executable() is None
@@ -86,8 +86,7 @@ def test_semgrep_scanner_uses_path_object_config():
 
 def test_scanner_python_module_check_raises_when_missing():
     with patch(
-        "better_code_review_graph.security.semgrep_engine."
-        "_semgrep_python_module_available",
+        "crg.security.semgrep_engine._semgrep_python_module_available",
         return_value=False,
     ):
         with pytest.raises(SemgrepNotAvailable, match="Python module not importable"):
@@ -96,8 +95,7 @@ def test_scanner_python_module_check_raises_when_missing():
 
 def test_scanner_python_module_check_passes_when_present():
     with patch(
-        "better_code_review_graph.security.semgrep_engine."
-        "_semgrep_python_module_available",
+        "crg.security.semgrep_engine._semgrep_python_module_available",
         return_value=True,
     ):
         scanner = SemgrepScanner(executable="/fake/semgrep", require_python_module=True)
@@ -143,24 +141,18 @@ def test_resolve_overlay_rules_dir_returns_none_when_missing(tmp_path, monkeypat
         return fake_module_root
 
     monkeypatch.setattr(
-        "better_code_review_graph.security.semgrep_engine.files",
+        "crg.security.semgrep_engine.files",
         fake_files,
     )
     fake_repo_root = tmp_path / "fake-repo"
     fake_repo_root.mkdir()
-    fake_engine_file = (
-        fake_repo_root
-        / "src"
-        / "better_code_review_graph"
-        / "security"
-        / "semgrep_engine.py"
-    )
+    fake_engine_file = fake_repo_root / "src" / "crg" / "security" / "semgrep_engine.py"
     fake_engine_file.parent.mkdir(parents=True)
     fake_engine_file.write_text("# placeholder")
     # Point ``__file__`` at the fake checkout so the fallback resolves to a
     # missing ``rules/semgrep`` directory.
     monkeypatch.setattr(
-        "better_code_review_graph.security.semgrep_engine.__file__",
+        "crg.security.semgrep_engine.__file__",
         str(fake_engine_file),
     )
     assert _resolve_overlay_rules_dir() is None
@@ -171,7 +163,7 @@ def test_resolve_overlay_rules_dir_handles_module_not_found(tmp_path, monkeypatc
         raise ModuleNotFoundError("no such package")
 
     monkeypatch.setattr(
-        "better_code_review_graph.security.semgrep_engine.files",
+        "crg.security.semgrep_engine.files",
         raise_not_found,
     )
     # Source checkout fallback should still locate the real rules dir.
@@ -303,7 +295,7 @@ def test_scan_path_returns_tags_on_findings(tmp_path):
     }
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(1, stdout=json.dumps(payload)),
     ) as run_mock:
         result = scanner.scan_path(target)
@@ -324,7 +316,7 @@ def test_scan_path_returns_empty_tags_on_no_findings(tmp_path):
     target.write_text("# clean\n")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout='{"results": []}'),
     ):
         result = scanner.scan_path(target)
@@ -336,7 +328,7 @@ def test_scan_path_handles_empty_stdout(tmp_path):
     target.write_text("# clean\n")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout=""),
     ):
         result = scanner.scan_path(target)
@@ -349,7 +341,7 @@ def test_scan_path_raises_on_semgrep_error_code(tmp_path):
     target.write_text("import os\n")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(2, stdout="", stderr="boom"),
     ):
         with pytest.raises(SemgrepNotAvailable, match="exited with code 2"):
@@ -361,7 +353,7 @@ def test_scan_path_raises_on_invalid_json(tmp_path):
     target.write_text("import os\n")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout="not valid json"),
     ):
         with pytest.raises(SemgrepNotAvailable, match="JSON output parse failed"):
@@ -373,7 +365,7 @@ def test_scan_path_passes_timeout_to_subprocess(tmp_path):
     target.write_text("import os\n")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout='{"results": []}'),
     ) as run_mock:
         scanner.scan_path(target, timeout=12.5)
@@ -386,7 +378,7 @@ def test_scan_path_passes_timeout_to_subprocess(tmp_path):
 
 
 def test_security_module_reexports_semgrep_symbols():
-    from better_code_review_graph import security
+    from crg import security
 
     assert hasattr(security, "SemgrepScanner")
     assert hasattr(security, "SemgrepResult")
@@ -406,7 +398,7 @@ def test_scan_path_uses_double_dash_separator(tmp_path):
     target.write_text("print(1)")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout='{"results": []}'),
     ) as run_mock:
         scanner.scan_path(target)
@@ -427,7 +419,7 @@ def test_scan_path_with_registry_config(tmp_path):
     # Using a registry-like config string
     scanner = SemgrepScanner(config="p/python", executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout='{"results": []}'),
     ) as run_mock:
         scanner.scan_path(target)
@@ -445,7 +437,7 @@ def test_scan_path_uses_devnull_stdin(tmp_path):
     target.write_text("print(1)")
     scanner = SemgrepScanner(executable="/fake/semgrep")
     with patch(
-        "better_code_review_graph.security.semgrep_engine.subprocess.run",
+        "crg.security.semgrep_engine.subprocess.run",
         return_value=_mock_completed(0, stdout='{"results": []}'),
     ) as run_mock:
         scanner.scan_path(target)
