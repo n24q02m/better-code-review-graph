@@ -10,7 +10,8 @@ backend, model, selected storage dimensions, and fallback result. Status resolve
 configuration only; it does not load the embedding model.
 
 **Parameters:**
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 **Example:**
 ```json
@@ -59,7 +60,8 @@ Update a runtime setting.
 Remove all computed embeddings from the graph database. After clearing, run `graph action=embed` to recompute.
 
 **Parameters:**
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 **Example:**
 ```json

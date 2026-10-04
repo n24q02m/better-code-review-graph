@@ -482,21 +482,32 @@ class TestServeMain:
     def test_serve_main_sets_repo_root(self):
         """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
         import crg.server as server_module
+        from crg.tools import get_default_repo_root, set_default_repo_root
 
-        with patch.object(server_module.mcp, "run") as mock_run:
-            serve_main(repo_root="/my/repo")
-        assert server_module._default_repo_root == "/my/repo"
-        mock_run.assert_called_once_with(transport="stdio")
+        try:
+            with patch.object(server_module.mcp, "run") as mock_run:
+                serve_main(repo_root="/my/repo")
+            assert server_module._default_repo_root == "/my/repo"
+            # The default must propagate to tools so repo_root-less tool
+            # calls resolve to it instead of the process cwd.
+            assert get_default_repo_root() == "/my/repo"
+            mock_run.assert_called_once_with(transport="stdio")
+        finally:
+            set_default_repo_root(None)
 
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_none_repo_root(self):
         """serve_main(stdio) routes to FastMCP stdio server directly (no bridge)."""
         import crg.server as server_module
+        from crg.tools import set_default_repo_root
 
-        with patch.object(server_module.mcp, "run") as mock_run:
-            serve_main(repo_root=None)
-        assert server_module._default_repo_root is None
-        mock_run.assert_called_once_with(transport="stdio")
+        try:
+            with patch.object(server_module.mcp, "run") as mock_run:
+                serve_main(repo_root=None)
+            assert server_module._default_repo_root is None
+            mock_run.assert_called_once_with(transport="stdio")
+        finally:
+            set_default_repo_root(None)
 
     @patch.dict(os.environ, {"MCP_TRANSPORT": "stdio"})
     def test_serve_main_survives_missing_numpy(self):
@@ -512,3 +523,141 @@ class TestServeMain:
             with patch.object(server_module.mcp, "run") as mock_run:
                 serve_main(repo_root=None)
         mock_run.assert_called_once_with(transport="stdio")
+
+
+class TestDefaultRepoRootResolution:
+    """``_get_store`` must prefer the server-installed default over cwd.
+
+    Regression coverage for the stdio wiring bug where ``serve_main``
+    recorded ``_default_repo_root`` but every tool call that omitted
+    ``repo_root`` still resolved the graph DB from the process cwd via
+    ``find_project_root()``.
+    """
+
+    def _make_repo(self, base, name: str, marker_file: str, marker_func: str):
+        """Create a plausible repo root with a uniquely-marked graph DB."""
+        from crg.graph import GraphStore
+        from crg.parser import NodeInfo
+
+        repo = base / name
+        repo.mkdir()
+        # A bare .git dir is not enough: GraphStore's alembic migration
+        # backfills valid_from_sha from .git/HEAD, so seed a minimal but
+        # resolvable HEAD (symref + loose ref).
+        gitdir = repo / ".git"
+        (gitdir / "refs" / "heads").mkdir(parents=True)
+        (gitdir / "HEAD").write_text("ref: refs/heads/main\n")
+        (gitdir / "refs" / "heads" / "main").write_text("a" * 40 + "\n")
+        (repo / ".crg").mkdir()
+        (repo / marker_file).write_text(f"def {marker_func}():\n    pass\n")
+
+        abs_marker = str((repo / marker_file).resolve())
+        store = GraphStore(str(repo / ".crg" / "graph.db"))
+        try:
+            store.upsert_node(
+                NodeInfo(
+                    kind="File",
+                    name=abs_marker,
+                    file_path=abs_marker,
+                    line_start=1,
+                    line_end=2,
+                    language="python",
+                ),
+                file_hash="h",
+            )
+            store.upsert_node(
+                NodeInfo(
+                    kind="Function",
+                    name=marker_func,
+                    file_path=abs_marker,
+                    line_start=1,
+                    line_end=2,
+                    language="python",
+                ),
+                file_hash="h",
+            )
+            store.commit()
+        finally:
+            store.close()
+        return repo, abs_marker, marker_func
+
+    def test_default_root_wins_over_cwd(self, tmp_path, monkeypatch):
+        """Default set to A while cwd sits inside B: repo_root-less calls
+        must read A's database."""
+        from crg.tools import list_graph_stats, query_graph, set_default_repo_root
+
+        repo_a, marker_a, func_a = self._make_repo(
+            tmp_path, "repo_a", "only_in_a.py", "func_only_in_a"
+        )
+        self._make_repo(tmp_path, "repo_b", "only_in_b.py", "func_only_in_b")
+        monkeypatch.chdir(tmp_path / "repo_b")
+        set_default_repo_root(str(repo_a))
+        try:
+            stats = list_graph_stats()
+            assert stats["status"] == "ok", stats
+            assert f"for {repo_a.name}" in stats["summary"]
+            assert stats["total_nodes"] == 2
+
+            result = query_graph(pattern="file_summary", target=marker_a)
+            assert result["status"] == "ok", result
+            assert func_a in [r["name"] for r in result["results"]]
+        finally:
+            set_default_repo_root(None)
+
+    def test_explicit_repo_root_wins_over_default(self, tmp_path, monkeypatch):
+        """An explicit ``repo_root`` argument takes precedence over the
+        server-installed default."""
+        from crg.tools import list_graph_stats, query_graph, set_default_repo_root
+
+        repo_a, _, _ = self._make_repo(
+            tmp_path, "repo_a", "only_in_a.py", "func_only_in_a"
+        )
+        repo_b, marker_b, func_b = self._make_repo(
+            tmp_path, "repo_b", "only_in_b.py", "func_only_in_b"
+        )
+        monkeypatch.chdir(repo_a)
+        set_default_repo_root(str(repo_a))
+        try:
+            stats = list_graph_stats(repo_root=str(repo_b))
+            assert stats["status"] == "ok", stats
+            assert f"for {repo_b.name}" in stats["summary"]
+            assert stats["nodes_by_kind"] == {"File": 1, "Function": 1}
+
+            result = query_graph(
+                pattern="file_summary", target=marker_b, repo_root=str(repo_b)
+            )
+            assert result["status"] == "ok", result
+            assert func_b in [r["name"] for r in result["results"]]
+        finally:
+            set_default_repo_root(None)
+
+    def test_unset_default_falls_back_to_cwd(self, tmp_path, monkeypatch):
+        """With no server default installed, repo_root-less calls keep the
+        legacy behaviour of resolving from the process cwd."""
+        from crg.tools import query_graph, set_default_repo_root
+
+        repo_b, marker_b, func_b = self._make_repo(
+            tmp_path, "repo_b", "only_in_b.py", "func_only_in_b"
+        )
+        set_default_repo_root(None)
+        monkeypatch.chdir(repo_b)
+        result = query_graph(pattern="file_summary", target=marker_b)
+        assert result["status"] == "ok", result
+        assert func_b in [r["name"] for r in result["results"]]
+
+    def test_invalid_default_raises_through_validation(self, tmp_path, monkeypatch):
+        """A server-installed default still goes through
+        ``_validate_repo_root``: a path with no .git/.crg must error, not
+        silently fall back to cwd."""
+        import pytest
+
+        from crg.tools import _get_store, set_default_repo_root
+
+        bogus = tmp_path / "not_a_repo"
+        bogus.mkdir()
+        set_default_repo_root(str(bogus))
+        try:
+            with pytest.raises(ValueError, match="project root"):
+                _get_store()
+        finally:
+            set_default_repo_root(None)

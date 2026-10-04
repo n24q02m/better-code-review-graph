@@ -1029,6 +1029,12 @@ def serve_main(repo_root: str | None = None) -> None:
 
     global _default_repo_root
     _default_repo_root = repo_root
+    # Install the root as the default for every tool call that omits
+    # ``repo_root``. The default state lives in tools.py so this wiring
+    # never creates a tools -> server import cycle.
+    from .tools import set_default_repo_root
+
+    set_default_repo_root(repo_root)
 
     # Warm numpy's C-extension import on the MAIN thread before serving.
     #
