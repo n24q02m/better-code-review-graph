@@ -2,6 +2,33 @@
 
 <!-- version list -->
 
+## v3.29.7-beta.2 (2026-10-04)
+
+### Bug Fixes
+
+- Assert streamed JSON-LD export is byte-identical to canonical dump
+  ([#1136](https://github.com/n24q02m/crg/pull/1136),
+  [`dec827b`](https://github.com/n24q02m/crg/commit/dec827b2f1b394fcd80e41d7248df5c92770eae2))
+
+- Bolt optimization of get_impact_radius filtering via json_each
+  ([#1132](https://github.com/n24q02m/crg/pull/1132),
+  [`806019f`](https://github.com/n24q02m/crg/commit/806019f987dc32018efcebe2a32d74fd76757721))
+
+- Rename module better_code_review_graph -> crg across code, docs, config
+  ([#1134](https://github.com/n24q02m/crg/pull/1134),
+  [`b95c820`](https://github.com/n24q02m/crg/commit/b95c8207f86f3f3c4bf86a2c816749459f32c881))
+
+- Resolve repo_root-less tool calls to the server-configured default root
+  ([#1137](https://github.com/n24q02m/crg/pull/1137),
+  [`00038d2`](https://github.com/n24q02m/crg/commit/00038d27317d4eac8e9dd24f48677210f53ca461))
+
+- Stream JSON-LD graph exports via generator ([#1136](https://github.com/n24q02m/crg/pull/1136),
+  [`dec827b`](https://github.com/n24q02m/crg/commit/dec827b2f1b394fcd80e41d7248df5c92770eae2))
+
+- **deps**: Lock file maintenance ([#1135](https://github.com/n24q02m/crg/pull/1135),
+  [`4a61313`](https://github.com/n24q02m/crg/commit/4a613139307320dd2c5769c6acb8a76e4680ea39))
+
+
 ## v3.29.7-beta.1 (2026-10-03)
 
 ### Bug Fixes
