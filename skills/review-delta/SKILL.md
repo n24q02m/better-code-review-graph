@@ -9,15 +9,15 @@ argument-hint: "[file or function name]"
 Perform a focused, token-efficient code review of uncommitted changes and their blast radius. Use this for quick local reviews BEFORE committing. For full branch/PR reviews, use review-pr instead.
 
 **Command surface:** run the local CLI through the coding harness shell. Examples
-use the installed `better-code-review-graph` command; from a source checkout,
+use the installed `crg` command; from a source checkout,
 prefix it with `uv run`. No MCP mapping is required. Use
-`better-code-review-graph review --help` for the command reference.
+`crg review --help` for the command reference.
 
 ## Steps
 
-1. **Ensure the graph is current** with `better-code-review-graph graph build --base HEAD --repo-root "<path>"`.
+1. **Ensure the graph is current** with `crg graph build --base HEAD --repo-root "<path>"`.
 
-2. **Get review context** with `better-code-review-graph review context --base HEAD --repo-root "<path>"`. This returns:
+2. **Get review context** with `crg review context --base HEAD --repo-root "<path>"`. This returns:
    - Changed files (auto-detected from git diff)
    - Impacted nodes and files (blast radius)
    - Source code snippets for changed areas
@@ -31,7 +31,7 @@ prefix it with `uv run`. No MCP mapping is required. Use
 4. **Perform the review** using the context. For each changed file:
    - Review the source snippet for correctness, style, and potential bugs
    - Check if impacted callers/dependents need updates
-   - Verify test coverage with `better-code-review-graph query query --pattern tests_for --target "<function>" --repo-root "<path>"`
+   - Verify test coverage with `crg query query --pattern tests_for --target "<function>" --repo-root "<path>"`
    - Flag any untested changed functions
 
 5. **Report findings** in a structured format:

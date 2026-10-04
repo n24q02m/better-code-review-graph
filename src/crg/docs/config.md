@@ -22,7 +22,7 @@ configuration only; it does not load the embedding model.
 {
   "status": "ok",
   "version": "2.0.0",
-  "graph_path": "/path/to/.better-code-review-graph/graph.db",
+  "graph_path": "/path/to/.crg/graph.db",
   "embedding_backend": "local",
   "embedding_model": "n24q02m/Qwen3-Embedding-0.6B-ONNX",
   "embedding_dimensions": 768,

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from better_code_review_graph.security import HeuristicScanner, ScanResult, Tag
-from better_code_review_graph.security.heuristic import (
+from crg.security import HeuristicScanner, ScanResult, Tag
+from crg.security.heuristic import (
     HeuristicRule,
     _load_rules_from_dir,
     _parse_simple_yaml,
@@ -403,7 +403,7 @@ def test_load_rules_from_dir_single_language_string(tmp_path):
 
 
 def test_default_rules_dir_trigger_except_block(monkeypatch):
-    import better_code_review_graph.security.heuristic as heuristic
+    import crg.security.heuristic as heuristic
 
     # Mock files to raise ModuleNotFoundError
     def fake_files(package):

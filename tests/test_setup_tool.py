@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.credential_state import CredentialState
+from crg.credential_state import CredentialState
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -22,7 +22,7 @@ from better_code_review_graph.credential_state import CredentialState
 @pytest.fixture(autouse=True)
 def _reset_credential_state():
     """Reset credential state module before/after each test."""
-    import better_code_review_graph.credential_state as cs
+    import crg.credential_state as cs
 
     original_state = cs._state
     yield
@@ -32,7 +32,7 @@ def _reset_credential_state():
 @pytest.fixture(autouse=True)
 def _hermetic_config_dir(monkeypatch, tmp_path):
     """Empty per-test instance config dir; every cell env key removed."""
-    import better_code_review_graph.credential_state as cs
+    import crg.credential_state as cs
 
     monkeypatch.setenv("CRG_CONFIG_DIR", str(tmp_path / "cfg"))
     for k in (
@@ -55,7 +55,7 @@ def _hermetic_config_dir(monkeypatch, tmp_path):
 class TestSetupStatus:
     async def test_status_reports_configured_cell(self, monkeypatch):
         """setup_status derives `configured` from live host cells (G6 fix)."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         monkeypatch.setenv("HULL_EMBED_API_KEY", "test-key-123")
 
@@ -65,7 +65,7 @@ class TestSetupStatus:
 
     async def test_status_has_no_relay_setup_url(self):
         """Post-de-host there is no browser setup form: setup_url is None."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         result = await config(action="setup_status")
         assert result["state"] == "local"
@@ -80,8 +80,8 @@ class TestSetupStatus:
 class TestSetupStart:
     async def test_start_already_configured_no_force(self):
         """setup_start with already configured state and no force returns already_configured."""
-        import better_code_review_graph.credential_state as cs
-        from better_code_review_graph.server import config
+        import crg.credential_state as cs
+        from crg.server import config
 
         cs._state = CredentialState.CONFIGURED
 
@@ -96,7 +96,7 @@ class TestSetupStart:
         (or a stdio env-var hint); the BYOK cut removed both — end users
         never supply keys, the host configures cells instead.
         """
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         monkeypatch.setenv("PUBLIC_URL", "https://relay.example.com")
 
@@ -108,8 +108,8 @@ class TestSetupStart:
 
     async def test_start_force_overrides_configured(self):
         """setup_start with force=true re-reports the config surface."""
-        import better_code_review_graph.credential_state as cs
-        from better_code_review_graph.server import config
+        import crg.credential_state as cs
+        from crg.server import config
 
         cs._state = CredentialState.CONFIGURED
 
@@ -130,8 +130,8 @@ class TestSetupSkip:
         suppress the relay on restart; that store is gone, so the state
         enum is the only remaining mode keeper.
         """
-        import better_code_review_graph.credential_state as cs
-        from better_code_review_graph.server import config
+        import crg.credential_state as cs
+        from crg.server import config
 
         result = await config(action="setup_skip")
         assert result["status"] == "ok"
@@ -147,8 +147,8 @@ class TestSetupSkip:
 class TestSetupReset:
     async def test_reset_resets_to_local(self):
         """setup_reset resets state to local; host config re-resolves later."""
-        import better_code_review_graph.credential_state as cs
-        from better_code_review_graph.server import config
+        import crg.credential_state as cs
+        from crg.server import config
 
         cs._state = CredentialState.CONFIGURED
 
@@ -165,7 +165,7 @@ class TestSetupReset:
 class TestSetupComplete:
     async def test_complete_refreshes_state_from_cells(self, monkeypatch):
         """setup_complete re-resolves credential state from host cells."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         monkeypatch.setenv("HULL_EMBED_API_KEY", "test-key")
 
@@ -182,7 +182,7 @@ class TestSetupComplete:
 class TestSetupUnknownAction:
     async def test_unknown_action_returns_error(self):
         """Unknown action returns error with valid actions."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         result = await config(action="nonexistent_setup_action")
         assert "error" in result
@@ -190,7 +190,7 @@ class TestSetupUnknownAction:
 
     async def test_setup_prefix_typo_suggestion(self):
         """Typo in setup_ action returns a suggestion."""
-        from better_code_review_graph.server import config
+        from crg.server import config
 
         result = await config(action="setup_statu")
         assert "error" in result

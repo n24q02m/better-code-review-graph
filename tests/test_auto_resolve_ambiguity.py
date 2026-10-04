@@ -9,16 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.tools import query_graph
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.tools import query_graph
 
 
 @pytest.fixture
 def repo_with_collision(tmp_path):
     """Repo with `auth.py` File and `auth` Function colliding by name."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".better-code-review-graph"
+    crg = tmp_path / ".crg"
     crg.mkdir()
     (crg / ".gitignore").write_text("*\n")
     db = crg / "graph.db"

@@ -20,7 +20,7 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.embeddings import (
+from crg.embeddings import (
     _MAX_RETRIES,
     CloudEmbeddingBackend,
     _is_retryable,
@@ -99,7 +99,7 @@ class TestPermanentErrorNotRetriedAtBatchLevel:
                 raise _wrapped_422()
 
             with patch(
-                "better_code_review_graph.embeddings._post_embeddings",
+                "crg.embeddings._post_embeddings",
                 side_effect=side_effect,
             ):
                 with pytest.raises(WrappedConnectionError):
@@ -120,10 +120,10 @@ class TestPermanentErrorNotRetriedAtBatchLevel:
                 raise Exception("Connection error.")
 
             with patch(
-                "better_code_review_graph.embeddings._post_embeddings",
+                "crg.embeddings._post_embeddings",
                 side_effect=side_effect,
             ):
-                with patch("better_code_review_graph.embeddings.time.sleep"):
+                with patch("crg.embeddings.time.sleep"):
                     with pytest.raises(Exception, match="Connection error."):
                         backend.embed_texts(["test"], dimensions=1024)
 

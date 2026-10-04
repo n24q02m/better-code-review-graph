@@ -32,10 +32,10 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.temporal import TemporalIndex
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.temporal import TemporalIndex
+from crg.tools import (
     diff_graph,
     review_delta,
     security_scan,
@@ -159,7 +159,7 @@ def test_phase_3_full_lifecycle_python(
 ) -> None:
     """End-to-end: 2 commits moving a function -> diff modified + line shift."""
     repo, sha1, sha2 = two_commit_repo
-    crg_dir = repo / ".better-code-review-graph"
+    crg_dir = repo / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 
@@ -229,7 +229,7 @@ def test_phase_3_security_scan_tags_persisted(tmp_path: Path) -> None:
     repo = tmp_path / "vuln-repo"
     repo.mkdir()
     (repo / ".git").mkdir()
-    crg_dir = repo / ".better-code-review-graph"
+    crg_dir = repo / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
 

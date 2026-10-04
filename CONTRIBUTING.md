@@ -1,4 +1,4 @@
-# Contributing to better-code-review-graph
+# Contributing to crg
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -15,8 +15,8 @@ Thank you for your interest in contributing! This guide will help you get starte
 1. **Fork the repository** and clone your fork
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/better-code-review-graph
-cd better-code-review-graph
+git clone https://github.com/YOUR_USERNAME/crg
+cd crg
 ```
 
 2. **Install dependencies**

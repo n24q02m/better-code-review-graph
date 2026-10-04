@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from better_code_review_graph.embeddings import EmbeddingStore, embed_all_nodes
-from better_code_review_graph.graph import GraphNode, GraphStore
+from crg.embeddings import EmbeddingStore, embed_all_nodes
+from crg.graph import GraphNode, GraphStore
 
 
 def _make_node(**kwargs) -> GraphNode:

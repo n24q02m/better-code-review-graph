@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-import better_code_review_graph.tools as tools
-from better_code_review_graph.config import settings
-from better_code_review_graph.embeddings import _DEFAULT_DIMS
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import EdgeInfo, NodeInfo
-from better_code_review_graph.reranker import LocalRerankError
-from better_code_review_graph.tools import (
+import crg.tools as tools
+from crg.config import settings
+from crg.embeddings import _DEFAULT_DIMS
+from crg.graph import GraphStore
+from crg.parser import EdgeInfo, NodeInfo
+from crg.reranker import LocalRerankError
+from crg.tools import (
     _BUILTIN_CALL_NAMES,
     _extract_relevant_lines,
     _generate_review_guidance,
@@ -41,7 +41,7 @@ from better_code_review_graph.tools import (
 def repo_with_graph(tmp_path):
     """Create a temp repo with .git, python files, and a seeded graph."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".better-code-review-graph"
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -210,7 +210,7 @@ class TestValidateRepoRoot:
         assert result == tmp_path.resolve()
 
     def test_valid_crg_dir(self, tmp_path):
-        (tmp_path / ".better-code-review-graph").mkdir()
+        (tmp_path / ".crg").mkdir()
         result = _validate_repo_root(tmp_path)
         assert result == tmp_path.resolve()
 
@@ -257,7 +257,7 @@ class TestGetStore:
 class TestBuildOrUpdateGraph:
     def test_full_rebuild(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.incremental.get_all_tracked_files",
+            "crg.incremental.get_all_tracked_files",
             return_value=["auth.py"],
         ):
             result = build_or_update_graph(
@@ -269,9 +269,9 @@ class TestBuildOrUpdateGraph:
         assert "Full build complete" in result["summary"]
 
     def test_incremental_no_changes(self, repo_with_graph):
-        with patch("better_code_review_graph.tools.get_changed_files", return_value=[]):
+        with patch("crg.tools.get_changed_files", return_value=[]):
             with patch(
-                "better_code_review_graph.tools.get_staged_and_unstaged",
+                "crg.tools.get_staged_and_unstaged",
                 return_value=[],
             ):
                 result = build_or_update_graph(
@@ -296,9 +296,9 @@ class TestBuildOrUpdateGraph:
 
 class TestGetImpactRadius:
     def test_no_changed_files_auto_detect_empty(self, repo_with_graph):
-        with patch("better_code_review_graph.tools.get_changed_files", return_value=[]):
+        with patch("crg.tools.get_changed_files", return_value=[]):
             with patch(
-                "better_code_review_graph.tools.get_staged_and_unstaged",
+                "crg.tools.get_staged_and_unstaged",
                 return_value=[],
             ):
                 result = get_impact_radius(repo_root=str(repo_with_graph))
@@ -442,7 +442,7 @@ class TestQueryGraph:
         """callers_of should use search_edges_by_target_name fallback."""
         abs_auth = str(repo_with_graph / "auth.py")
         # Add an edge with unqualified target
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         store.upsert_node(
             NodeInfo(
@@ -498,9 +498,9 @@ class TestQueryGraph:
 
 class TestGetReviewContext:
     def test_no_changes(self, repo_with_graph):
-        with patch("better_code_review_graph.tools.get_changed_files", return_value=[]):
+        with patch("crg.tools.get_changed_files", return_value=[]):
             with patch(
-                "better_code_review_graph.tools.get_staged_and_unstaged",
+                "crg.tools.get_staged_and_unstaged",
                 return_value=[],
             ):
                 result = get_review_context(repo_root=str(repo_with_graph))
@@ -537,7 +537,7 @@ class TestGetReviewContext:
         large_file.write_text("\n".join(lines))
 
         abs_large = str(large_file)
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         store.upsert_node(
             NodeInfo(
@@ -757,7 +757,7 @@ class TestEmbedGraph:
 
     def test_embed_graph(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             result = embed_graph(repo_root=str(repo_with_graph))
@@ -805,7 +805,7 @@ class TestGetDocsSection:
     def test_without_repo_root(self):
         # Should handle gracefully even when no repo found
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=RuntimeError("no store"),
         ):
             result = get_docs_section("usage")
@@ -824,7 +824,7 @@ class TestGetDocsSection:
 
         # Mock _get_store to raise ValueError
         with patch(
-            "better_code_review_graph.tools._get_store",
+            "crg.tools._get_store",
             side_effect=ValueError("Store init failed"),
         ):
             # Call get_docs_section with repo_root pointing to tmp_path
@@ -874,7 +874,7 @@ class TestFindLargeFunctions:
     def test_summary_truncation(self, repo_with_graph):
         """Summary should show max 10 results and '... and N more'."""
         # Add many large nodes
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         for i in range(15):
             fp = str(repo_with_graph / f"big_{i}.py")
@@ -924,7 +924,7 @@ class TestSemanticSearchWithEmbeddings:
     def test_semantic_mode_when_embeddings_exist(self, repo_with_graph):
         """Embed first, then search should use semantic mode."""
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_result = embed_graph(repo_root=str(repo_with_graph))
@@ -939,7 +939,7 @@ class TestSemanticSearchWithEmbeddings:
 
     def test_semantic_search_with_kind_filter_after_embed(self, repo_with_graph):
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
@@ -954,7 +954,7 @@ class TestSemanticSearchWithEmbeddings:
         monkeypatch.setattr(settings, "local_rerank_model", "")
         with (
             patch(
-                "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+                "crg.embeddings.LocalEmbeddingBackend._get_model",
                 return_value=_stub_local_model(),
             ),
             patch(
@@ -989,11 +989,9 @@ class TestSemanticSearchWithEmbeddings:
             return ranked
 
         monkeypatch.setattr(settings, "local_rerank_model", "model/id")
-        monkeypatch.setattr(
-            "better_code_review_graph.reranker.rerank_candidates", fake_rerank
-        )
+        monkeypatch.setattr("crg.reranker.rerank_candidates", fake_rerank)
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
@@ -1025,13 +1023,13 @@ class TestSemanticSearchWithEmbeddings:
         monkeypatch.setattr(settings, "local_rerank_model", "model/id")
         monkeypatch.setattr(tools, "semantic_search", record_limit)
         monkeypatch.setattr(
-            "better_code_review_graph.reranker.rerank_candidates",
+            "crg.reranker.rerank_candidates",
             lambda _query, candidates, *, model_name: [
                 {**candidate, "rerank_score": 0.5} for candidate in candidates
             ],
         )
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
@@ -1054,11 +1052,9 @@ class TestSemanticSearchWithEmbeddings:
             return []
 
         monkeypatch.setattr(settings, "local_rerank_model", "model/id")
-        monkeypatch.setattr(
-            "better_code_review_graph.reranker.rerank_candidates", record_rerank
-        )
+        monkeypatch.setattr("crg.reranker.rerank_candidates", record_rerank)
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
@@ -1081,9 +1077,7 @@ class TestSemanticSearchWithEmbeddings:
             raise AssertionError("historical keyword search invoked reranker")
 
         monkeypatch.setattr(settings, "local_rerank_model", "model/id")
-        monkeypatch.setattr(
-            "better_code_review_graph.reranker.rerank_candidates", unexpected_rerank
-        )
+        monkeypatch.setattr("crg.reranker.rerank_candidates", unexpected_rerank)
         result = semantic_search_nodes(
             query="login",
             as_of="a" * 40,
@@ -1099,11 +1093,9 @@ class TestSemanticSearchWithEmbeddings:
             raise LocalRerankError("local reranker returned the wrong score count")
 
         monkeypatch.setattr(settings, "local_rerank_model", "model/id")
-        monkeypatch.setattr(
-            "better_code_review_graph.reranker.rerank_candidates", fail_rerank
-        )
+        monkeypatch.setattr("crg.reranker.rerank_candidates", fail_rerank)
         with patch(
-            "better_code_review_graph.embeddings.LocalEmbeddingBackend._get_model",
+            "crg.embeddings.LocalEmbeddingBackend._get_model",
             return_value=_stub_local_model(),
         ):
             embed_graph(repo_root=str(repo_with_graph))
@@ -1146,7 +1138,7 @@ class TestQueryGraphEdgeCases:
     def test_query_ambiguous_multiple_candidates(self, repo_with_graph):
         """Multiple search results should return ambiguous status."""
         # Add multiple nodes with similar names
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         abs_main = str(repo_with_graph / "main.py")
@@ -1188,7 +1180,7 @@ class TestQueryGraphEdgeCases:
 
     def test_callers_of_with_edges_no_caller_node(self, repo_with_graph):
         """Caller edge exists but source node is missing from graph."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_edge(
@@ -1212,7 +1204,7 @@ class TestQueryGraphEdgeCases:
 
     def test_callees_of_with_missing_callee_node(self, repo_with_graph):
         """Callee edge exists but target node is missing."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_main = str(repo_with_graph / "main.py")
         store.upsert_edge(
@@ -1249,7 +1241,7 @@ class TestQueryGraphEdgeCases:
 
     def test_inheritors_of_with_inherits_edge(self, repo_with_graph):
         """inheritors_of should find classes that inherit."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_node(
@@ -1284,7 +1276,7 @@ class TestQueryGraphEdgeCases:
 
     def test_find_large_functions_with_no_line_info(self, repo_with_graph):
         """Nodes with None line_start/line_end should have line_count=0."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_auth = str(repo_with_graph / "auth.py")
         store.upsert_node(
@@ -1341,7 +1333,7 @@ class TestQueryGraphEdgeCases:
         from the last segment of the qualified name (e.g. "MyTarget" stored as edge
         target while qualified name ends with "::MyClass.MyTarget").
         """
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_file = str(repo_with_graph / "fallback_test.py")
         store.upsert_node(
@@ -1402,7 +1394,7 @@ class TestQueryGraphEdgeCases:
 
     def test_tests_for_with_tested_by_edge(self, repo_with_graph):
         """tests_for should find tests via TESTED_BY edge where target=function_qn."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_src = str(repo_with_graph / "tested.py")
         abs_test = str(repo_with_graph / "test_tested.py")
@@ -1449,7 +1441,7 @@ class TestQueryGraphEdgeCases:
 
     def test_keyword_search_score_ordering(self, repo_with_graph):
         """Keyword search should order: exact > prefix > partial."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         abs_f = str(repo_with_graph / "scoring.py")
         store.upsert_node(
@@ -1496,7 +1488,7 @@ class TestQueryGraphEdgeCases:
 
     def test_find_large_functions_with_external_path(self, repo_with_graph):
         """find_large_functions should handle file_path outside repo root."""
-        db_path = repo_with_graph / ".better-code-review-graph" / "graph.db"
+        db_path = repo_with_graph / ".crg" / "graph.db"
         store = GraphStore(str(db_path))
         # Node with absolute path outside repo
         store.upsert_node(

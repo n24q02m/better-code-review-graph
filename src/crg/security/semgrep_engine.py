@@ -4,7 +4,7 @@ Wraps the Semgrep CLI (``semgrep --config p/auto --json``) to surface
 the curated OWASP-style ruleset. Available only when the package is
 installed with the ``[security]`` extra::
 
-    uv add 'better-code-review-graph[security]'
+    uv add 'crg[security]'
 
 Without the extra, importing this module is safe; the engine raises
 :class:`SemgrepNotAvailable` when instantiated. Heuristic Tier-1
@@ -68,13 +68,13 @@ def _resolve_overlay_rules_dir() -> Path | None:
     """Return path to the bundled ``rules/semgrep/`` overlay, if present.
 
     First tries the wheel-installed location (top-level package
-    ``better_code_review_graph_security_rules`` populated by the
+    ``crg_security_rules`` populated by the
     ``[tool.hatch.build.targets.wheel.force-include]`` mapping), then
     falls back to the repository checkout layout used during ``uv sync``.
     """
 
     try:
-        ref = files("better_code_review_graph_security_rules").joinpath("semgrep")
+        ref = files("crg_security_rules").joinpath("semgrep")
         if isinstance(ref, Path) and ref.joinpath("curated.yaml").is_file():
             return ref
     except (ModuleNotFoundError, OSError):
@@ -123,8 +123,7 @@ class SemgrepScanner:
         resolved = executable or _semgrep_executable()
         if resolved is None:
             raise SemgrepNotAvailable(
-                "semgrep CLI not found on PATH. Install with: "
-                "uv add 'better-code-review-graph[security]'"
+                "semgrep CLI not found on PATH. Install with: uv add 'crg[security]'"
             )
         if resolved.startswith("-"):
             raise ValueError(
@@ -134,7 +133,7 @@ class SemgrepScanner:
         if require_python_module and not _semgrep_python_module_available():
             raise SemgrepNotAvailable(
                 "semgrep Python module not importable. Install with: "
-                "uv add 'better-code-review-graph[security]'"
+                "uv add 'crg[security]'"
             )
 
     def scan_path(

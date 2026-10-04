@@ -23,7 +23,7 @@ import pytest
 from hull_core.config.models import ModelCell
 from hull_core.providers.openai_spec import OpenAICompatClient, ProviderError
 
-from better_code_review_graph.summarizer import (
+from crg.summarizer import (
     NodeNeedingSummary,
     _parse_jev_ranking,
     batch_summarize,
@@ -121,22 +121,22 @@ def _cell(**overrides):
 
 
 def test_summary_cell_none_when_not_configured(monkeypatch):
-    import better_code_review_graph.config as cfg
+    import crg.config as cfg
 
     monkeypatch.setattr(
         cfg, "resolve_cells", lambda *a, **k: {"chat": _cell(configured=False)}
     )
-    from better_code_review_graph.summarizer import summary_cell
+    from crg.summarizer import summary_cell
 
     assert summary_cell() is None
 
 
 def test_summary_cell_returns_configured_cell(monkeypatch):
-    import better_code_review_graph.config as cfg
+    import crg.config as cfg
 
     cell = _cell()
     monkeypatch.setattr(cfg, "resolve_cells", lambda *a, **k: {"chat": cell})
-    from better_code_review_graph.summarizer import summary_cell
+    from crg.summarizer import summary_cell
 
     assert summary_cell() is cell
 
@@ -221,8 +221,8 @@ def test_summarize_node_handles_braces_in_source():
 
 def test_update_summary_persists_to_db(tmp_path):
     """GraphStore.update_summary should write summary + provider + source_hash atomically."""
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.parser import NodeInfo
+    from crg.graph import GraphStore
+    from crg.parser import NodeInfo
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -257,7 +257,7 @@ def test_update_summary_persists_to_db(tmp_path):
 
 
 def _seed_function(store, name: str = "f", body: str = "def f(): return 1") -> int:
-    from better_code_review_graph.parser import NodeInfo
+    from crg.parser import NodeInfo
 
     node_id = store.upsert_node(
         NodeInfo(
@@ -279,11 +279,11 @@ def _patched_llm(client: FakeClient, cell=None):
     """Patch summary_cell + OpenAICompatClient so batch runs against ``client``."""
     return (
         patch(
-            "better_code_review_graph.summarizer.summary_cell",
+            "crg.summarizer.summary_cell",
             return_value=cell or _cell(),
         ),
         patch(
-            "better_code_review_graph.summarizer.OpenAICompatClient",
+            "crg.summarizer.OpenAICompatClient",
             return_value=client,
         ),
     )
@@ -291,8 +291,8 @@ def _patched_llm(client: FakeClient, cell=None):
 
 def test_batch_summarize_skips_when_no_provider(tmp_path, monkeypatch):
     """With no chat cell configured, batch_summarize skips without calling the LLM."""
-    import better_code_review_graph.config as cfg
-    from better_code_review_graph.graph import GraphStore
+    import crg.config as cfg
+    from crg.graph import GraphStore
 
     monkeypatch.setattr(
         cfg, "resolve_cells", lambda *a, **k: {"chat": _cell(configured=False)}
@@ -312,7 +312,7 @@ def test_batch_summarize_skips_when_no_provider(tmp_path, monkeypatch):
 
 def test_batch_summarize_generates_for_uncached_nodes(tmp_path):
     """Function nodes without summary should be sent to LLM and result persisted."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -339,7 +339,7 @@ def test_batch_summarize_generates_for_uncached_nodes(tmp_path):
 
 
 def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path):
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -365,7 +365,7 @@ def test_batch_summarize_cache_hit_when_hash_and_provider_match(tmp_path):
 
 
 def test_batch_summarize_regenerates_when_source_changed(tmp_path):
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -394,7 +394,7 @@ def test_batch_summarize_regenerates_when_source_changed(tmp_path):
 
 
 def test_batch_summarize_treats_empty_string_summary_as_cache_miss(tmp_path):
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -420,7 +420,7 @@ def test_batch_summarize_treats_empty_string_summary_as_cache_miss(tmp_path):
 
 
 def test_batch_summarize_respects_max_nodes_cap(tmp_path):
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -440,7 +440,7 @@ def test_batch_summarize_respects_max_nodes_cap(tmp_path):
 
 def test_batch_summarize_continues_after_per_node_error(tmp_path):
     """If one node's LLM call raises, batch should count error + continue with others."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -466,7 +466,7 @@ def test_batch_summarize_continues_after_per_node_error(tmp_path):
 
 
 def test_batch_summarize_rejects_nonpositive_max_nodes(tmp_path):
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -508,13 +508,13 @@ def _patched_chat_and_jev(chat_client: FakeClient, jev_client: FakeJevClient):
         return jev_client if getattr(cell, "task", None) == "jev_score" else chat_client
 
     return (
-        patch("better_code_review_graph.summarizer.summary_cell", return_value=_cell()),
+        patch("crg.summarizer.summary_cell", return_value=_cell()),
         patch(
-            "better_code_review_graph.summarizer.jev_score_cell",
+            "crg.summarizer.jev_score_cell",
             return_value=_cell(task="jev_score"),
         ),
         patch(
-            "better_code_review_graph.summarizer.OpenAICompatClient",
+            "crg.summarizer.OpenAICompatClient",
             side_effect=_factory,
         ),
     )
@@ -554,7 +554,7 @@ def test_parse_jev_ranking_raises_on_incomplete_permutation():
 
 def test_batch_summarize_orders_queue_by_ascending_id(tmp_path):
     """Base queue order is deterministic: ascending node id (spec §7 K4)."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -576,7 +576,7 @@ def test_batch_summarize_orders_queue_by_ascending_id(tmp_path):
 
 def test_batch_summarize_jev_ranking_reorders_queue_and_records_receipt(tmp_path):
     """jev ranking re-orders processing; the receipt records it (spec §7 K4)."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -605,7 +605,7 @@ def test_batch_summarize_jev_ranking_reorders_queue_and_records_receipt(tmp_path
 
 def test_batch_summarize_jev_ranks_in_batches_of_50_one_call_each(tmp_path):
     """120 pending nodes → exactly 3 jev calls (50+50+20), one per batch."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -641,7 +641,7 @@ def test_batch_summarize_jev_ranks_in_batches_of_50_one_call_each(tmp_path):
 
 def test_batch_summarize_jev_failure_falls_open_to_base_order(tmp_path):
     """jev call failure → queue processed in base ORDER BY order, run completes."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -667,7 +667,7 @@ def test_batch_summarize_jev_failure_falls_open_to_base_order(tmp_path):
 
 def test_batch_summarize_jev_unparseable_reply_falls_open(tmp_path):
     """A reply with no numeric tokens raises in the ranking layer → fail-open."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:
@@ -692,7 +692,7 @@ def test_batch_summarize_jev_unparseable_reply_falls_open(tmp_path):
 
 def test_batch_summarize_without_jev_cell_skips_ranking_silently(tmp_path):
     """No jev cell configured → base order; receipt says disabled, no reason."""
-    from better_code_review_graph.graph import GraphStore
+    from crg.graph import GraphStore
 
     store = GraphStore(str(tmp_path / "test.db"))
     try:

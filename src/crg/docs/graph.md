@@ -7,7 +7,7 @@ Graph lifecycle operations — build, update, embed, and check stats.
 ### build
 Full or incremental graph build. Parses source files with Tree-sitter, extracts functions/classes/imports, and builds a structural knowledge graph.
 
-Local state lives at `.better-code-review-graph/graph.db`, separate from the
+Local state lives at `.crg/graph.db`, separate from the
 upstream package's `.code-review-graph` directory. On upgrade, run a full build;
 old databases and sidecars are never adopted or modified automatically.
 

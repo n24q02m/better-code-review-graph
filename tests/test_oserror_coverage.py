@@ -3,9 +3,9 @@ from unittest.mock import patch
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.tools import (
     _LAST_CALLERS_RESULT,
     _get_source_snippets,
     get_review_context,
@@ -17,7 +17,7 @@ from better_code_review_graph.tools import (
 def repo_with_cache(tmp_path):
     """Setup a repo and populate _LAST_CALLERS_RESULT cache."""
     (tmp_path / ".git").mkdir()
-    crg = tmp_path / ".better-code-review-graph"
+    crg = tmp_path / ".crg"
     crg.mkdir()
 
     file_path = tmp_path / "test.py"
@@ -48,7 +48,7 @@ def test_spot_check_handles_oserror(repo_with_cache):
             raise OSError("Read error")
         return original_read_text(self, *args, **kwargs)
 
-    with patch("better_code_review_graph.tools.Path.read_text", side_effect):
+    with patch("crg.tools.Path.read_text", side_effect):
         result = spot_check_last_callers(n=1, repo_root=str(repo))
 
     assert result["status"] == "ok"
@@ -60,7 +60,7 @@ def test_get_review_context_source_snippets_handles_oserror(tmp_path):
     """Test that _get_source_snippets handles OSError (via get_review_context)."""
     repo = tmp_path
     (repo / ".git").mkdir()
-    crg = repo / ".better-code-review-graph"
+    crg = repo / ".crg"
     crg.mkdir()
 
     # Create a dummy database
@@ -91,10 +91,8 @@ def test_get_review_context_source_snippets_handles_oserror(tmp_path):
         return original_read_text(self, *args, **kwargs)
 
     # Mock git changed files
-    with patch(
-        "better_code_review_graph.tools.get_changed_files", return_value=["changed.py"]
-    ):
-        with patch("better_code_review_graph.tools.Path.read_text", side_effect):
+    with patch("crg.tools.get_changed_files", return_value=["changed.py"]):
+        with patch("crg.tools.Path.read_text", side_effect):
             result = get_review_context(repo_root=str(repo))
 
     assert result["status"] == "ok"
@@ -132,7 +130,7 @@ def test_get_source_snippets_handles_resolve_oserror(tmp_path):
 
         return original_resolve(self, *args, **kwargs)
 
-    with patch("better_code_review_graph.tools.Path.resolve", side_effect):
+    with patch("crg.tools.Path.resolve", side_effect):
         snippets = _get_source_snippets(repo, ["bad_resolve.py"], [], 100)
 
     assert snippets == {}

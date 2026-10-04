@@ -72,7 +72,7 @@ def _non_qwen_manifest_payload() -> dict:
 
 
 def test_empty_plugin_values_use_local_embedding_defaults(monkeypatch):
-    from better_code_review_graph.config import Settings
+    from crg.config import Settings
 
     for key in (
         "LOCAL_EMBEDDING_MODEL",
@@ -96,8 +96,8 @@ def test_empty_plugin_values_use_local_embedding_defaults(monkeypatch):
 
 def test_builtin_model_id_is_not_registered(monkeypatch):
     """ID built-in lấy từ registry, không hardcode một họ model cụ thể."""
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "builtin/reference-text")
     monkeypatch.setattr(
@@ -116,7 +116,7 @@ def test_builtin_model_id_is_not_registered(monkeypatch):
 
 
 def test_register_spec_uses_fastretrieval_public_api(monkeypatch):
-    from better_code_review_graph import server
+    from crg import server
 
     created = []
 
@@ -136,7 +136,7 @@ def test_register_spec_uses_fastretrieval_public_api(monkeypatch):
 
 
 def test_builtin_model_ids_read_dict_and_object_registry_entries(monkeypatch):
-    from better_code_review_graph import server
+    from crg import server
 
     class FakeTextEmbedding:
         @classmethod
@@ -156,7 +156,7 @@ def test_builtin_model_ids_read_dict_and_object_registry_entries(monkeypatch):
 
 
 def test_empty_custom_model_is_ignored(monkeypatch):
-    from better_code_review_graph import server
+    from crg import server
 
     monkeypatch.setattr(
         server,
@@ -168,7 +168,7 @@ def test_empty_custom_model_is_ignored(monkeypatch):
 
 
 def test_custom_model_file_path_is_refused(monkeypatch, tmp_path):
-    from better_code_review_graph import server
+    from crg import server
 
     model_file = tmp_path / "model.onnx"
     model_file.write_bytes(b"not-an-artifact")
@@ -179,7 +179,7 @@ def test_custom_model_file_path_is_refused(monkeypatch, tmp_path):
 
 
 def test_local_backend_uses_registry_and_embedding_facade(monkeypatch):
-    from better_code_review_graph.embeddings import LocalEmbeddingBackend
+    from crg.embeddings import LocalEmbeddingBackend
 
     class Vector:
         def tolist(self):
@@ -214,7 +214,7 @@ def test_local_backend_uses_registry_and_embedding_facade(monkeypatch):
 
 
 def test_local_backend_rejects_empty_registry(monkeypatch):
-    from better_code_review_graph.embeddings import LocalEmbeddingBackend
+    from crg.embeddings import LocalEmbeddingBackend
 
     class EmptyTextEmbedding:
         @classmethod
@@ -228,9 +228,9 @@ def test_local_backend_rejects_empty_registry(monkeypatch):
 
 
 def test_init_backend_returns_configured_builtin_backend(monkeypatch):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
-    from better_code_review_graph.embeddings import LocalEmbeddingBackend, init_backend
+    from crg import server
+    from crg.config import settings
+    from crg.embeddings import LocalEmbeddingBackend, init_backend
 
     monkeypatch.setattr(settings, "local_embedding_model", "builtin/reference-text")
     monkeypatch.setattr(server, "_maybe_register_custom_embed", lambda value: None)
@@ -247,7 +247,7 @@ def test_init_backend_returns_configured_builtin_backend(monkeypatch):
 
 
 def test_local_model_source_resolves_ids_and_manifest(tmp_path):
-    from better_code_review_graph.embeddings import _resolve_local_model_source
+    from crg.embeddings import _resolve_local_model_source
 
     assert _resolve_local_model_source("acme/model") == ("acme/model", None)
 
@@ -266,8 +266,8 @@ def test_local_model_source_resolves_ids_and_manifest(tmp_path):
 
 def test_non_qwen_manifest_uses_the_same_registration_path(monkeypatch, tmp_path):
     """Manifest ngoài Qwen đi qua cùng resolver với built-in model."""
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     model_dir = tmp_path / "tiny-e5"
     model_dir.mkdir()
@@ -292,7 +292,7 @@ def test_non_qwen_manifest_uses_the_same_registration_path(monkeypatch, tmp_path
 
 
 def test_manifest_registration_is_idempotent(monkeypatch, tmp_path):
-    from better_code_review_graph import server
+    from crg import server
 
     model_dir = tmp_path / "tiny-e5"
     model_dir.mkdir()
@@ -317,8 +317,8 @@ def test_manifest_registration_is_idempotent(monkeypatch, tmp_path):
 
 
 def test_custom_model_directory_without_manifest_is_refused(monkeypatch, tmp_path):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     model_dir = tmp_path / "missing-manifest"
     model_dir.mkdir()
@@ -330,8 +330,8 @@ def test_custom_model_directory_without_manifest_is_refused(monkeypatch, tmp_pat
 
 
 def test_custom_model_without_dim_is_refused(monkeypatch):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "acme/my-embedder")
     monkeypatch.setattr(settings, "local_embedding_dim", 0)
@@ -347,9 +347,9 @@ def test_custom_model_without_dim_is_refused(monkeypatch):
 
 
 def test_init_backend_fails_closed_without_dim(monkeypatch):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
-    from better_code_review_graph.embeddings import init_backend
+    from crg import server
+    from crg.config import settings
+    from crg.embeddings import init_backend
 
     monkeypatch.setattr(settings, "local_embedding_model", "acme/my-embedder")
     monkeypatch.setattr(settings, "local_embedding_dim", 0)
@@ -361,8 +361,8 @@ def test_init_backend_fails_closed_without_dim(monkeypatch):
 
 
 def test_custom_model_is_registered_with_every_declared_field(monkeypatch):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "acme/my-embedder")
     monkeypatch.setattr(settings, "local_embedding_dim", 512)
@@ -391,9 +391,9 @@ def test_non_qwen_manifest_loads_real_fastretrieval_runtime(tmp_path, monkeypatc
     """Exercise a non-Qwen ONNX artifact through the public runtime facade."""
     from fastretrieval.text.custom_text_embedding import CustomTextEmbedding
 
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
-    from better_code_review_graph.embeddings import init_backend
+    from crg import server
+    from crg.config import settings
+    from crg.embeddings import init_backend
 
     model_dir = tmp_path / "tiny-e5-runtime"
     (model_dir / "onnx").mkdir(parents=True)
@@ -434,8 +434,8 @@ def test_non_qwen_manifest_loads_real_fastretrieval_runtime(tmp_path, monkeypatc
 
 def test_registering_twice_is_not_fatal(monkeypatch):
     """Khởi động lại trong cùng process không làm server chết."""
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_model", "acme/my-embedder")
     monkeypatch.setattr(settings, "local_embedding_dim", 512)
@@ -449,8 +449,8 @@ def test_registering_twice_is_not_fatal(monkeypatch):
 
 
 def test_invalid_registration_error_is_not_swallowed(monkeypatch):
-    from better_code_review_graph import server
-    from better_code_review_graph.config import settings
+    from crg import server
+    from crg.config import settings
 
     monkeypatch.setattr(settings, "local_embedding_dim", 512)
     monkeypatch.setattr(settings, "local_embedding_pooling", "INVALID")

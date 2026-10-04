@@ -18,13 +18,13 @@ from hull_core.config.models import ModelCell
 from hull_core.http.ssrf import SSRFBlockedError
 from hull_core.providers.openai_spec import OpenAICompatClient
 
-from better_code_review_graph.credential_state import set_current_sub
-from better_code_review_graph.embeddings import resolve_embedding_chain
+from crg.credential_state import set_current_sub
+from crg.embeddings import resolve_embedding_chain
 
 
 @pytest.fixture(autouse=True)
 def _reset_subject():
-    from better_code_review_graph.credential_state import _current_sub
+    from crg.credential_state import _current_sub
 
     token = _current_sub.set(None)
     try:

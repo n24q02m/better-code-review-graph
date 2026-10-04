@@ -1,4 +1,4 @@
-"""Phase 5: Live MCP protocol test for better-code-review-graph.
+"""Phase 5: Live MCP protocol test for crg.
 
 Spawns the MCP server as a subprocess and communicates via the MCP protocol
 (JSON-RPC over stdio), testing ALL tools through the actual transport layer.
@@ -130,7 +130,7 @@ class TestLiveMCP:
     def _server_params() -> StdioServerParameters:
         return StdioServerParameters(
             command="uv",
-            args=["run", "better-code-review-graph"],
+            args=["run", "crg"],
             env={**os.environ, "EMBEDDING_BACKEND": "local"},
         )
 

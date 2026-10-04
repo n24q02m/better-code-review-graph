@@ -10,11 +10,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from better_code_review_graph.cli import main
+from crg.cli import main
 
 
 def _run(capsys, *argv: str) -> int:
-    sys.argv = ["better-code-review-graph", *argv]
+    sys.argv = ["crg", *argv]
     return main()
 
 
@@ -90,7 +90,7 @@ def test_server_start_forces_http_transport(capsys, tmp_path, monkeypatch) -> No
         seen["host"] = __import__("os").environ.get("MCP_HOST")
         seen["port"] = __import__("os").environ.get("MCP_PORT")
 
-    monkeypatch.setattr("better_code_review_graph.server.serve_main", fake_serve_main)
+    monkeypatch.setattr("crg.server.serve_main", fake_serve_main)
 
     rc = _run(capsys, "server", "start", "--host", "127.0.0.1", "--port", "60077")
     assert rc == 0
@@ -101,7 +101,7 @@ def test_server_start_keyboard_interrupt_is_clean(capsys, monkeypatch) -> None:
     def interrupted() -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("better_code_review_graph.server.serve_main", interrupted)
+    monkeypatch.setattr("crg.server.serve_main", interrupted)
     rc = _run(capsys, "server", "start")
     assert rc == 0
 
@@ -123,7 +123,7 @@ def test_server_start_refuses_no_auth_off_loopback(
         nonlocal serve_called  # noqa: F841
         serve_called = True  # pragma: no cover
 
-    monkeypatch.setattr("better_code_review_graph.server.serve_main", must_not_serve)
+    monkeypatch.setattr("crg.server.serve_main", must_not_serve)
     rc = _run(capsys, "server", "start", "--host", "0.0.0.0")
     err = capsys.readouterr().err
     assert rc == 2
@@ -149,7 +149,7 @@ def test_server_start_refuses_no_auth_config_host_off_loopback(
         nonlocal serve_called  # noqa: F841
         serve_called = True  # pragma: no cover
 
-    monkeypatch.setattr("better_code_review_graph.server.serve_main", must_not_serve)
+    monkeypatch.setattr("crg.server.serve_main", must_not_serve)
     rc = _run(capsys, "server", "start")
     err = capsys.readouterr().err
     assert rc == 2

@@ -1,5 +1,5 @@
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.tools import _handle_not_found
+from crg.parser import NodeInfo
+from crg.tools import _handle_not_found
 
 
 def test_handle_not_found_with_data(tmp_graph_store):

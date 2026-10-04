@@ -28,10 +28,10 @@ from pathlib import Path
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.temporal import TemporalIndex
-from better_code_review_graph.tools import (
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.temporal import TemporalIndex
+from crg.tools import (
     diff_graph,
     get_impact_radius,
     semantic_search_nodes,
@@ -74,11 +74,11 @@ def _make_function_node(
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Iterator[Path]:
-    """Build a fake repo workspace with .git + .better-code-review-graph/graph.db."""
+    """Build a fake repo workspace with .git + .crg/graph.db."""
     ws = tmp_path / "workspace"
     ws.mkdir()
     (ws / ".git").mkdir()
-    crg_dir = ws / ".better-code-review-graph"
+    crg_dir = ws / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
     yield ws
@@ -87,7 +87,7 @@ def workspace(tmp_path: Path) -> Iterator[Path]:
 @pytest.fixture
 def store(workspace: Path) -> Iterator[GraphStore]:
     """File-backed GraphStore inside the fake workspace."""
-    db_path = workspace / ".better-code-review-graph" / "graph.db"
+    db_path = workspace / ".crg" / "graph.db"
     s = GraphStore(str(db_path))
     yield s
     s.close()
@@ -348,7 +348,7 @@ def test_server_query_diff_action_dispatches(
     workspace: Path, store: GraphStore
 ) -> None:
     """The MCP `query` tool with action='diff' returns the diff payload."""
-    from better_code_review_graph.server import query as query_tool
+    from crg.server import query as query_tool
 
     idx_b = TemporalIndex(store, current_sha=_SHA_B)
     idx_b.upsert_node(_make_function_node(name="brand_new"))

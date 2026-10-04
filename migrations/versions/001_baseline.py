@@ -1,6 +1,6 @@
 """Baseline schema (Phase 2 Task 0).
 
-This migration mirrors ``better_code_review_graph.graph._SCHEMA_SQL`` exactly
+This migration mirrors ``crg.graph._SCHEMA_SQL`` exactly
 so that fresh databases created via alembic are byte-equivalent to those
 created by the legacy ``executescript(_SCHEMA_SQL)`` bootstrap. ``_SCHEMA_SQL``
 remains as a smoke comparator + safety net for one release; alembic is now

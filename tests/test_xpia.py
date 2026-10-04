@@ -1,13 +1,13 @@
 """Tests for the XPIA (cross-prompt-injection) envelope defense.
 
-better-code-review-graph reads and returns third-party source code from the
+crg reads and returns third-party source code from the
 repository it scans. That code is untrusted and must be wrapped so an LLM
 consuming a tool result treats it as DATA, not instructions.
 """
 
 from __future__ import annotations
 
-from better_code_review_graph.xpia import (
+from crg.xpia import (
     UNTRUSTED_SOURCE,
     UNTRUSTED_WARNING,
     build_external_tool_result,

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from better_code_review_graph.parser import CodeParser
+from crg.parser import CodeParser
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -437,8 +437,8 @@ def test_parse_file_without_repo_registry_keeps_repo_id_empty(tmp_path):
 
 def test_parse_file_with_repo_registry_populates_node_repo_id(tmp_path):
     """When repo_registry is provided, every node's repo_id == registry.assign(path)."""
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
 
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -479,9 +479,9 @@ def test_parse_file_cross_repo_resolution_via_dispatcher(tmp_path):
     we accept either since the resolver may normalise to the module's
     own basename when the imported symbol name is not threaded through).
     """
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.resolver import TargetRepo
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
+    from crg.resolver import TargetRepo
 
     # --- repo_a (target) ---
     repo_a = tmp_path / "repo_a"
@@ -544,9 +544,9 @@ def test_parse_file_cross_repo_unresolved_stays_within_repo(tmp_path):
     pyproject.toml so the resolver returns ``None`` and the edge keeps
     its single-repo bare target.
     """
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.resolver import TargetRepo
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
+    from crg.resolver import TargetRepo
 
     repo = tmp_path / "solo"
     repo.mkdir()
@@ -601,8 +601,8 @@ def test_build_resolver_stmt_per_language():
 
 def test_apply_federation_skips_when_path_outside_registry(tmp_path):
     """File outside any registered repo: repo_id stays empty (no exception)."""
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
 
     # Register a repo at one location; parse a file under a sibling
     # directory so registry.assign() raises ValueError, which the
@@ -632,9 +632,9 @@ def test_apply_federation_skips_when_path_outside_registry(tmp_path):
 
 def test_apply_federation_resolver_exception_swallowed(tmp_path, monkeypatch):
     """When the resolver raises, we leave the edge unchanged (single-repo)."""
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
-    from better_code_review_graph.resolver import TargetRepo
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
+    from crg.resolver import TargetRepo
 
     repo = tmp_path / "src_repo"
     repo.mkdir()
@@ -660,7 +660,7 @@ def test_apply_federation_resolver_exception_swallowed(tmp_path, monkeypatch):
             raise RuntimeError("synthetic resolver failure")
 
         monkeypatch.setattr(
-            "better_code_review_graph.resolver.resolve_cross_repo_imports",
+            "crg.resolver.resolve_cross_repo_imports",
             boom,
         )
 
@@ -682,8 +682,8 @@ def test_apply_federation_resolver_exception_swallowed(tmp_path, monkeypatch):
 
 def test_apply_federation_target_repos_empty_skips_resolution(tmp_path):
     """target_repos=[] short-circuits cross-repo resolution path."""
-    from better_code_review_graph.federation import RepoRegistry
-    from better_code_review_graph.graph import GraphStore
+    from crg.federation import RepoRegistry
+    from crg.graph import GraphStore
 
     repo = tmp_path / "solo"
     repo.mkdir()

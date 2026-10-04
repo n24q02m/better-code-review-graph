@@ -1,4 +1,4 @@
-"""Full/real live MCP protocol tests for better-code-review-graph.
+"""Full/real live MCP protocol tests for crg.
 
 Comprehensive tests covering ALL query patterns, graph lifecycle,
 review variants, cache cycle, and multi-language support.
@@ -133,7 +133,7 @@ def _parse_result_text(result) -> Any:
 def _server_params() -> StdioServerParameters:
     return StdioServerParameters(
         command="uv",
-        args=["run", "better-code-review-graph"],
+        args=["run", "crg"],
         env={**os.environ, "EMBEDDING_BACKEND": "local"},
     )
 
@@ -706,7 +706,7 @@ API_KEYS = os.environ.get("API_KEYS", "")
 def _cloud_server_params() -> StdioServerParameters:
     return StdioServerParameters(
         command="uv",
-        args=["run", "better-code-review-graph"],
+        args=["run", "crg"],
         env={**os.environ, "API_KEYS": API_KEYS},
     )
 

@@ -28,8 +28,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from better_code_review_graph.parser import CodeParser, EdgeInfo
-from better_code_review_graph.tools import (
+from crg.parser import CodeParser, EdgeInfo
+from crg.tools import (
     _build_response_header,
     _handle_not_found,
     _list_kinds_in_graph,
@@ -47,7 +47,7 @@ class TestEmbeddingsCountDoesNotFakeZero:
     def test_unreadable_embedding_store_is_not_reported_as_zero(self, tmp_path):
         """Zero is documented advice to run embed; it cannot fix this."""
         with patch(
-            "better_code_review_graph.tools.EmbeddingStore",
+            "crg.tools.EmbeddingStore",
             side_effect=RuntimeError(_BOOM),
         ):
             header = _build_response_header(None, tmp_path / "graph.db")
@@ -62,7 +62,7 @@ class TestEmbeddingsCountDoesNotFakeZero:
     def test_unreadable_embedding_store_is_logged_above_debug(self, tmp_path, caplog):
         caplog.set_level(logging.DEBUG)
         with patch(
-            "better_code_review_graph.tools.EmbeddingStore",
+            "crg.tools.EmbeddingStore",
             side_effect=RuntimeError(_BOOM),
         ):
             _build_response_header(None, tmp_path / "graph.db")
@@ -74,7 +74,7 @@ class TestEmbeddingsCountDoesNotFakeZero:
     def test_keyword_only_stays_true_when_the_store_is_unreadable(self, tmp_path):
         """A store that will not open cannot serve semantic search either."""
         with patch(
-            "better_code_review_graph.tools.EmbeddingStore",
+            "crg.tools.EmbeddingStore",
             side_effect=RuntimeError(_BOOM),
         ):
             header = _build_response_header(None, tmp_path / "graph.db")
@@ -223,7 +223,7 @@ class TestFederationResolverFailureIsAnnounced:
         """Today this except swallows to `resolved = None` with no log."""
         caplog.set_level(logging.DEBUG)
         with patch(
-            "better_code_review_graph.resolver.resolve_cross_repo_imports",
+            "crg.resolver.resolve_cross_repo_imports",
             side_effect=RuntimeError(_BOOM),
         ):
             CodeParser()._apply_federation(**federation_args)
@@ -241,7 +241,7 @@ class TestFederationResolverFailureIsAnnounced:
     def test_successful_resolution_stays_quiet(self, federation_args, caplog):
         caplog.set_level(logging.DEBUG)
         with patch(
-            "better_code_review_graph.resolver.resolve_cross_repo_imports",
+            "crg.resolver.resolve_cross_repo_imports",
             return_value="repo-b::other",
         ):
             CodeParser()._apply_federation(**federation_args)
@@ -262,7 +262,7 @@ class TestHealthyHeaderUnchanged:
         assert "graph_last_updated_error" not in header
 
     def test_working_store_reports_the_real_count(self, tmp_path):
-        with patch("better_code_review_graph.tools.EmbeddingStore") as mock_emb:
+        with patch("crg.tools.EmbeddingStore") as mock_emb:
             mock_emb.return_value.count.return_value = 42
             header = _build_response_header(None, tmp_path / "graph.db")
 
@@ -276,7 +276,7 @@ class TestAlembicDoesNotDisableApplicationLogging:
 
     ``migrations/env.py`` calls ``logging.config.fileConfig``, whose
     ``disable_existing_loggers`` argument defaults to ``True``. Every
-    ``better_code_review_graph.*`` logger is created at import time, long
+    ``crg.*`` logger is created at import time, long
     before any migration runs, so the default set ``disabled = True`` on all
     of them for the rest of the process.
 
@@ -293,7 +293,7 @@ class TestAlembicDoesNotDisableApplicationLogging:
         from alembic import command
         from alembic.config import Config
 
-        from better_code_review_graph import tools as tools_module
+        from crg import tools as tools_module
 
         repo_root = Path(__file__).resolve().parent.parent
         cfg = Config(str(repo_root / "alembic.ini"))

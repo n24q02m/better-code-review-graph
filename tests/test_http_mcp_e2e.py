@@ -3,7 +3,7 @@
 Chain under test:
   1. tmp instance config (``CRG_CONFIG_DIR``) in token mode, hash produced by
      hull-core's ``hash_token`` (same primitive as the ``token hash`` CLI).
-  2. ``python -m better_code_review_graph server start`` subprocess (host
+  2. ``python -m crg server start`` subprocess (host
      control plane restored on wp2-wip).
   3. streamable-http MCP client: initialize / list_tools / graph build /
      query callers_of over ``/mcp`` with a bearer token.
@@ -100,7 +100,7 @@ def http_server(tmp_path: Path, seeded_repo: Path) -> Iterator[tuple[int, str]]:
             # main's CLI: bare/leading-dash invocation starts the server
             # (no `server start` subcommand on this line); --http selects
             # the streamable-HTTP transport over the default stdio.
-            [sys.executable, "-m", "better_code_review_graph", "--http"],
+            [sys.executable, "-m", "crg", "--http"],
             env=env,
             stdout=log_fh,
             stderr=subprocess.STDOUT,

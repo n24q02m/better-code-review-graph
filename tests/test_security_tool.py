@@ -15,14 +15,14 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.security import Tag
-from better_code_review_graph.security.semgrep_engine import (
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.security import Tag
+from crg.security.semgrep_engine import (
     SemgrepNotAvailable,
     SemgrepResult,
 )
-from better_code_review_graph.tools import (
+from crg.tools import (
     _load_last_scan,
     _load_suppressions,
     _save_suppressions,
@@ -48,7 +48,7 @@ def _make_repo_with_node(
 ) -> tuple[Path, str]:
     """Materialise a repo root + a single Function node + return (root, qname)."""
     (tmp_path / ".git").mkdir(exist_ok=True)
-    crg_dir = tmp_path / ".better-code-review-graph"
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir(exist_ok=True)
     db_path = crg_dir / "graph.db"
 
@@ -103,7 +103,7 @@ def test_security_scan_semgrep_returns_error_when_cli_missing(tmp_path: Path) ->
         raise SemgrepNotAvailable("semgrep not installed for test")
 
     with patch(
-        "better_code_review_graph.tools.SemgrepScanner.__init__",
+        "crg.tools.SemgrepScanner.__init__",
         new=_raise,
     ):
         payload = security_scan(repo_root=str(root), engine="semgrep")
@@ -129,7 +129,7 @@ def test_security_scan_semgrep_uses_scanner_when_available(tmp_path: Path) -> No
         def scan_path(self, target):
             return SemgrepResult(tags=[fake_tag], raw_output="{}")
 
-    with patch("better_code_review_graph.tools.SemgrepScanner", new=_FakeScanner):
+    with patch("crg.tools.SemgrepScanner", new=_FakeScanner):
         payload = security_scan(repo_root=str(root), engine="semgrep")
     assert payload["engine"] == "semgrep"
     assert payload["total"] == 1
@@ -140,7 +140,7 @@ def test_security_scan_semgrep_uses_scanner_when_available(tmp_path: Path) -> No
 def test_security_scan_caches_last_scan_to_disk(tmp_path: Path) -> None:
     root, _ = _make_repo_with_node(tmp_path)
     payload = security_scan(repo_root=str(root))
-    cache_path = root / ".better-code-review-graph" / "security-last-scan.json"
+    cache_path = root / ".crg" / "security-last-scan.json"
     assert cache_path.is_file(), "cache file should be written"
     cached = json.loads(cache_path.read_text(encoding="utf-8"))
     assert cached == payload
@@ -149,7 +149,7 @@ def test_security_scan_caches_last_scan_to_disk(tmp_path: Path) -> None:
 def test_security_scan_persists_security_tags_to_nodes(tmp_path: Path) -> None:
     root, qname = _make_repo_with_node(tmp_path)
     security_scan(repo_root=str(root))
-    db_path = root / ".better-code-review-graph" / "graph.db"
+    db_path = root / ".crg" / "graph.db"
     store = GraphStore(db_path)
     try:
         row = store._conn.execute(
@@ -203,7 +203,7 @@ def test_security_report_returns_sarif_when_format_sarif(tmp_path: Path) -> None
     assert sarif["version"] == "2.1.0"
     assert "runs" in sarif and len(sarif["runs"]) == 1
     run = sarif["runs"][0]
-    assert run["tool"]["driver"]["name"] == "better-code-review-graph"
+    assert run["tool"]["driver"]["name"] == "crg"
     assert run["results"], "SARIF run should carry at least one result"
     first = run["results"][0]
     assert first["ruleId"] == "cwe-89-sql-string-format"
@@ -285,7 +285,7 @@ def test_security_rule_list_semgrep_with_overlay() -> None:
 
 def test_security_rule_list_semgrep_no_overlay(monkeypatch) -> None:
     monkeypatch.setattr(
-        "better_code_review_graph.tools._resolve_overlay_rules_dir",
+        "crg.tools._resolve_overlay_rules_dir",
         lambda: None,
     )
     payload = security_rule_list(engine="semgrep")
@@ -304,14 +304,14 @@ def test_load_suppressions_returns_empty_when_file_missing(tmp_path: Path) -> No
 
 
 def test_load_suppressions_handles_corrupt_file(tmp_path: Path) -> None:
-    sup_path = tmp_path / ".better-code-review-graph" / "security-suppressions.json"
+    sup_path = tmp_path / ".crg" / "security-suppressions.json"
     sup_path.parent.mkdir(parents=True, exist_ok=True)
     sup_path.write_text("not-json", encoding="utf-8")
     assert _load_suppressions(tmp_path) == set()
 
 
 def test_load_suppressions_rejects_non_list_payload(tmp_path: Path) -> None:
-    sup_path = tmp_path / ".better-code-review-graph" / "security-suppressions.json"
+    sup_path = tmp_path / ".crg" / "security-suppressions.json"
     sup_path.parent.mkdir(parents=True, exist_ok=True)
     sup_path.write_text('{"not": "a list"}', encoding="utf-8")
     assert _load_suppressions(tmp_path) == set()
@@ -344,7 +344,7 @@ def test_security_scan_semgrep_filters_suppressed_tag(tmp_path: Path) -> None:
                 raw_output="{}",
             )
 
-    with patch("better_code_review_graph.tools.SemgrepScanner", new=_FakeScanner):
+    with patch("crg.tools.SemgrepScanner", new=_FakeScanner):
         payload = security_scan(repo_root=str(root), engine="semgrep")
     assert payload["total"] == 1
     assert "semgrep-rule-y" in payload["by_rule"]
@@ -356,7 +356,7 @@ def test_load_last_scan_returns_none_when_missing(tmp_path: Path) -> None:
 
 
 def test_load_last_scan_handles_corrupt_file(tmp_path: Path) -> None:
-    cache_path = tmp_path / ".better-code-review-graph" / "security-last-scan.json"
+    cache_path = tmp_path / ".crg" / "security-last-scan.json"
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text("{not json", encoding="utf-8")
     assert _load_last_scan(tmp_path) is None
@@ -368,7 +368,7 @@ def test_load_last_scan_handles_corrupt_file(tmp_path: Path) -> None:
 
 
 def test_server_security_tool_dispatches_scan(tmp_path: Path) -> None:
-    from better_code_review_graph.server import security as security_tool
+    from crg.server import security as security_tool
 
     root, _ = _make_repo_with_node(tmp_path)
     payload = security_tool(action="scan", repo_root=str(root))
@@ -377,7 +377,7 @@ def test_server_security_tool_dispatches_scan(tmp_path: Path) -> None:
 
 
 def test_server_security_tool_dispatches_report(tmp_path: Path) -> None:
-    from better_code_review_graph.server import security as security_tool
+    from crg.server import security as security_tool
 
     root, _ = _make_repo_with_node(tmp_path)
     security_scan(repo_root=str(root))
@@ -386,7 +386,7 @@ def test_server_security_tool_dispatches_report(tmp_path: Path) -> None:
 
 
 def test_server_security_tool_dispatches_suppress(tmp_path: Path) -> None:
-    from better_code_review_graph.server import security as security_tool
+    from crg.server import security as security_tool
 
     root, _ = _make_repo_with_node(tmp_path)
     payload = security_tool(action="suppress", repo_root=str(root), rule_id="cwe-89")
@@ -395,7 +395,7 @@ def test_server_security_tool_dispatches_suppress(tmp_path: Path) -> None:
 
 
 def test_server_security_tool_dispatches_rule_list(tmp_path: Path) -> None:
-    from better_code_review_graph.server import security as security_tool
+    from crg.server import security as security_tool
 
     payload = security_tool(action="rule_list", engine="heuristic")
     assert payload["engine"] == "heuristic"
@@ -403,7 +403,7 @@ def test_server_security_tool_dispatches_rule_list(tmp_path: Path) -> None:
 
 
 def test_server_security_tool_invalid_action_returns_error() -> None:
-    from better_code_review_graph.server import security as security_tool
+    from crg.server import security as security_tool
 
     payload = security_tool(action="bogus")
     assert "error" in payload
@@ -411,7 +411,7 @@ def test_server_security_tool_invalid_action_returns_error() -> None:
 
 
 def test_parse_simple_yaml_with_hash_in_quotes():
-    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+    from crg.security.heuristic import _parse_simple_yaml
 
     yaml_text = """
 id: regex-with-hash
@@ -424,7 +424,7 @@ message: "Test message"
 
 
 def test_parse_simple_yaml_with_colon_in_quotes():
-    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+    from crg.security.heuristic import _parse_simple_yaml
 
     yaml_text = """
 id: regex-with-colon
@@ -438,7 +438,7 @@ message: "Insecure http link: please update to https:// :)"
 
 
 def test_parse_simple_yaml_with_comment():
-    from better_code_review_graph.security.heuristic import _parse_simple_yaml
+    from crg.security.heuristic import _parse_simple_yaml
 
     yaml_text = """
 id: regex-with-comment

@@ -1,17 +1,17 @@
 # Better Code Review Graph
 
-> **Renamed (2026-09-13):** repo is now `crg` — CLI-first (`crg` command). PyPI package stays `better-code-review-graph`; MCP server is a secondary surface.
+> **Renamed (2026-09-13):** repo is now `crg` — CLI-first (`crg` command). PyPI package stays `crg`; MCP server is a secondary surface.
 
-mcp-name: io.github.n24q02m/better-code-review-graph
+mcp-name: io.github.n24q02m/crg
 
 **Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.**
 
 <!-- Badge Row 1: Status -->
 [![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/crg/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/crg/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/n24q02m/better-code-review-graph/graph/badge.svg)](https://codecov.io/gh/n24q02m/better-code-review-graph)
+[![codecov](https://codecov.io/gh/n24q02m/crg/graph/badge.svg)](https://codecov.io/gh/n24q02m/crg)
 [![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
-[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/better-code-review-graph)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/github/license/n24q02m/crg)](LICENSE)
 
 <!-- Badge Row 2: Tech -->
 [![Python](https://img.shields.io/badge/Python_3.13-3776AB?logo=python&logoColor=white)](#)
@@ -26,7 +26,7 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 | Project | Tagline | Tag |
 |---|---|---|
 | [agent-chat-plugin](https://github.com/n24q02m/agent-chat-plugin) | Peer AI agents chat in a shared folder — no human relay, no orchestrator, wor... | Tooling |
-| [better-code-review-graph](https://github.com/n24q02m/crg) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
+| [crg](https://github.com/n24q02m/crg) | Knowledge graph for token-efficient code reviews -- semantic search and call-... | MCP |
 | [better-drive](https://github.com/n24q02m/better-drive) | 2-way Google Drive sync with .driveignore filter — rclone engine, Windows tray | Tooling |
 | [better-email-mcp](https://github.com/n24q02m/better-email-mcp) | IMAP/SMTP email for AI agents -- read, send, organize folders, and manage att... | MCP |
 | [better-godot-mcp](https://github.com/n24q02m/better-godot-mcp) | Composite MCP server for Godot Engine -- 17 composite tools for AI-assisted g... | MCP |
@@ -49,15 +49,15 @@ mcp-name: io.github.n24q02m/better-code-review-graph
 <!-- END: AUTO-GENERATED-CROSS-PROMO -->
 
 <!-- Glama badge -->
-<a href="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/better-code-review-graph/badge" alt="better-code-review-graph MCP server" />
+<a href="https://glama.ai/mcp/servers/n24q02m/crg">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/n24q02m/crg/badge" alt="crg MCP server" />
 </a>
 
 An MCP server that parses your codebase with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a structural graph of functions/classes/imports, and gives Claude (or any MCP client) precise context so it reads only what matters instead of the whole tree. Semantic search runs through the local ONNX model registry from [fastretrieval](https://github.com/n24q02m/fastretrieval) by default (zero config, no API key), with an optional cloud embedding chain. Fork of [code-review-graph](https://github.com/tirth8205/code-review-graph) with fixed multi-word search, qualified call resolution, dual-mode embeddings, output pagination, and production CI/CD.
 
 ## v2.0 migration (BREAKING)
 
-v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + edge) and an opt-in security scanner. The schema migration is auto-applied on first `GraphStore` open, and a backup of the pre-2.0 DB is saved to `<graph_db>.pre-2.0.bak` so you can roll back. See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full schema-change list, behavior changes, environment requirements, and the downgrade procedure (`CRG_DOWNGRADE_TO_1_X=1 uv run better-code-review-graph`).
+v2.0 adds temporal columns (`valid_from_sha` / `valid_to_sha` on every node + edge) and an opt-in security scanner. The schema migration is auto-applied on first `GraphStore` open, and a backup of the pre-2.0 DB is saved to `<graph_db>.pre-2.0.bak` so you can roll back. See [BREAKING_CHANGES.md](BREAKING_CHANGES.md) for the full schema-change list, behavior changes, environment requirements, and the downgrade procedure (`CRG_DOWNGRADE_TO_1_X=1 uv run crg`).
 
 ## Table of contents
 
@@ -107,7 +107,7 @@ MCP stdio remains a secondary protocol adapter for clients that require it:
 ```json
 {
   "mcpServers": {
-    "better-code-review-graph": {
+    "crg": {
       "command": "uvx",
       "args": ["--python", "3.13", "better-code-review-graph"],
       "env": { "MCP_TRANSPORT": "stdio" }
@@ -121,7 +121,7 @@ Install matrix (stdio unless noted; the CLI-first usage above stays the primary 
 | Client | Install |
 |---|---|
 | Claude Code (plugin) | `/plugin marketplace add n24q02m/claude-plugins` then `/plugin install better-code-review-graph@n24q02m-plugins` |
-| Claude Code (stdio) | `claude mcp add better-code-review-graph -- uvx --python 3.13 better-code-review-graph` |
+| Claude Code (stdio) | `claude mcp add crg -- uvx --python 3.13 better-code-review-graph` |
 | Codex | register stdio command `uvx --python 3.13 better-code-review-graph` under `mcp_servers` in `~/.codex/config.toml` |
 | Gemini CLI | add the `mcpServers` JSON above to `~/.gemini/settings.json` |
 | Cursor / Windsurf | add the `mcpServers` JSON above via the client's MCP settings (`mcp.json`) |
@@ -129,7 +129,7 @@ Install matrix (stdio unless noted; the CLI-first usage above stays the primary 
 
 **Install with an AI agent** -- paste this to your AI coding agent:
 
-> Install MCP server `better-code-review-graph` following the steps at
+> Install MCP server `crg` following the steps at
 > https://raw.githubusercontent.com/n24q02m/claude-plugins/main/plugins/better-code-review-graph/setup-with-agent.md
 
 Full CLI usage is in [CLI](#cli). Optional per-client MCP setup is at
@@ -143,7 +143,7 @@ CRG is local-first for coding workflows:
   impact analysis, review context, security scans, and repository onboarding.
 - **MCP stdio is the secondary protocol adapter** over the same local domain
   services; it does not maintain a separate graph implementation.
-- Graph state stays in `<repo>/.better-code-review-graph/graph.db` unless an explicit
+- Graph state stays in `<repo>/.crg/graph.db` unless an explicit
   multi-user/self-host configuration selects another data directory.
 - PyPI, CI, security scanning, GitHub releases, and eligible stable MCP Registry
   publication remain active. Historical public OCI tags are retained, but new
@@ -163,7 +163,7 @@ flow (see [Configuration](#configuration) below). The launch command is the same
 startCommand:
   type: stdio
   commandFunction: |-
-    (config) => ({ command: 'uvx', args: ['--python', '3.13', 'better-code-review-graph'] })
+    (config) => ({ command: 'uvx', args: ['--python', '3.13', 'crg'] })
 ```
 
 ## Configuration
@@ -242,7 +242,7 @@ not invoke the reranker.
 ```json
 {
   "mcpServers": {
-    "better-code-review-graph": {
+    "crg": {
       "command": "uvx",
       "args": ["--python", "3.13", "better-code-review-graph"],
       "env": {
@@ -349,7 +349,7 @@ descriptions above are insufficient.
 ## CLI
 
 The package installs two console scripts: **`crg`** (primary) and
-`better-code-review-graph` (legacy long name). Running either with **no
+`crg` (legacy long name). Running either with **no
 arguments** starts the MCP server over stdio; a leading positional argument
 routes to a local CLI subcommand that calls the same domain services used by
 the MCP adapter. Run them directly after `pip install`, or without a
@@ -393,7 +393,7 @@ CLI subcommands print structured JSON and exit non-zero on an error.
 
 What this fork fixes versus the upstream [code-review-graph](https://github.com/tirth8205/code-review-graph):
 
-| Feature | code-review-graph | better-code-review-graph |
+| Feature | code-review-graph | crg |
 |:--------|:------------------|:-------------------------|
 | Multi-word search | Broken (literal substring) | AND-logic word splitting |
 | callers_of/callees_of | Empty results (bare name targets) | Qualified name resolution + bare fallback |
@@ -404,9 +404,9 @@ What this fork fixes versus the upstream [code-review-graph](https://github.com/
 
 ## Comparison
 
-How better-code-review-graph stacks up against direct competitors in each pillar:
+How crg stacks up against direct competitors in each pillar:
 
-| Capability | better-code-review-graph | Greptile | Sourcegraph (Cody / MCP) | CodeGraph (colbymchenry) |
+| Capability | crg | Greptile | Sourcegraph (Cody / MCP) | CodeGraph (colbymchenry) |
 |---|---|---|---|---|
 | Codebase knowledge graph | Yes (Tree-sitter, 14 langs, SQLite) | Yes (functions/classes/deps) | Yes (precise code indexing) | Yes (Tree-sitter, 20+ langs, SQLite) |
 | Persistent incremental updates | Yes (git-diff + file-hash re-parse) | ? | Yes (continuous indexing) | Yes (OS file-watcher debounced) |
@@ -432,10 +432,10 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ```bash
 git clone https://github.com/n24q02m/crg
-cd better-code-review-graph
+cd crg
 uv sync --group dev
 uv run pytest
-uv run better-code-review-graph
+uv run crg
 ```
 
 **Requirements:** Python 3.13, [uv](https://docs.astral.sh/uv/).
@@ -446,17 +446,18 @@ This plugin implements **TC-Local** (machine-bound, single trust principal). See
 
 | Mode | Graph DB | Cloud credentials | Who can read your data? |
 |---|---|---|---|
-| stdio (default) | `<repo>/.better-code-review-graph/graph.db` (git-ignored) | `~/.better-code-review-graph-mcp/config.json` (AES-GCM, machine-bound key) | Only your OS user |
+| stdio (default) | `<repo>/.crg/graph.db` (git-ignored) | `~/.crg/config.toml` (AES-GCM, machine-bound key) | Only your OS user |
 | HTTP self-host (multi-user) | Per-user `~/.crg/subs/<sub>/graph.db` | Per-user `~/.crg/subs/<sub>/config.json` | Only the authenticated user |
 
 ## Migration & changelog
 
 Graph, security scan cache, and suppression state now use the package-owned
-`.better-code-review-graph/` directory. Run `graph(action="build", full_rebuild=true)`
+`.crg/` directory. Run `graph(action="build", full_rebuild=true)`
 once after upgrading, followed by `graph(action="embed")` if semantic search is
-needed. The ambiguous old `.code-review-graph/` and `.code-review-graph.db` paths
-and their SQLite sidecars are left untouched: they may belong to the separate
-upstream package. Review and reapply any desired suppression rules explicitly.
+needed. The old `.better-code-review-graph/` state directory plus the ambiguous
+`.code-review-graph/` and `.code-review-graph.db` paths and their SQLite
+sidecars are left untouched, not migrated. Review and reapply any desired
+suppression rules explicitly.
 
 The v2.0 release added **temporal columns** (`valid_from_sha` / `valid_to_sha`
 on every node and edge) plus an opt-in security scanner. The schema migration

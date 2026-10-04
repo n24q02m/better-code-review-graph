@@ -36,7 +36,7 @@ class MockModule(MagicMock):
 def _get_build_or_update_graph():
     # If already available, just return it
     try:
-        from better_code_review_graph.tools import build_or_update_graph
+        from crg.tools import build_or_update_graph
 
         return build_or_update_graph
     except (ImportError, ModuleNotFoundError):
@@ -47,7 +47,7 @@ def _get_build_or_update_graph():
                 mocks[mod] = MockModule()
 
         with patch.dict(sys.modules, mocks):
-            from better_code_review_graph.tools import build_or_update_graph
+            from crg.tools import build_or_update_graph
 
             return build_or_update_graph
 
@@ -57,11 +57,11 @@ build_or_update_graph = _get_build_or_update_graph()
 
 def test_build_or_update_graph_full_rebuild_error():
     """Test that build_or_update_graph handles errors during full build."""
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         mock_store = MagicMock()
         mock_get_store.return_value = (mock_store, MagicMock())
 
-        with patch("better_code_review_graph.tools.full_build") as mock_full_build:
+        with patch("crg.tools.full_build") as mock_full_build:
             mock_full_build.side_effect = Exception("Full build failed")
 
             result = build_or_update_graph(full_rebuild=True)
@@ -73,13 +73,11 @@ def test_build_or_update_graph_full_rebuild_error():
 
 def test_build_or_update_graph_incremental_update_error():
     """Test that build_or_update_graph handles errors during incremental update."""
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         mock_store = MagicMock()
         mock_get_store.return_value = (mock_store, MagicMock())
 
-        with patch(
-            "better_code_review_graph.tools.incremental_update"
-        ) as mock_inc_update:
+        with patch("crg.tools.incremental_update") as mock_inc_update:
             mock_inc_update.side_effect = Exception("Incremental update failed")
 
             result = build_or_update_graph(full_rebuild=False)

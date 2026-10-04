@@ -14,10 +14,10 @@ import json
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.security.heuristic import Tag
-from better_code_review_graph.tools import _persist_security_tags, security_scan
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.security.heuristic import Tag
+from crg.tools import _persist_security_tags, security_scan
 
 
 @pytest.fixture
@@ -127,8 +127,8 @@ def test_security_scan_payload_shape(tmp_path):
     shape and doesn't crash even though the cursor-iteration codepath
     can no longer use ``len(rows)`` accounting."""
     # `_validate_repo_root` requires either a ``.git`` ancestor or
-    # a ``.better-code-review-graph`` directory before it will accept ``repo_root``.
-    crg_dir = tmp_path / ".better-code-review-graph"
+    # a ``.crg`` directory before it will accept ``repo_root``.
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir()
     db_path = crg_dir / "graph.db"
     store = GraphStore(str(db_path))

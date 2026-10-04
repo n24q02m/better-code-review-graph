@@ -50,8 +50,8 @@ def _get_tools_module():
             mocks[mod] = MockModule()
 
     with patch.dict(sys.modules, mocks):
-        import better_code_review_graph.tools as tools_mod
-        from better_code_review_graph.graph import GraphStats as stats_class
+        import crg.tools as tools_mod
+        from crg.graph import GraphStats as stats_class
 
         return tools_mod, stats_class
 

@@ -7,7 +7,7 @@ for parsers / incremental update to map a filesystem path back to its
 owning repo.
 
 The registry is intentionally a thin layer on top of the SQLite
-connection owned by :class:`~better_code_review_graph.graph.GraphStore`.
+connection owned by :class:`~crg.graph.GraphStore`.
 Federation concerns live here rather than in ``GraphStore`` so the
 public graph API stays focused on nodes / edges; the connection access
 is package-private (``store._conn``).

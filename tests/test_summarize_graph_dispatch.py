@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.summarizer import (
+from crg.graph import GraphStore
+from crg.summarizer import (
     BatchSummarizeResult,
     JevRankingReceipt,
 )
-from better_code_review_graph.tools import summarize_graph_dispatch
+from crg.tools import summarize_graph_dispatch
 
 
 def test_dispatch_returns_skipped_when_no_provider(tmp_path, monkeypatch):
@@ -18,7 +18,7 @@ def test_dispatch_returns_skipped_when_no_provider(tmp_path, monkeypatch):
         monkeypatch.delenv(k, raising=False)
 
     # Use the same store init pattern as other tools tests
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         mock_get_store.return_value = (store, tmp_path)
         try:
@@ -46,13 +46,11 @@ def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):
         jev_ranking=JevRankingReceipt(used=False),
     )
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         mock_get_store.return_value = (store, tmp_path)
         try:
-            with patch(
-                "better_code_review_graph.summarizer.batch_summarize"
-            ) as mock_batch:
+            with patch("crg.summarizer.batch_summarize") as mock_batch:
                 mock_batch.return_value = fake_result
                 result = summarize_graph_dispatch(repo_root=str(tmp_path), max_nodes=10)
         finally:
@@ -86,13 +84,11 @@ def test_dispatch_summary_string_mentions_errors_when_present(tmp_path, monkeypa
         errors=1,
     )
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         mock_get_store.return_value = (store, tmp_path)
         try:
-            with patch(
-                "better_code_review_graph.summarizer.batch_summarize"
-            ) as mock_batch:
+            with patch("crg.summarizer.batch_summarize") as mock_batch:
                 mock_batch.return_value = fake_result
                 result = summarize_graph_dispatch(repo_root=str(tmp_path))
         finally:
@@ -105,7 +101,7 @@ def test_dispatch_returns_error_on_invalid_max_nodes(tmp_path, monkeypatch):
     """max_nodes <= 0 → status='error' with ValueError message (caught from batch_summarize)."""
     monkeypatch.setenv("GEMINI_API_KEY", "g-key")
 
-    with patch("better_code_review_graph.tools._get_store") as mock_get_store:
+    with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))
         mock_get_store.return_value = (store, tmp_path)
         try:

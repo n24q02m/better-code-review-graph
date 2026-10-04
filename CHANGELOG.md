@@ -2,6 +2,53 @@
 
 <!-- version list -->
 
+## v3.29.7-beta.1 (2026-10-03)
+
+### Bug Fixes
+
+- Hold every Renovate update for 7 days ([#1129](https://github.com/n24q02m/crg/pull/1129),
+  [`e21045e`](https://github.com/n24q02m/crg/commit/e21045ebc9e1071c69935cd0772d688695002641))
+
+- Make release dispatch-only (remove push-triggered stable)
+  ([#1121](https://github.com/n24q02m/crg/pull/1121),
+  [`39e863e`](https://github.com/n24q02m/crg/commit/39e863ec88f4a3f99b95960213c718efe5ee5557))
+
+- Make the ty type check a blocking gate and clear its diagnostics
+  ([#1128](https://github.com/n24q02m/crg/pull/1128),
+  [`1d0538a`](https://github.com/n24q02m/crg/commit/1d0538ac29fb6d5f8ee48bd81c694c04e4fa9766))
+
+- Make the ty type check a blocking gate in CI and pre-commit
+  ([#1128](https://github.com/n24q02m/crg/pull/1128),
+  [`1d0538a`](https://github.com/n24q02m/crg/commit/1d0538ac29fb6d5f8ee48bd81c694c04e4fa9766))
+
+- Satisfy ty blocking gate after hull-core pin bump
+  ([#1128](https://github.com/n24q02m/crg/pull/1128),
+  [`1d0538a`](https://github.com/n24q02m/crg/commit/1d0538ac29fb6d5f8ee48bd81c694c04e4fa9766))
+
+- **cd**: Grant id-token write + pypi environment for uv publish OIDC
+  ([#1133](https://github.com/n24q02m/crg/pull/1133),
+  [`1426035`](https://github.com/n24q02m/crg/commit/1426035ae06b27b26fdc73e9831c0859f8a945ca))
+
+- **deps**: Lock file maintenance ([#1131](https://github.com/n24q02m/crg/pull/1131),
+  [`56fdd88`](https://github.com/n24q02m/crg/commit/56fdd880af852cc730ccf1e8228e8517fa4ac64a))
+
+- **deps**: Lock file maintenance ([#1125](https://github.com/n24q02m/crg/pull/1125),
+  [`416021a`](https://github.com/n24q02m/crg/commit/416021af3758f3d2dbd28e930d95526aabb7aaf4))
+
+- **deps**: Point hull-core at the merged single-dist commit
+  ([`bc8dcae`](https://github.com/n24q02m/crg/commit/bc8dcae4de568fb9e4ee64e1dcb642fab93ef873))
+
+- **deps**: Update n24q02m/better-semantic-release action to v1.7.3
+  ([#1130](https://github.com/n24q02m/crg/pull/1130),
+  [`4a3ec2e`](https://github.com/n24q02m/crg/commit/4a3ec2e10e0a1efe1500a9daf8512b42d401cb17))
+
+- **deps**: Update patch dependencies ([#1124](https://github.com/n24q02m/crg/pull/1124),
+  [`08d086c`](https://github.com/n24q02m/crg/commit/08d086ce8a67edfab031ea657e88161f2713bc04))
+
+- **deps**: Update ruff to v0.16.9 ([#1126](https://github.com/n24q02m/crg/pull/1126),
+  [`579332f`](https://github.com/n24q02m/crg/commit/579332f52f72703bcdc422f0b2d0835cd6aad35f))
+
+
 ## v3.29.6 (2026-09-29)
 
 ### Bug Fixes

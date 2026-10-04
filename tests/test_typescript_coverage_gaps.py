@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from better_code_review_graph.resolver.typescript import (
+from crg.resolver.typescript import (
     _expand_alias,
     _read_tsconfig_paths,
     _read_workspaces,

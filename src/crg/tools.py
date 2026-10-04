@@ -311,19 +311,16 @@ def _validate_repo_root(path: Path) -> Path:
     """Validate that a path is a plausible project root.
 
     Ensures the path is an existing directory that contains a ``.git``
-    or ``.better-code-review-graph`` directory, preventing arbitrary file-system
+    or ``.crg`` directory, preventing arbitrary file-system
     traversal via the ``repo_root`` parameter.
     """
     resolved = path.resolve()
     if not resolved.is_dir():
         raise ValueError(f"repo_root is not an existing directory: {resolved}")
-    if (
-        not (resolved / ".git").exists()
-        and not (resolved / ".better-code-review-graph").exists()
-    ):
+    if not (resolved / ".git").exists() and not (resolved / ".crg").exists():
         raise ValueError(
             f"repo_root does not look like a project root (no .git or "
-            f".better-code-review-graph directory found): {resolved}"
+            f".crg directory found): {resolved}"
         )
     return resolved
 
@@ -554,7 +551,7 @@ def _full_build_federated(
 
     Each entry in ``roots`` is registered with :class:`RepoRegistry` so
     nodes/edges parsed under it inherit the matching ``repo_id``. The
-    primary ``repo_root`` (the one whose ``.better-code-review-graph`` dir backs
+    primary ``repo_root`` (the one whose ``.crg`` dir backs
     the DB) is registered too so its files don't fall outside every
     root and lose their ``repo_id``.
     """
@@ -3122,7 +3119,7 @@ def find_large_functions(
 # Tool 10: security (Phase 3 Task 5) -- scan / report / suppress / rule_list
 # ---------------------------------------------------------------------------
 
-_SUPPRESS_PATH_DEFAULT = ".better-code-review-graph/security-suppressions.json"
+_SUPPRESS_PATH_DEFAULT = ".crg/security-suppressions.json"
 _LAST_SCAN_CACHE_FILENAME = "security-last-scan.json"
 
 
@@ -3367,14 +3364,14 @@ def _save_suppressions(root: Path, suppressions: list[str]) -> None:
 
 def _cache_last_scan(root: Path, payload: dict[str, Any]) -> None:
     """Cache the most recent scan payload so ``security_report`` can re-emit it."""
-    cache_path = root / ".better-code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path = root / ".crg" / _LAST_SCAN_CACHE_FILENAME
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _load_last_scan(root: Path) -> dict[str, Any] | None:
     """Return the cached scan payload, or ``None`` if absent/corrupt."""
-    cache_path = root / ".better-code-review-graph" / _LAST_SCAN_CACHE_FILENAME
+    cache_path = root / ".crg" / _LAST_SCAN_CACHE_FILENAME
     if not cache_path.is_file():
         return None
     try:
@@ -3410,10 +3407,8 @@ def _to_sarif(payload: dict[str, Any]) -> dict[str, Any]:
             {
                 "tool": {
                     "driver": {
-                        "name": "better-code-review-graph",
-                        "informationUri": (
-                            "https://github.com/n24q02m/better-code-review-graph"
-                        ),
+                        "name": "crg",
+                        "informationUri": ("https://github.com/n24q02m/crg"),
                     }
                 },
                 "results": results,

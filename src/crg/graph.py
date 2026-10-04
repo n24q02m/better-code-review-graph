@@ -66,7 +66,7 @@ def _resolve_migrations_dir() -> Path:
     Two layouts are supported:
 
     * **Installed wheel**: the directory is force-included as the
-      top-level ``better_code_review_graph_migrations`` package via Hatch
+      top-level ``crg_migrations`` package via Hatch
       ``shared-data`` (see ``pyproject.toml``). We resolve it through
       ``importlib.resources``.
     * **Editable / source checkout**: walk up from this file to the repo
@@ -90,7 +90,7 @@ def _resolve_migrations_dir() -> Path:
     try:
         from importlib.resources import files as _files
 
-        ref = _files("better_code_review_graph_migrations")
+        ref = _files("crg_migrations")
         env_py = ref.joinpath("env.py")
         if isinstance(env_py, Path) and env_py.is_file():
             return Path(env_py).parent
@@ -100,7 +100,7 @@ def _resolve_migrations_dir() -> Path:
     except ModuleNotFoundError as exc:
         attempted.append(f"installed package import failed: {exc}")
 
-    # Layout 2: editable / source checkout. src/better_code_review_graph/
+    # Layout 2: editable / source checkout. src/crg/
     # graph.py -> repo_root/migrations.
     src_fallback = Path(__file__).resolve().parent.parent.parent / "migrations"
     if (src_fallback / "env.py").is_file():
@@ -359,7 +359,7 @@ class GraphStore:
             raise RuntimeError(
                 f"Graph DB at {self.db_path} reports alembic revision "
                 f"{recorded!r} which is not shipped with this version of "
-                f"better-code-review-graph (head={head!r}). Either downgrade "
+                f"crg (head={head!r}). Either downgrade "
                 "the package or recreate the DB."
             ) from exc
 

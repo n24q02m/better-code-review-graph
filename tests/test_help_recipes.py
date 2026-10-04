@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from better_code_review_graph.server import help
+from crg.server import help
 
 
 def test_help_recipes_topic_returns_recipes_doc():

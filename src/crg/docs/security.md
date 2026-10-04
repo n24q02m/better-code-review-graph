@@ -7,7 +7,7 @@ The `security` tool surfaces vulnerability findings on `Function` /
   covering OWASP top sinks (SQL injection, shell injection, hardcoded
   secrets, dynamic-evaluation, path traversal). Zero extra
   dependencies; bundled rule files live under
-  `better_code_review_graph_security_rules/heuristic/*.yaml`.
+  `crg_security_rules/heuristic/*.yaml`.
 - **Tier 2 (semgrep)** -- opt-in via the `[security]` extra; wraps
   the [Semgrep](https://semgrep.dev/) CLI. By default the scanner runs
   Semgrep's `p/auto` registry pack (auto-selected community rules) plus
@@ -18,10 +18,10 @@ Findings are persisted to `nodes.security_tags` as a JSON array of
 `review` tool) can filter by tag without re-scanning.
 
 The four actions below operate on the graph DB at
-`<repo_root>/.better-code-review-graph/graph.db` (auto-detected when
+`<repo_root>/.crg/graph.db` (auto-detected when
 `repo_root` is omitted). Cached scan payloads land at
-`.better-code-review-graph/security-last-scan.json` and the
-suppression list at `.better-code-review-graph/security-suppressions.json`.
+`.crg/security-last-scan.json` and the
+suppression list at `.crg/security-suppressions.json`.
 
 ## Actions
 
@@ -34,7 +34,7 @@ persisted into `nodes.security_tags`.
 
 | Param | Type | Default | Notes |
 |---|---|---|---|
-| `repo_root` | str | None | Auto-detected from the current dir (looks for `.better-code-review-graph/graph.db`). |
+| `repo_root` | str | None | Auto-detected from the current dir (looks for `.crg/graph.db`). |
 | `engine` | str | `"heuristic"` | `"heuristic"` (default, regex tier-1) or `"semgrep"` (tier-2; requires the `[security]` extra). |
 
 **Example:**
@@ -105,7 +105,7 @@ The Tier 1 ruleset bundled with v2.0:
 ### `report`
 
 Re-emit the most recent scan in JSON or SARIF v2.1.0 format. Reads
-the cached payload at `.better-code-review-graph/security-last-scan.json`
+the cached payload at `.crg/security-last-scan.json`
 -- does not re-run the engine.
 
 | Param | Type | Default | Notes |
@@ -128,7 +128,7 @@ If no scan has run yet the action returns
 ### `suppress`
 
 Add (or remove) a `rule_id` from the persistent suppression list at
-`.better-code-review-graph/security-suppressions.json`. Suppressed rules
+`.crg/security-suppressions.json`. Suppressed rules
 are silently dropped from subsequent `scan` results -- the rule
 itself is NOT removed from the engine, only filtered out at
 aggregation time.
@@ -245,7 +245,7 @@ sizeable runtime, so we don't ship it in the default install. Add
 the `[security]` extra to opt in:
 
 ```sh
-uv add 'better-code-review-graph[security]'
+uv add 'crg[security]'
 ```
 
 Then run `scan` with `engine="semgrep"`:

@@ -12,9 +12,10 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-GRAPH_DIR = ".better-code-review-graph"
+GRAPH_DIR = ".crg"
+LEGACY_GRAPH_DIR = ".better-code-review-graph"
 GRAPH_DB = "graph.db"
-PREFIX = "[better-code-review-graph]"
+PREFIX = "[crg]"
 
 
 def find_repo_root(start: Path) -> Path | None:
@@ -24,7 +25,9 @@ def find_repo_root(start: Path) -> Path | None:
     except OSError:
         return None
     for candidate in candidates:
-        if (candidate / GRAPH_DIR / GRAPH_DB).is_file():
+        if (candidate / GRAPH_DIR / GRAPH_DB).is_file() or (
+            candidate / LEGACY_GRAPH_DIR / GRAPH_DB
+        ).is_file():
             return candidate
         if (candidate / ".git").exists():
             return candidate
@@ -32,7 +35,11 @@ def find_repo_root(start: Path) -> Path | None:
 
 
 def graph_db_path(repo_root: Path) -> Path:
-    return repo_root / GRAPH_DIR / GRAPH_DB
+    new_path = repo_root / GRAPH_DIR / GRAPH_DB
+    if new_path.is_file():
+        return new_path
+    legacy = repo_root / LEGACY_GRAPH_DIR / GRAPH_DB
+    return legacy if legacy.is_file() else new_path
 
 
 def git_dir(repo_root: Path) -> Path | None:

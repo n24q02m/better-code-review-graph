@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.n24q02m/better-code-review-graph",
+  "name": "io.github.n24q02m/crg",
   "description": "Token-efficient code review knowledge graph: semantic search and call-graph resolution.",
   "repository": {
     "url": "https://github.com/n24q02m/crg.git",
     "source": "github"
   },
-  "version": "3.29.6",
+  "version": "3.29.7-beta.1",
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "better-code-review-graph",
-      "version": "3.29.6",
+      "identifier": "crg",
+      "version": "3.29.7-beta.1",
       "runtimeHint": "uvx",
       "runtimeArgs": [
         "--python",

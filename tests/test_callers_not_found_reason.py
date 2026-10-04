@@ -13,16 +13,16 @@ from __future__ import annotations
 
 import pytest
 
-from better_code_review_graph.graph import GraphStore
-from better_code_review_graph.parser import NodeInfo
-from better_code_review_graph.tools import query_graph
+from crg.graph import GraphStore
+from crg.parser import NodeInfo
+from crg.tools import query_graph
 
 
 @pytest.fixture
 def repo_with_graph(tmp_path):
     """Build a graph with class methods, ambiguous names, and zero-caller funcs."""
     (tmp_path / ".git").mkdir()
-    crg_dir = tmp_path / ".better-code-review-graph"
+    crg_dir = tmp_path / ".crg"
     crg_dir.mkdir()
     (crg_dir / ".gitignore").write_text("*\n")
 
@@ -169,7 +169,7 @@ class TestSymbolNotIndexed:
         the qualified name.
         """
         (tmp_path / ".git").mkdir()
-        crg_dir = tmp_path / ".better-code-review-graph"
+        crg_dir = tmp_path / ".crg"
         crg_dir.mkdir()
 
         only_py = tmp_path / "only.py"

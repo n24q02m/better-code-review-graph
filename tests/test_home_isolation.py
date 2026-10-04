@@ -15,8 +15,8 @@ from pathlib import Path
 
 import tree_sitter_language_pack as tslp
 
-from better_code_review_graph.credential_state import db_path_for_sub
-from better_code_review_graph.parser import CodeParser
+from crg.credential_state import db_path_for_sub
+from crg.parser import CodeParser
 
 from .conftest import REAL_HOME
 
