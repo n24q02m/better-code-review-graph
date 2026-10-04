@@ -18,7 +18,8 @@ Findings are persisted to `nodes.security_tags` as a JSON array of
 `review` tool) can filter by tag without re-scanning.
 
 The four actions below operate on the graph DB at
-`<repo_root>/.crg/graph.db` (auto-detected when
+`<repo_root>/.crg/graph.db` (resolved from the
+  server-configured default root, else cwd, when
 `repo_root` is omitted). Cached scan payloads land at
 `.crg/security-last-scan.json` and the
 suppression list at `.crg/security-suppressions.json`.

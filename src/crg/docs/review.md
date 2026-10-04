@@ -16,7 +16,8 @@ Generate focused, token-efficient review context for code changes. Combines impa
 - `include_source`: Include source code snippets (default: true)
 - `max_lines_per_file`: Max source lines per file (default: 200)
 - `base`: Git ref for change detection (default: HEAD~1)
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 - `languages`: Optional list of language names (e.g. `["python"]`) to scope the `untested_functions` list. Excludes functions whose language doesn't match.
 - `repo`: Federated repo filter (Phase 2). When non-empty, scopes the impact subgraph and untested-function audit to nodes whose `repo_id` matches. Default `""` includes every federated repo, so cross-repo callers/importers contribute to the review context. Useful when a PR touches one repo in a federated graph but you only want review guidance about that repo. See `graph.md` "Federation: cross-repo graphs" for `repo_id` discovery.
 
@@ -26,7 +27,8 @@ Generate focused, token-efficient review context for code changes. Combines impa
 - `to_sha`: Later commit SHA (required).
 - `show_line_shifts`: When true, include nodes whose `line_start` moved between `from_sha` and `to_sha` in the response (default: false). Each entry is `{qualified_name, before_line, after_line}`.
 - `repo`: Federated repo filter (same semantics as context).
-- `repo_root`: Repository root path (auto-detected).
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection).
+
 
 ## Examples
 

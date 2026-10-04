@@ -325,9 +325,42 @@ def _validate_repo_root(path: Path) -> Path:
     return resolved
 
 
+# Process-wide default repo root for tool calls that omit ``repo_root``.
+# The value lives here (not in server.py) so ``serve_main`` can install it
+# without tools.py ever importing server.py. ``None`` preserves the legacy
+# behaviour of resolving from the process cwd via ``find_project_root()``.
+_default_repo_root: str | None = None
+
+
+def set_default_repo_root(repo_root: str | None) -> None:
+    """Install the default repo root used when a tool call omits ``repo_root``.
+
+    Called by ``serve_main`` with the root the server was started for. An
+    explicit per-call ``repo_root`` always wins; ``None`` restores
+    cwd-based auto-detection.
+    """
+    global _default_repo_root
+    _default_repo_root = repo_root
+
+
+def get_default_repo_root() -> str | None:
+    """Return the server-installed default repo root, or ``None``."""
+    return _default_repo_root
+
+
 def _get_store(repo_root: str | None = None) -> tuple[GraphStore, Path]:
-    """Resolve repo root and open the graph store."""
-    root = _validate_repo_root(Path(repo_root)) if repo_root else find_project_root()
+    """Resolve repo root and open the graph store.
+
+    Resolution order: the explicit ``repo_root`` argument, then the
+    server-installed default (``set_default_repo_root``), then
+    ``find_project_root()`` from the process cwd.
+    """
+    if repo_root:
+        root = _validate_repo_root(Path(repo_root))
+    elif _default_repo_root:
+        root = _validate_repo_root(Path(_default_repo_root))
+    else:
+        root = find_project_root()
     db_path = get_db_path(root)
     return GraphStore(db_path), root
 

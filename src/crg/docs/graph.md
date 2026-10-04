@@ -33,7 +33,8 @@ stay unresolved.
 **Parameters:**
 - `full_rebuild`: Re-parse all files (default: false, incremental)
 - `base`: Git ref for incremental diff (default: HEAD~1)
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 - `roots`: Optional list of additional repo roots for federated build (Phase 2). When provided, runs a full federated rebuild over `repo_root` plus every entry in `roots`. Each root is registered in the `repos` table with a stable `repo_id` derived from its path. Omit (default `null`) for a single-repo build that preserves the legacy behaviour. See "Federation: cross-repo graphs" below for the full recipe.
 
 **Example:**
@@ -50,7 +51,8 @@ Alias for `build` with `full_rebuild=false`. Only re-parses changed files.
 
 **Parameters:**
 - `base`: Git ref for diff (default: HEAD~1)
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 **Example:**
 ```json
@@ -64,7 +66,8 @@ Alias for `build` with `full_rebuild=false`. Only re-parses changed files.
 Get aggregate statistics about the code knowledge graph. Returns total nodes, edges, languages, files, embedding count, and last update time.
 
 **Parameters:**
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 **Example:**
 ```json
@@ -77,7 +80,8 @@ Get aggregate statistics about the code knowledge graph. Returns total nodes, ed
 Compute vector embeddings for all graph nodes to enable semantic search.
 
 **Parameters:**
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 Embedding selection:
 - **Local (default)**: the configured model or first fastretrieval built-in ONNX registry entry (~570MB download on first use, zero-config)
@@ -106,7 +110,8 @@ Export the full code knowledge graph in an interoperable format. Inline by defau
 **Parameters:**
 - `format`: `graphml` | `json-ld` | `dot` | `cypher` (default: `graphml`, case-insensitive)
 - `output_path`: Optional file path. When provided, payload is written and the response includes only `bytes` + `output_path`. When omitted, payload is returned inline under `payload`.
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 **Format integration hints:**
 - `graphml` -- Imports into Gephi / Cytoscape / NetworkX for visualization and structural analysis.
@@ -134,7 +139,8 @@ Generate one-paragraph LLM docstrings for `Function` nodes that lack a stored su
 
 **Parameters:**
 - `max_nodes`: Cost cap -- max LLM calls per invocation (default: `500`)
-- `repo_root`: Repository root path (auto-detected)
+- `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
+
 
 The first request-scoped `SUMMARY_MODELS` entry selects the completion model;
 there is no implicit key-based selection or runtime fallback. For example,
