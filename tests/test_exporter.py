@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from crg.exporter import (
+    JSONLD_CONTEXT,
     export_crg,
     export_cypher,
     export_dot,
@@ -132,6 +133,46 @@ def test_export_graph_dispatch_routes_to_formatter(populated_store):
     assert json.loads(out)["nodes"]
     out = export_graph(populated_store, format="crg")
     assert json.loads(out)["schema_version"] == 1
+
+
+def test_export_jsonld_streamed_output_matches_canonical_dump(populated_store):
+    """The streamed generator must be byte-identical to json.dumps(indent=2)
+    of the canonical {"@context", "nodes", "edges"} payload, so consumers
+    (inline payload + output_path write in export_graph_dispatch) see no
+    format change."""
+    nodes = []
+    for node in populated_store.iter_raw_nodes():
+        n: dict[str, object] = {
+            "@id": node["qualified_name"],
+            "@type": node["kind"],
+            "name": node["name"],
+            "filePath": node["file_path"],
+            "language": node["language"] or "",
+        }
+        if node["line_start"] is not None:
+            n["lineStart"] = node["line_start"]
+        if node["line_end"] is not None:
+            n["lineEnd"] = node["line_end"]
+        nodes.append(n)
+    edges = []
+    for edge in populated_store.iter_raw_edges():
+        e: dict[str, object] = {
+            "source": edge["source_qualified"],
+            "target": edge["target_qualified"],
+            "kind": edge["kind"],
+        }
+        if edge["file_path"]:
+            e["filePath"] = edge["file_path"]
+        if edge["line"] is not None:
+            e["line"] = edge["line"]
+        edges.append(e)
+    expected = json.dumps(
+        {"@context": JSONLD_CONTEXT, "nodes": nodes, "edges": edges}, indent=2
+    )
+    out = export_jsonld(populated_store)
+    assert out == expected
+    # Multi-node/edge payload still parses to equal JSON.
+    assert json.loads(out) == json.loads(expected)
 
 
 def test_export_crg_emits_schema_version_and_repo_id(populated_store):
