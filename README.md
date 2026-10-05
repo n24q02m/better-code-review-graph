@@ -1,13 +1,13 @@
 # Better Code Review Graph
 
-> **Renamed (2026-09-13):** repo is now `crg` — CLI-first (`crg` command). PyPI package stays `crg`; MCP server is a secondary surface.
+> **Renamed (2026-09-13):** repo is now `crg` — CLI-first (`crg` command). PyPI package stays `better-code-review-graph`; MCP server is a secondary surface.
 
 mcp-name: io.github.n24q02m/crg
 
 **Knowledge graph for token-efficient code reviews -- semantic search and call-graph resolution across your codebase.**
 
 <!-- Badge Row 1: Status -->
-[![Mode](https://img.shields.io/badge/mode-daemon_%C2%B7_http_remote_relay-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
+[![Mode](https://img.shields.io/badge/mode-stdio_%C2%B7_http_self_host-5C6BC0)](https://mcp.n24q02m.com/get-started/modes-overview/)
 [![CI](https://github.com/n24q02m/crg/actions/workflows/ci.yml/badge.svg)](https://github.com/n24q02m/crg/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/n24q02m/crg/graph/badge.svg)](https://codecov.io/gh/n24q02m/crg)
 [![PyPI](https://img.shields.io/pypi/v/better-code-review-graph?logo=pypi&logoColor=white)](https://pypi.org/project/better-code-review-graph/)
@@ -244,8 +244,9 @@ for cloud embeddings, LLM summaries, or an explicit BYO local artifact.
 
 Embeddings select the first `provider/model` entry in `EMBEDDING_MODELS`; later
 entries are retained as configuration but are not runtime fallbacks. Summaries
-select the first `SUMMARY_MODELS` entry too, without runtime fallback. Providers
-are inferred from model prefixes and use the matching `<PROVIDER>_API_KEY`.
+select the first `SUMMARY_MODELS` entry too, without runtime fallback. Transport
+always comes from the per-task `[models.<task>]` cell (OpenRouter pre-wired
+default) — model-name prefixes only select wire details, never keys.
 
 | Variable | Purpose | Empty (default) |
 |---|---|---|
@@ -261,28 +262,26 @@ nodes are retained and re-embedding replaces only stale vectors.
 
 ### Provider API keys
 
-Cloud models need the provider key for the selected model prefix. Keys alone
-never select models: an empty embedding chain stays local, and an empty summary
+The key lives in the per-task cell's `api_key` (host-only; see the table below).
+Keys alone never select models: an empty embedding chain stays local, and an empty summary
 chain stays disabled. A configured cloud error does not fall back to local or
 another provider. Summarizers require a chat-completion model.
 
-| Model prefix | API key env var | Get a key |
+| Task | Config cell | Notes |
 |---|---|---|
-| `jina_ai/` | `JINA_AI_API_KEY` | <https://jina.ai/api-key> |
-| `gemini/` | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | <https://aistudio.google.com/apikey> |
-| `openai/` (or bare `text-embedding-*`) | `OPENAI_API_KEY` | <https://platform.openai.com/api-keys> |
-| `cohere/` | `COHERE_API_KEY` | <https://dashboard.cohere.com/api-keys> |
-| `openrouter/` | `OPENROUTER_API_KEY` | <https://openrouter.ai/settings/keys> |
-| `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | <https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview> |
+| Embedding | `[models.embed]` in the instance config (`base_url` + `api_key` + `model`), or `HULL_EMBED_API_KEY` env | Plain OpenAI-spec HTTP through hull-core; OpenRouter pre-wired default. `EMBEDDING_MODELS` picks the model name(s) — keys never select a model. Model prefixes (`cohere/…`, `jina_ai/…`, `gemini/…`) select wire details only (e.g. Cohere `input_type`); there are no per-vendor API keys. Cohere embed-4.0 direct is the documented opt-in exception (spec 2026-09-26 §9). |
+| Summarizer | `[models.chat]` cell (or `HULL_CHAT_API_KEY`) | Requires a chat-completion model; OpenRouter default. |
+
+Vendor-specific key env vars (`JINA_AI_API_KEY`, `GEMINI_API_KEY`,
+`OPENAI_API_KEY`, `GOOGLE_VERTEX_EXPRESS_API_KEY`, …) are **not read** by
+crg; the removed per-vendor dispatch lived in the pre-de-host stack.
 
 ### Advanced
 
 | Variable | Purpose |
 |---|---|
-| `EMBEDDING_API_BASE` | Provider-compatible endpoint for cloud embedding, including CF AI Gateway (SSRF-guarded) |
-| `LLM_API_BASE` | Provider-compatible base URL for the summarizer, including CF AI Gateway (SSRF-guarded) |
+| `EMBEDDING_MODELS` | Comma-separated embedding model chain; the first entry is the cloud model (host-owned; keys never select a model). Legacy `EMBEDDING_MODEL` is honored with a deprecation warning until the next release. |
 | `DISABLE_LOCAL_EMBED` | Skip the local ONNX download; embedding is unavailable unless a cloud chain is configured |
-| `LOCAL_EMBEDDING_MODEL` | Built-in fastretrieval model ID, or a local directory containing `fastretrieval-manifest.json` | Built-in default |
 | `LOCAL_RERANK_MODEL` | Fastretrieval `TextCrossEncoder` model ID for bounded semantic reranking | Blank (disabled) |
 | `LOCAL_EMBEDDING_DIM` | Required dimension for an external model ID without a manifest | `0` |
 | `LOCAL_EMBEDDING_MODEL_FILE` | ONNX file path inside a manifest-backed artifact directory | `onnx/model.onnx` |
