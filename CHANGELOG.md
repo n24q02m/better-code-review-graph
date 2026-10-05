@@ -2,6 +2,48 @@
 
 <!-- version list -->
 
+## v3.30.0-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Correct provider docs to per-task cells, drop pre-dehost mode badge
+  ([`11d91d7`](https://github.com/n24q02m/crg/commit/11d91d7c4c75588986073c0858ceb976d7e29655))
+
+- Ignore e2e_token*.txt scratch files (same rule as mnemo #1287)
+  ([`bdc48cf`](https://github.com/n24q02m/crg/commit/bdc48cf157e9c7181531270c525b4e9909a2dc3e))
+
+- Purge dead provider env surface in favor of models cells
+  ([#1139](https://github.com/n24q02m/crg/pull/1139),
+  [`28a046b`](https://github.com/n24q02m/crg/commit/28a046bc2258f4b0b72089f8a698d03e7706fb4c))
+
+- Sort imports in tests/test_server.py so CI ruff check passes
+  ([`e7d1138`](https://github.com/n24q02m/crg/commit/e7d1138f9925d63918476c76bcc50c76416729f6))
+
+- **deps**: Align editable project version in uv.lock to pyproject (uv relock side-effect;
+  uv-lock-no-sources hook cannot resolve unpublished hull-core path dep — known de-host state)
+  ([`2572c92`](https://github.com/n24q02m/crg/commit/2572c9293e4f144f705a6b17a3f639058e1c0b7f))
+
+- **deps**: Update minor dependencies ([#1087](https://github.com/n24q02m/crg/pull/1087),
+  [`732ba3c`](https://github.com/n24q02m/crg/commit/732ba3c49e340d9e665acb04fd607bba296dedfd))
+
+- **docker**: Drop pyproject-mangling sed; pin LF via .gitattributes
+  ([`df1a290`](https://github.com/n24q02m/crg/commit/df1a29097737e3a03ff1a473b963ab8aa32ef47d))
+
+- **docker**: Use valid 'server start' subcommand as http ENTRYPOINT
+  ([`2ac9b98`](https://github.com/n24q02m/crg/commit/2ac9b98716e907abe07a40c10d4f4e858a8a66fd))
+
+- **server**: Enforce no-auth loopback bind on the shared run_http path
+  ([`31aeac1`](https://github.com/n24q02m/crg/commit/31aeac1192cf05a4a644960bbf31d1114dbebadc))
+
+### Features
+
+- **compose**: Restart unless-stopped for always-on docker topology
+  ([`14e87da`](https://github.com/n24q02m/crg/commit/14e87da54271694f30720ce8b099180f2285a947))
+
+- **docker**: Self-contained http compose + config example + usage docs
+  ([`cba533f`](https://github.com/n24q02m/crg/commit/cba533f43e1a2fcce6ed016cff62b180bb3aa16b))
+
+
 ## v3.29.8 (2026-10-05)
 
 
