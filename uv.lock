@@ -98,7 +98,7 @@ wheels = [
 
 [[package]]
 name = "better-code-review-graph"
-version = "3.29.8"
+version = "3.30.0b1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -533,7 +533,7 @@ server = [
 
 [[package]]
 name = "fastretrieval"
-version = "1.11.1"
+version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -544,18 +544,18 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/09/63e13b9c579f6bec498229278a8ddf2f41b7daf19c310591ed2c6dfdc9dd/fastretrieval-1.11.1.tar.gz", hash = "sha256:23319c295c806661fc2103c8019b9fef860ac73484fae9387ec17fcd90086d06", size = 336784, upload-time = "2026-09-26T11:20:32.794Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/22/c9661c1b545046321ab3d679cacb523f3d80db0497f079e4a8763342e624/fastretrieval-1.12.0.tar.gz", hash = "sha256:edefd03ada8e8043d0797f763a78fed52c5620d19e11e6c9fbf3cdf120036e43", size = 342647, upload-time = "2026-10-05T14:45:07.216Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/06/529bdea19deaab672f84b4a9c6988d9045cf4e19f7534406ecb1395200b0/fastretrieval-1.11.1-py3-none-any.whl", hash = "sha256:bc39bd8c7ca5bd14aabc43669e125f371494b81ed2572eaeb9d1f9196d90c3af", size = 149390, upload-time = "2026-09-26T11:20:31.063Z" },
+    { url = "https://files.pythonhosted.org/packages/89/b0/3f1ff27ca1f01320a794bc9f3975347ee55f2e98b038a77385a1c1979213/fastretrieval-1.12.0-py3-none-any.whl", hash = "sha256:43b8f2dadb8e5ceccc80df7f8119fb96bf1201733f8b9edd74b758643de61478", size = 149754, upload-time = "2026-10-05T14:45:05.938Z" },
 ]
 
 [[package]]
 name = "filelock"
-version = "4.0.10"
+version = "4.0.12"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/4b/51/a182494d1d8dde1240bff84dda57d48165d982e59582ce8f167e8e3d7628/filelock-4.0.10.tar.gz", hash = "sha256:00d6a81f976a6332551c2c10f39e12b4abb7e01c64d4c497b81a615bc9186f1f", size = 252487, upload-time = "2026-10-03T23:40:48.884Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/e4/34efcb869715cf299e47d1ac7b2624d2bcb6f2d3dffc2f0abe8417f65ab2/filelock-4.0.12.tar.gz", hash = "sha256:cf42711a7ac791818b299fab0332a088c65aeeefa36290de98db92c434303b0c", size = 253880, upload-time = "2026-10-05T13:17:43.677Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/2a/4b1ea3f2180be251a5cff1e70c8a5b7994ffa5c8eab8937901f8a9db58fe/filelock-4.0.10-py3-none-any.whl", hash = "sha256:698048d158dc3c9e18cc5e88b3efdd4bd0e77d76686b22adb4511cc4b2c2f0db", size = 111193, upload-time = "2026-10-03T23:40:47.334Z" },
+    { url = "https://files.pythonhosted.org/packages/da/a1/b047e1c486a2c66283633b7dbb73872ca16ca1ce6a426f70d4d037fc8e1c/filelock-4.0.12-py3-none-any.whl", hash = "sha256:5f17ee83ecee8a6f3e389c75822fb70a1c2f0506b99438a6dffa1d56793588c8", size = 111732, upload-time = "2026-10-05T13:17:42.361Z" },
 ]
 
 [[package]]
