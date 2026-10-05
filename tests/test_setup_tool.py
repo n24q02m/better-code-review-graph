@@ -40,7 +40,6 @@ def _hermetic_config_dir(monkeypatch, tmp_path):
         "HULL_RERANK_API_KEY",
         "HULL_CHAT_API_KEY",
         "HULL_JEV_SCORE_API_KEY",
-        "GEMINI_API_KEY",
         "OPENAI_API_KEY",
     ):
         monkeypatch.delenv(k, raising=False)

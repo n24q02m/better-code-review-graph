@@ -77,23 +77,10 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 Embedding (cloud backend) + the LLM summarizer dispatch through
 OpenAI-compatible HTTP clients (`hull_core.providers.openai_spec`).
 
-Per-task model chains, CSV `provider/model,provider/model`, order = fallback. Provider is inferred from the model prefix.
-
-- `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX from the fastretrieval built-in registry.
+- `EMBEDDING_MODELS` -- CSV `provider/model,...` selection for the cloud embedding chain. The first entry is active; later entries are retained config, not runtime fallbacks. Empty = local ONNX from the fastretrieval built-in registry.
 - **Local (default)**: fastretrieval ONNX registry -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- API key follows the `<PROVIDER>_API_KEY` convention. The 7 providers documented below:
-
-  | model prefix | key env var | get it at |
-  |---|---|---|
-  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
-  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
-  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
-  | `xai/` | `XAI_API_KEY` | console.x.ai |
-  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
-  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
-
-- Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` -- custom OpenAI-compatible base URL for cloud embedding (optional)
+- Transport + credentials come from the per-task `[models.<task>]` cell in the instance config (`$CRG_CONFIG_DIR` or `~/.crg/config.toml`), fields `base_url` + `api_key` + `model` — plain OpenAI-spec HTTP through hull-core, OpenRouter pre-wired default (`hull config init`). Env overrides: `HULL_EMBED_API_KEY` / `HULL_CHAT_API_KEY` (host-injected).
+- Model-name prefixes (`cohere/…`, `jina_ai/…`, `gemini/…`, `openrouter/…`) only select wire details (e.g. Cohere `input_type`); they never pick keys or transport. There are no per-vendor API-key env vars — ambient `*_API_KEY` vars are not read.
 - `DISABLE_LOCAL_EMBED` -- skip the local ONNX download; embedding is `unavailable` unless a cloud chain is configured (`resolve_backend` 3-way: cloud / local / unavailable)
 - Fixed 768-dim storage keeps the table schema valid across providers. Switching embedding MODEL changes the vector space; embeddings are tagged per provider (`embeddings.provider` column) and `EmbeddingStore.search` restricts the cosine scan to the active provider, so a provider switch just re-embeds rather than mixing incomparable vectors.
 - Deprecated (honored one release with a warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend is now inferred from whether the chain is empty). The old "Jina > Gemini > OpenAI > Cohere" auto-detect router is gone.
@@ -112,28 +99,25 @@ chối, không tự rơi về model mặc định.
 
 ### Manual config example
 
-```json
-{
-  "mcpServers": {
-    "crg": {
-      "command": "uvx", "args": ["better-code-review-graph"],
-      "env": {
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
-        "JINA_AI_API_KEY": "jina_xxx",
-        "GEMINI_API_KEY": "AIza_xxx"
-      }
-    }
-  }
-}
+`~/.crg/config.toml`:
+
+```toml
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "jina-ai/jina-embeddings-v5-text-small"
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "minimax/minimax-m3:free"
 ```
 
 ## LLM summarizer (graph `summarize` action)
 
-- `SUMMARY_MODELS` -- ordered summarizer model chain (CSV `provider/model,...`, order = fallback). Empty = summaries disabled. Provider is inferred from the model prefix and must expose a chat-completion API (Jina/Cohere do not).
-- Dispatches through OpenAI-compatible chat completions (`hull_core.providers.openai_spec`).
-- `LLM_API_BASE` -- custom OpenAI-compatible base URL for the summarizer (SSRF-guarded, optional)
-- Deprecated (honored one release with a warning): singular `SUMMARY_MODEL` -- folded into `SUMMARY_MODELS`.
+- `[models.chat]` cell (`base_url` + `api_key` + `model` in `~/.crg/config.toml`, or the `HULL_CHAT_API_KEY` env override) -- an unconfigured cell disables summaries. OpenRouter pre-wired default; the chat model must expose a chat-completion API (embedding-only models do not).
+- Dispatches through OpenAI-compatible chat completions (`hull_core.providers.openai_spec`); the cell `base_url` is SSRF-guarded.
+- The pre-de-host summary-chain, singular-summary-model, and base-URL env vars are removed — dead strings, no longer read.
 
 ## Pytest
 

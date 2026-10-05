@@ -243,15 +243,16 @@ for cloud embeddings, LLM summaries, or an explicit BYO local artifact.
 ### Model selection
 
 Embeddings select the first `provider/model` entry in `EMBEDDING_MODELS`; later
-entries are retained as configuration but are not runtime fallbacks. Summaries
-select the first `SUMMARY_MODELS` entry too, without runtime fallback. Transport
-always comes from the per-task `[models.<task>]` cell (OpenRouter pre-wired
-default) — model-name prefixes only select wire details, never keys.
+entries are retained as configuration but are not runtime fallbacks. The summary
+model comes from the `model` field of the `[models.chat]` cell (an unconfigured
+cell disables summaries). Transport always comes from the per-task
+`[models.<task>]` cell (OpenRouter pre-wired default) — model-name prefixes
+only select wire details, never keys.
 
 | Variable | Purpose | Empty (default) |
 |---|---|---|
 | `EMBEDDING_MODELS` | Cloud embedding selection; the first entry is active | Local fastretrieval registry |
-| `SUMMARY_MODELS` | Completion model selection for `graph(action="summarize")` | Summaries disabled |
+| `[models.chat]` cell `model` | Completion model selection for `graph(action="summarize")` | Summaries disabled |
 
 Cohere `embed-v4.0` requests and stores **1024 dimensions**; other backends retain
 768-dimensional storage. CRG never slices, pads, or silently accepts a different
@@ -288,7 +289,7 @@ crg; the removed per-vendor dispatch lived in the pre-de-host stack.
 | `LOCAL_EMBEDDING_POOLING` | Explicit pooling for an external ID without a manifest: `CLS`, `MEAN`, `LAST_TOKEN`, or `DISABLED` | `MEAN` |
 | `LOCAL_EMBEDDING_NORMALIZE` | Explicit L2 normalization for an external ID without a manifest | `true` |
 | `CRG_DATA_DIR` | Override the per-user data directory (default `~/.crg`) used for per-user graphs and credentials in HTTP multi-user mode |
-| `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` / `SUMMARY_MODEL` | **Deprecated** singular vars, honored one release with a warning -- migrate to the `*_MODELS` chains |
+| `EMBEDDING_BACKEND` / `EMBEDDING_MODEL` | **Deprecated** singular vars, honored one release with a warning -- migrate to `EMBEDDING_MODELS`. The pre-de-host summary-model and base-URL env vars are no longer read; model + transport live in the `[models.*]` cells |
 
 When `LOCAL_RERANK_MODEL` is configured, semantic vector search retrieves a
 bounded candidate pool of `min(max(limit * 4, limit), 100)` rows, applies the
@@ -302,6 +303,24 @@ not invoke the reranker.
 
 ### Example -- cloud embeddings + summaries
 
+`~/.crg/config.toml` (write by hand, or start from `hull config init` which
+pre-wires OpenRouter defaults):
+
+```toml
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "cohere/embed-v4.0"
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "minimax/minimax-m3:free"
+```
+
+Equivalent env surface for the MCP server entry (keys override the cells;
+model names still come from `EMBEDDING_MODELS` / the `model` field):
+
 ```json
 {
   "mcpServers": {
@@ -311,11 +330,8 @@ not invoke the reranker.
       "env": {
         "MCP_TRANSPORT": "stdio",
         "EMBEDDING_MODELS": "cohere/embed-v4.0",
-        "SUMMARY_MODELS": "openrouter/minimax/minimax-m3:free",
-        "EMBEDDING_API_BASE": "https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/cohere/v2/embed",
-        "LLM_API_BASE": "https://gateway.ai.cloudflare.com/v1/<account>/<gateway>/openrouter/v1",
-        "COHERE_API_KEY": "<cohere-key>",
-        "OPENROUTER_API_KEY": "<openrouter-key>"
+        "HULL_EMBED_API_KEY": "sk-or-...",
+        "HULL_CHAT_API_KEY": "sk-or-..."
       }
     }
   }
@@ -323,9 +339,9 @@ not invoke the reranker.
 ```
 
 Cohere embedding is paid. Authorize a bounded budget before a live index/query;
-the Minimax-free completion choice does not make embeddings free. This example
-does not add a process-wide model override: missing subject credentials fail
-closed rather than inheriting the server environment.
+the Minimax-free completion choice does not make embeddings free. Model-name
+prefixes (`cohere/…`, `openrouter/…`) select wire details only — transport and
+credentials come from the `[models.*]` cells, which the host owns.
 
 CRG currently has **no cloud rerank call**: `LOCAL_RERANK_MODEL` is its only
 reranking path. Setting `RERANK_MODELS` or `RERANK_API_BASE` does not enable one.
@@ -345,7 +361,7 @@ Actions: `build` | `update` | `stats` | `embed` | `export` | `summarize`
 | `stats` | Graph size, languages, node/edge breakdown, embedding count. |
 | `embed` | Compute vector embeddings for semantic search. Dual-mode: local ONNX or cloud chain. |
 | `export` | Export the graph as `graphml` / `json-ld` / `dot` / `cypher`. Inline or to `output_path`. |
-| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (via the first explicit `SUMMARY_MODELS` entry; no-op when no model is selected). Calls bounded by `max_nodes`. |
+| `summarize` | LLM-generated one-paragraph docstrings for `Function` nodes (via the `[models.chat]` cell; no-op when no model is configured). Calls bounded by `max_nodes`. |
 
 ### `query` -- Graph queries
 
@@ -487,7 +503,7 @@ Sources: [Greptile](https://www.greptile.com/docs/introduction) · [Greptile pri
 - **Explicit selection** -- Cloud embedding errors are reported; the runtime does not silently switch models or fall back to local ONNX.
 - **Error handling** -- Tools return error strings with fix suggestions, never crash.
 - **Read-only mount** -- Docker mode mounts the repo as `:ro` (read-only).
-- **SSRF-guarded endpoints** -- Custom `EMBEDDING_API_BASE` / `LLM_API_BASE` URLs are validated before any outbound call.
+- **SSRF-guarded endpoints** -- Custom `[models.*]` cell `base_url` values are validated before any outbound call.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 

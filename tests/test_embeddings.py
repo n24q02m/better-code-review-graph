@@ -282,11 +282,8 @@ class TestResolveEmbeddingChain:
         for k in (
             "EMBEDDING_MODELS",
             "EMBEDDING_MODEL",
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "OPENAI_API_KEY",
-            "COHERE_API_KEY",
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
@@ -294,12 +291,13 @@ class TestResolveEmbeddingChain:
         assert resolve_backend() == "local"
 
     def test_keys_do_not_implicitly_select_cloud_models(self):
+        """Ambient key-shaped env vars never select a model."""
         with patch.dict(
             os.environ,
             {
-                "JINA_AI_API_KEY": "test",
-                "COHERE_API_KEY": "test",
                 "OPENAI_API_KEY": "test",
+                "CO_API_KEY": "test",
+                "HULL_EMBED_API_KEY": "test",
             },
             clear=True,
         ):
@@ -310,8 +308,6 @@ class TestResolveEmbeddingChain:
         for k in (
             "EMBEDDING_BACKEND",
             "EMBEDDING_MODELS",
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("EMBEDDING_MODEL", "gemini/gemini-embedding-001")
@@ -330,11 +326,8 @@ class TestResolveEmbeddingChain:
         for k in (
             "EMBEDDING_MODELS",
             "EMBEDDING_MODEL",
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "OPENAI_API_KEY",
-            "COHERE_API_KEY",
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
@@ -347,11 +340,8 @@ class TestResolveEmbeddingChain:
     def test_cloud_backend_uses_first_chain_model(self, monkeypatch):
         for k in (
             "EMBEDDING_MODEL",
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "OPENAI_API_KEY",
-            "COHERE_API_KEY",
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
@@ -493,7 +483,7 @@ class TestCloudEmbeddingBackend:
     """CloudEmbeddingBackend dispatch through hull's embed cell.
 
     The pre-de-host surface (litellm ``mcp_core.llm.embedding`` passthrough,
-    per-user ``api_key=`` kwarg, ``EMBEDDING_API_BASE`` env) is gone: the
+    per-user ``api_key=`` kwarg, base-URL env vars) is gone: the
     transport is the host-owned ``[models.embed]`` cell via hull-core's
     OpenAI-spec client, and the dispatch seam is ``_post_embeddings``.
     """

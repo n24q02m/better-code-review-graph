@@ -13,9 +13,8 @@ from crg.tools import summarize_graph_dispatch
 
 
 def test_dispatch_returns_skipped_when_no_provider(tmp_path, monkeypatch):
-    """No provider env var set → status='skipped' with helpful reason."""
-    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
+    """No chat cell key → status='skipped' with helpful reason."""
+    monkeypatch.delenv("HULL_CHAT_API_KEY", raising=False)
 
     # Use the same store init pattern as other tools tests
     with patch("crg.tools._get_store") as mock_get_store:
@@ -28,14 +27,12 @@ def test_dispatch_returns_skipped_when_no_provider(tmp_path, monkeypatch):
 
     assert result["status"] == "skipped"
     assert result["reason"] == "no_provider_configured"
-    assert "SUMMARY_MODELS" in result["summary"]
+    assert "models.chat" in result["summary"]
 
 
 def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):
     """Provider set + nodes processed → status='ok' with counts + summary string."""
-    for k in ("GOOGLE_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
+    monkeypatch.delenv("HULL_CHAT_API_KEY", raising=False)
 
     fake_result = BatchSummarizeResult(
         generated=3,
@@ -72,9 +69,8 @@ def test_dispatch_returns_ok_with_counts_on_success(tmp_path, monkeypatch):
     assert "gemini" in result["summary"]
 
 
-def test_dispatch_summary_string_mentions_errors_when_present(tmp_path, monkeypatch):
+def test_dispatch_summary_string_mentions_errors_when_present(tmp_path):
     """When errors > 0, summary string should mention the count."""
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
 
     fake_result = BatchSummarizeResult(
         generated=2,
@@ -97,9 +93,8 @@ def test_dispatch_summary_string_mentions_errors_when_present(tmp_path, monkeypa
     assert "1 error" in result["summary"]
 
 
-def test_dispatch_returns_error_on_invalid_max_nodes(tmp_path, monkeypatch):
+def test_dispatch_returns_error_on_invalid_max_nodes(tmp_path):
     """max_nodes <= 0 → status='error' with ValueError message (caught from batch_summarize)."""
-    monkeypatch.setenv("GEMINI_API_KEY", "g-key")
 
     with patch("crg.tools._get_store") as mock_get_store:
         store = GraphStore(str(tmp_path / "test.db"))

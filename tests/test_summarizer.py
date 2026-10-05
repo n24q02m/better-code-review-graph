@@ -6,7 +6,7 @@ Covers the pure helpers (``compute_source_hash``, ``compute_summary_cache_key``,
 hull-core's ``OpenAICompatClient``, and the ``batch_summarize`` queue/cache
 behaviour against a real ``GraphStore``.
 
-The pre-de-host tests drove ``SUMMARY_MODELS``/provider-key env vars and
+The pre-de-host tests drove the summary-model env vars and
 patched ``summarize_node``; the BYOK cut replaced that with one host-owned
 ``[models.chat]`` cell dispatched through hull-core, so the tests now fake
 the cell and the client instead of the env.

@@ -528,11 +528,8 @@ class TestServerSpotCheckAndRenamedInDiff:
             "HULL_RERANK_API_KEY",
             "HULL_CHAT_API_KEY",
             "HULL_JEV_SCORE_API_KEY",
-            "JINA_AI_API_KEY",
-            "GEMINI_API_KEY",
             "GOOGLE_API_KEY",
             "OPENAI_API_KEY",
-            "COHERE_API_KEY",
             "CO_API_KEY",
         ):
             monkeypatch.delenv(k, raising=False)
