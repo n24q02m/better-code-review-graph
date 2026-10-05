@@ -34,11 +34,8 @@ def _clear_cell_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "HULL_CHAT_API_KEY",
         "HULL_JEV_SCORE_API_KEY",
         # BYOK-era ambient keys must no longer influence the status.
-        "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
-        "JINA_AI_API_KEY",
         "OPENAI_API_KEY",
-        "COHERE_API_KEY",
         "CO_API_KEY",
     ):
         monkeypatch.delenv(k, raising=False)
@@ -71,7 +68,7 @@ class TestSetupStatusCellDerived:
         The de-hosted analog of the old 'ignores ambient store' guarantee:
         only per-task cells (HULL_<TASK>_API_KEY / config.toml) configure.
         """
-        monkeypatch.setenv("GEMINI_API_KEY", "ambient-gemini")
+        monkeypatch.setenv("GOOGLE_API_KEY", "ambient-google")
         monkeypatch.setenv("OPENAI_API_KEY", "ambient-openai")
 
         result = _call_config_setup_status_sync()

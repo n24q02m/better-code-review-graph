@@ -2956,7 +2956,7 @@ def summarize_graph_dispatch(
 ) -> dict[str, Any]:
     """Generate LLM summaries for Function nodes (Phase 1 v1.6.x).
 
-    Uses the first request-scoped SUMMARY_MODELS entry; no implicit provider fallback.
+    Uses the [models.chat] cell (OpenRouter pre-wired default); no implicit provider fallback.
     No-op when no model configured. Call cap via max_nodes (default 500).
 
     Args:
@@ -2984,8 +2984,8 @@ def summarize_graph_dispatch(
             "status": "skipped",
             "reason": "no_provider_configured",
             "summary": (
-                "Skipped: no summary model configured. Set SUMMARY_MODELS and its "
-                "provider credential to enable LLM summaries."
+                "Skipped: no summary model configured. Configure the "
+                "[models.chat] cell (or HULL_CHAT_API_KEY) to enable LLM summaries."
             ),
         }
 

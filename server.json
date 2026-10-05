@@ -64,46 +64,22 @@
           "name": "LOCAL_EMBEDDING_NORMALIZE"
         },
         {
-          "description": "Summarizer model selection; first provider/model entry only, no fallback; empty = disabled",
-          "isRequired": false,
-          "isSecret": false,
-          "name": "SUMMARY_MODELS"
-        },
-        {
-          "description": "Credential for explicitly selected Cohere embeddings, including a configured CF AI Gateway route",
+          "description": "API key for the [models.embed] cell transport (OpenRouter pre-wired default); host-injected, overrides the cell api_key",
           "isRequired": false,
           "isSecret": true,
-          "name": "COHERE_API_KEY"
+          "name": "HULL_EMBED_API_KEY"
         },
         {
-          "description": "Credential for explicitly selected OpenRouter completion models",
+          "description": "API key for the [models.chat] cell transport (OpenRouter pre-wired default); host-injected, enables LLM summaries when the cell model is set",
           "isRequired": false,
           "isSecret": true,
-          "name": "OPENROUTER_API_KEY"
+          "name": "HULL_CHAT_API_KEY"
         },
         {
           "description": "DEPRECATED (honored one release): embedding backend override 'local' or 'cloud'. Use EMBEDDING_MODELS instead.",
           "isRequired": false,
           "isSecret": false,
           "name": "EMBEDDING_BACKEND"
-        },
-        {
-          "description": "Provider-compatible cloud embedding endpoint, including CF AI Gateway; SSRF-guarded.",
-          "isRequired": false,
-          "isSecret": false,
-          "name": "EMBEDDING_API_BASE"
-        },
-        {
-          "description": "Provider-compatible summarizer base URL, including CF AI Gateway; SSRF-guarded.",
-          "isRequired": false,
-          "isSecret": false,
-          "name": "LLM_API_BASE"
-        },
-        {
-          "description": "DEPRECATED (honored one release): single summarizer model string. Use SUMMARY_MODELS instead.",
-          "isRequired": false,
-          "isSecret": false,
-          "name": "SUMMARY_MODEL"
         }
       ]
     }

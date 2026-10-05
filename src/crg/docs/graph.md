@@ -142,10 +142,11 @@ Generate one-paragraph LLM docstrings for `Function` nodes that lack a stored su
 - `repo_root`: Repository root path (optional; falls back to the server-configured default root, then to cwd auto-detection)
 
 
-The first request-scoped `SUMMARY_MODELS` entry selects the completion model;
-there is no implicit key-based selection or runtime fallback. For example,
-`openrouter/minimax/minimax-m3:free` uses `OPENROUTER_API_KEY` and the per-subject
-`LLM_API_BASE` for the CF AI Gateway OpenRouter route.
+The `[models.chat]` cell of the instance config (`base_url` + `api_key` +
+`model`; `HULL_CHAT_API_KEY` env override) selects the completion model —
+OpenRouter pre-wired default via `hull config init`. There is no implicit
+key-based selection or runtime fallback; model-name prefixes only select
+wire details.
 
 Local-only mode does **not** generate summaries. When no summary model is set,
 the action returns `status: "skipped", reason: "no_provider_configured"` and the

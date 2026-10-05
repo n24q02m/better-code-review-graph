@@ -74,28 +74,14 @@ Source files --> Tree-sitter parser --> SQLite graph (nodes + edges)
 Embedding (cloud backend) + the LLM summarizer dispatch through
 OpenAI-compatible HTTP clients (`hull_core.providers.openai_spec`).
 
-Per-task model chains, CSV `provider/model,provider/model`, order = fallback. Provider is inferred from the model prefix.
-
-- `EMBEDDING_MODELS` -- chain embedding. Empty = local ONNX from the fastretrieval built-in registry.
-- `SUMMARY_MODELS` -- chain summarizer (graph `summarize` action). Empty = summaries disabled.
+- `EMBEDDING_MODELS` -- CSV `provider/model,...` selection cho cloud embedding chain; entry dau tien active, cac entry sau la config luu (khong fallback runtime). Empty = local ONNX tu fastretrieval built-in registry.
+- Summary model lay tu `model` field cua `[models.chat]` cell; cell chua cau hinh = summaries disabled. Summary-chain env cu khong con duoc doc.
 - **Local (default)**: fastretrieval ONNX registry -- zero-config, ~570MB download on first use, 768-dim MRL truncation
-- API key theo convention `<PROVIDER>_API_KEY`. 7 provider servers goi y:
-
-  | model prefix | key env var | get it at |
-  |---|---|---|
-  | `gemini/` | `GEMINI_API_KEY` | aistudio.google.com/apikey |
-  | `openai/` (or bare) | `OPENAI_API_KEY` | platform.openai.com |
-  | `jina_ai/` | `JINA_AI_API_KEY` | jina.ai/api-key |
-  | `cohere/` | `COHERE_API_KEY` | dashboard.cohere.com |
-  | `xai/` | `XAI_API_KEY` | console.x.ai |
-  | `anthropic/` | `ANTHROPIC_API_KEY` | console.anthropic.com |
-  | `vertex_express/` | `GOOGLE_VERTEX_EXPRESS_API_KEY` | cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview |
-
-  Summarizer providers must expose a chat-completion API (Jina/Cohere do not).
-- Custom endpoint (SSRF-guarded): `EMBEDDING_API_BASE` (embedding), `LLM_API_BASE` (summarizer)
+- Transport + credential lay tu per-task `[models.<task>]` cell trong instance config (`$CRG_CONFIG_DIR` hoac `~/.crg/config.toml`): `base_url` + `api_key` + `model`, plain OpenAI-spec HTTP qua hull-core, OpenRouter pre-wired default (`hull config init`). Env override: `HULL_EMBED_API_KEY` / `HULL_CHAT_API_KEY`.
+- Model-name prefix (`cohere/…`, `jina_ai/…`, `gemini/…`, `openrouter/…`) chi chon wire detail (vd Cohere `input_type`); khong chon key hay transport. Khong con per-vendor API-key env — ambient `*_API_KEY` vars are not read.
 - `DISABLE_LOCAL_EMBED` -- skip local ONNX download; `resolve_backend` returns `unavailable` (not local) when no cloud chain is configured
 - Fixed 768-dim storage keeps the table schema valid across providers. Switching embedding MODEL changes the vector space; embeddings are tagged per provider and the cosine search restricts to the active provider, so a provider switch re-embeds rather than mixing incomparable vectors.
-- Deprecated (honored one release voi warning): singular `EMBEDDING_MODEL`/`SUMMARY_MODEL` + `EMBEDDING_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo.
+- Deprecated (honored one release voi warning): singular `EMBEDDING_MODEL` + `EMBEDDING_BACKEND` (backend gio suy ra tu chain rong hay khong). Router auto-detect cu "Jina > Gemini > OpenAI > Cohere" da bo. Singular-summary-model va base-URL env vars la dead strings — khong con duoc doc.
 
 ### BYO local embedding
 
@@ -111,20 +97,18 @@ chối, không tự rơi về model mặc định.
 
 ### Manual config example
 
-```json
-{
-  "mcpServers": {
-    "crg": {
-      "command": "uvx", "args": ["better-code-review-graph"],
-      "env": {
-        "EMBEDDING_MODELS": "jina_ai/jina-embeddings-v5-text-small,gemini/gemini-embedding-001",
-        "SUMMARY_MODELS": "gemini/gemini-2.5-flash",
-        "JINA_AI_API_KEY": "jina_xxx",
-        "GEMINI_API_KEY": "AIza_xxx"
-      }
-    }
-  }
-}
+`~/.crg/config.toml`:
+
+```toml
+[models.embed]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "jina-ai/jina-embeddings-v5-text-small"
+
+[models.chat]
+base_url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-..."
+model = "minimax/minimax-m3:free"
 ```
 
 ## Pytest

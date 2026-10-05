@@ -45,56 +45,17 @@
       "description": "Apply explicit L2 normalization for an external ID without a manifest.",
       "required": false
     },
-    "SUMMARY_MODELS": {
+    "HULL_EMBED_API_KEY": {
       "type": "string",
-      "title": "Summarizer model chain (optional)",
-      "description": "CSV 'provider/model,...' for graph summarize; selects the first entry without runtime fallback. Empty = summaries disabled. Example: openrouter/minimax/minimax-m3:free",
-      "required": false
-    },
-    "EMBEDDING_API_BASE": {
-      "type": "string",
-      "title": "Embedding endpoint (optional)",
-      "description": "Provider-compatible endpoint or CF AI Gateway embedding URL; SSRF-guarded.",
-      "required": false
-    },
-    "LLM_API_BASE": {
-      "type": "string",
-      "title": "Completion endpoint (optional)",
-      "description": "Provider-compatible base URL or CF AI Gateway OpenRouter route; SSRF-guarded.",
-      "required": false
-    },
-    "OPENROUTER_API_KEY": {
-      "type": "string",
-      "title": "OpenRouter API key (optional)",
-      "description": "Credential for explicitly selected openrouter/ completion models.",
+      "title": "Embedding cell API key (optional)",
+      "description": "Host-injected key for the [models.embed] cell transport (OpenRouter pre-wired default); overrides the cell api_key. Model name still comes from EMBEDDING_MODELS.",
       "sensitive": true,
       "required": false
     },
-    "JINA_AI_API_KEY": {
+    "HULL_CHAT_API_KEY": {
       "type": "string",
-      "title": "Jina AI API key (optional)",
-      "description": "Credential for explicitly selected jina_ai/ embedding models. An empty EMBEDDING_MODELS selection uses local ONNX; keys alone do not select cloud. https://jina.ai/api-dashboard/",
-      "sensitive": true,
-      "required": false
-    },
-    "GEMINI_API_KEY": {
-      "type": "string",
-      "title": "Gemini API key (optional)",
-      "description": "Enables gemini/ models referenced in EMBEDDING_MODELS / SUMMARY_MODELS. Free tier available. https://aistudio.google.com/apikey",
-      "sensitive": true,
-      "required": false
-    },
-    "OPENAI_API_KEY": {
-      "type": "string",
-      "title": "OpenAI API key (optional)",
-      "description": "Enables openai/ models referenced in EMBEDDING_MODELS / SUMMARY_MODELS. https://platform.openai.com/api-keys",
-      "sensitive": true,
-      "required": false
-    },
-    "COHERE_API_KEY": {
-      "type": "string",
-      "title": "Cohere API key (optional)",
-      "description": "Enables cohere/ embedding models referenced in EMBEDDING_MODELS. https://dashboard.cohere.com/api-keys",
+      "title": "Chat cell API key (optional)",
+      "description": "Host-injected key for the [models.chat] cell transport (OpenRouter pre-wired default); enables LLM summaries when the cell model is set.",
       "sensitive": true,
       "required": false
     }
@@ -121,14 +82,8 @@
         "LOCAL_EMBEDDING_MODEL_FILE": "${user_config.LOCAL_EMBEDDING_MODEL_FILE}",
         "LOCAL_EMBEDDING_POOLING": "${user_config.LOCAL_EMBEDDING_POOLING}",
         "LOCAL_EMBEDDING_NORMALIZE": "${user_config.LOCAL_EMBEDDING_NORMALIZE}",
-        "SUMMARY_MODELS": "${user_config.SUMMARY_MODELS}",
-        "EMBEDDING_API_BASE": "${user_config.EMBEDDING_API_BASE}",
-        "LLM_API_BASE": "${user_config.LLM_API_BASE}",
-        "OPENROUTER_API_KEY": "${user_config.OPENROUTER_API_KEY}",
-        "JINA_AI_API_KEY": "${user_config.JINA_AI_API_KEY}",
-        "GEMINI_API_KEY": "${user_config.GEMINI_API_KEY}",
-        "OPENAI_API_KEY": "${user_config.OPENAI_API_KEY}",
-        "COHERE_API_KEY": "${user_config.COHERE_API_KEY}"
+        "HULL_EMBED_API_KEY": "${user_config.HULL_EMBED_API_KEY}",
+        "HULL_CHAT_API_KEY": "${user_config.HULL_CHAT_API_KEY}"
       }
     }
   }

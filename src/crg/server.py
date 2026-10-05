@@ -228,8 +228,8 @@ def graph(
         file is idempotent. Built for artifact portability (build+export on
         a CI runner, import on a laptop).
     - summarize (-> max_nodes=500, repo_root): Generate LLM summaries for
-        Function nodes. Models come from the SUMMARY_MODELS chain (provider
-        inferred from the model prefix). No-op when no summary model is configured;
+        Function nodes. Models come from the [models.chat] cell (OpenRouter
+        pre-wired default). No-op when no summary model is configured;
         provider credentials alone do not enable summaries.
         Cost-capped via max_nodes (default 500 LLM calls per invocation).
     """
