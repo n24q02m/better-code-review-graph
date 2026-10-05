@@ -98,3 +98,8 @@ clean.ps1
 
 # local docker deployment config (secrets)
 docker-config/config.toml
+
+# e2e scratch (mode-3 isolation runs) — never track
+e2e-mode3-home/
+.e2e_mode3.py
+e2e_token*.txt
