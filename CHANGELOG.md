@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v3.29.8-beta.1 (2026-10-05)
+
+### Bug Fixes
+
+- Point MCP registry package identifier at the real dist better-code-review-graph, not the
+  third-party PyPI package crg
+  ([`60d0901`](https://github.com/n24q02m/crg/commit/60d090133ea4bf0274e8ad3fac1589f8f5c92f9a))
+
+
 ## v3.29.7 (2026-10-05)
 
 ### Bug Fixes
