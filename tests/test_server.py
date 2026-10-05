@@ -5,15 +5,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from unittest.mock import patch
-
 import sys
+from unittest.mock import patch
 
 import pytest
 import uvicorn
 
 from crg.config import ServerConfigError
-
 from crg.server import (
     config,
     graph,
