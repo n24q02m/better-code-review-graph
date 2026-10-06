@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MODEL_CANDIDATES_URL: https://raw.githubusercontent.com/n24q02m/hull/main/data/model-candidates.json
+  MODEL_CANDIDATES_URL: https://raw.githubusercontent.com/n24q02m/hull/data/model-candidates/data/model-candidates.json
   TASK_PROFILE: permissive
   STICKY_TITLE: "[model-sync] weekly cloud LLM proposal"
   GH_TOKEN: ${{ github.token }}
@@ -54,7 +54,7 @@ jobs:
         run: |
           code="$(curl -sS -o model-candidates.json -w '%{http_code}' "${MODEL_CANDIDATES_URL}")" || code=000
           if [ "${code}" != "200" ]; then
-            echo "::error::Fetching hull model-candidates.json returned HTTP ${code}. The snapshot is committed by hull's weekly model-candidates publisher (sticky PR); until that lands on main the raw URL does not serve yet. Failing closed — the sync never guesses a model."
+            echo "::error::Fetching hull model-candidates.json returned HTTP ${code}. The snapshot is committed by hull's weekly model-candidates publisher (data/model-candidates branch); the data/model-candidates branch is canonical; until it is force-pushed the raw URL does not serve yet. Failing closed — the sync never guesses a model."
             exit 1
           fi
 
