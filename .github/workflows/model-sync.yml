@@ -2,10 +2,13 @@ name: Model Sync
 
 # Weekly benchmark-driven cloud-LLM proposal for crg's `[models.chat]` cell.
 #
-# Source of truth: KnowledgePrism's apps/ai-worker/app/data/model_rankings.json
-# (KP's daily model-refresh job keeps it current). Selection is deterministic:
-# active entries sorted by chain_position, image-output entries dropped, the
-# first survivor is the proposed OpenRouter slug.
+# Source of truth: the hull model-candidates publisher (weekly Mon 04:41 UTC
+# sticky PR committing data/model-candidates.json, schema_version 1). This
+# workflow runs after it and reads the profile "permissive" (cr g's review
+# assistant task class). Selection is deterministic: the first candidate with
+# weak_evidence == false AND pareto_rank == 0 is the proposed OpenRouter slug.
+# When no strong candidate exists, the sticky issue records the weak-board
+# state and no change is proposed — the sync never guesses a model.
 #
 # crg resolves models per task from the host-owned instance config
 # (`$CRG_CONFIG_DIR/config.toml`, default `~/.crg/config.toml`) — there is no
@@ -16,15 +19,10 @@ name: Model Sync
 #
 # Scope guard: the LOCAL_* settings (local embedding / local rerank) are local
 # by design and are never proposed here.
-#
-# Source-access note: KnowledgePrism is a private repository, so the anonymous
-# raw fetch below fails closed (HTTP 404) until the rankings file is mirrored
-# to a public URL or this repo is granted a fine-grained PAT with read access
-# to it. The job never guesses a model.
 
 on:
   schedule:
-    - cron: "37 3 * * 1" # weekly Mon 03:37 UTC — after KP's daily 02:23 refresh
+    - cron: "11 7 * * 1" # weekly Mon 07:11 UTC — trails hull's 04:41 publish + merge window
   workflow_dispatch:
 
 permissions:
@@ -36,7 +34,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  KP_RANKINGS_URL: https://raw.githubusercontent.com/n24q02m/KnowledgePrism/main/apps/ai-worker/app/data/model_rankings.json
+  MODEL_CANDIDATES_URL: https://raw.githubusercontent.com/n24q02m/hull/main/data/model-candidates.json
+  TASK_PROFILE: permissive
   STICKY_TITLE: "[model-sync] weekly cloud LLM proposal"
   GH_TOKEN: ${{ github.token }}
 
@@ -51,35 +50,42 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Fetch published rankings
+      - name: Fetch published candidates
         run: |
-          code="$(curl -sS -o model_rankings.json -w '%{http_code}' "${KP_RANKINGS_URL}")" || code=000
+          code="$(curl -sS -o model-candidates.json -w '%{http_code}' "${MODEL_CANDIDATES_URL}")" || code=000
           if [ "${code}" != "200" ]; then
-            echo "::error::Fetching KnowledgePrism model_rankings.json returned HTTP ${code}. KnowledgePrism is private: raw.githubusercontent.com serves anonymous clients a 404 and GITHUB_TOKEN cannot read sibling private repos. Unblock by mirroring the file to a public URL from KP's daily job, or by adding a fine-grained PAT secret (contents:read on KP) and switching this step to an authenticated fetch. Failing closed — the sync never guesses a model."
+            echo "::error::Fetching hull model-candidates.json returned HTTP ${code}. The snapshot is committed by hull's weekly model-candidates publisher (sticky PR); until that lands on main the raw URL does not serve yet. Failing closed — the sync never guesses a model."
             exit 1
           fi
 
-      - name: Select text-chain leader
+      - name: Select strong candidate
         id: select
+        env:
+          TASK_PROFILE: permissive
         run: |
           python3 - <<'PY' >> "${GITHUB_OUTPUT}"
           import json
+          import os
 
-          data = json.load(open("model_rankings.json"))
-          models = [
-              m
-              for m in data.get("models", [])
-              if m.get("active") and m.get("chain_position") is not None
+          data = json.load(open("model-candidates.json"))
+          if data.get("schema_version") != 1:
+              raise SystemExit(f"unsupported schema_version {data.get('schema_version')!r} — failing closed")
+          task = data.get("tasks", {}).get(os.environ["TASK_PROFILE"])
+          if task is None:
+              raise SystemExit(f"task profile {os.environ['TASK_PROFILE']!r} missing from snapshot — failing closed")
+          candidates = task.get("candidates") or []
+          strong = [
+              c for c in candidates
+              if c.get("pareto_rank") == 0 and c.get("weak_evidence") is False
           ]
-          models.sort(key=lambda m: m["chain_position"])
-          models = [m for m in models if "image" not in (m.get("output_modalities") or [])]
-          if not models:
-              raise SystemExit("no active text-chain model in model_rankings.json — failing closed")
-          meta = data.get("snapshot_meta") or {}
-          print(f"proposed={models[0]['litellm_id']}")
-          print(f"proposed_slug={models[0].get('openrouter_slug') or models[0]['litellm_id']}")
-          print(f"generated_at={meta.get('generated_at', 'unknown')}")
-          print("chain=" + "; ".join(m["litellm_id"] for m in models[:3]))
+          print(f"generated_at={data.get('generated_at', 'unknown')}")
+          print("strong=" + "; ".join(c.get("or_slug") or c.get("litellm_id") or "?" for c in strong[:3]))
+          if not strong:
+              print("proposed=")
+              print("proposed_slug=")
+          else:
+              print(f"proposed={strong[0]['litellm_id']}")
+              print(f"proposed_slug={strong[0].get('or_slug') or strong[0]['litellm_id']}")
           PY
 
       - name: Upsert sticky proposal issue
@@ -88,7 +94,7 @@ jobs:
           PROPOSED: ${{ steps.select.outputs.proposed }}
           PROPOSED_SLUG: ${{ steps.select.outputs.proposed_slug }}
           GENERATED_AT: ${{ steps.select.outputs.generated_at }}
-          CHAIN: ${{ steps.select.outputs.chain }}
+          STRONG: ${{ steps.select.outputs.strong }}
         run: |
           set -euo pipefail
           now="$(date -u '+%Y-%m-%d %H:%M UTC')"
@@ -97,7 +103,6 @@ jobs:
 
           export NOW="${now}" STICKY_NUM="${num}"
           python3 - <<'PY'
-          import json
           import os
           import re
           import subprocess
@@ -107,6 +112,7 @@ jobs:
           proposed = os.environ["PROPOSED"]
           slug = os.environ["PROPOSED_SLUG"]
           num = os.environ["STICKY_NUM"].strip()
+          state = "none" if not proposed else proposed
 
           last = ""
           if num:
@@ -116,15 +122,33 @@ jobs:
               ).stdout
               m = re.search(r"<!--model-sync:proposed=(\S+?)-->", body)
               last = m.group(1) if m else ""
-          changed = last != proposed
+          changed = last != state
 
+          if proposed:
+              proposed_row = f"`{slug}` (litellm id `{proposed}`)"
+              state_row = "**proposal changed — host review needed**" if changed else "unchanged"
+              apply_block = (
+                  "**Apply (host-owned, never done by CI):** in the instance config\n"
+                  "`$CRG_CONFIG_DIR/config.toml` (default `~/.crg/config.toml`) set\n\n"
+                  "```toml\n"
+                  "[models.chat]\n"
+                  f'model = "{slug}"\n'
+                  "```\n\n"
+                  "`base_url` defaults to the OpenRouter endpoint; the key comes from the cell's\n"
+                  "`api_key` or the `HULL_CHAT_API_KEY` env. The `[models.jev_score]` cell shares\n"
+                  "the same default model — aligning it is optional and host-owned.\n"
+              )
+          else:
+              proposed_row = "(none — weak board)"
+              state_row = "**no strong candidate this week — no pin change proposed**"
+              apply_block = ""
           rows = [
               ("last checked (UTC)", os.environ["NOW"]),
-              ("source", f"KnowledgePrism `model_rankings.json` (generated_at {os.environ['GENERATED_AT']})"),
-              ("proposed `[models.chat]` model", f"`{slug}` (litellm id `{proposed}`)"),
-              ("text chain (top)", os.environ["CHAIN"]),
-              ("previously proposed", f"`{last}`" if last else "(none)"),
-              ("state", "**proposal changed — host review needed**" if changed else "unchanged"),
+              ("source", f"hull `model-candidates.json`, profile permissive (generated_at {os.environ['GENERATED_AT']})"),
+              ("proposed `[models.chat]` model", proposed_row),
+              ("strong candidates (top)", os.environ["STRONG"] or "(none)"),
+              ("previously proposed", f"`{last}`" if last not in ("", "none") else "(none)"),
+              ("state", state_row),
           ]
           table = "| field | value |\n| --- | --- |\n" + "\n".join(
               f"| {k} | {v} |" for k, v in rows
@@ -134,18 +158,10 @@ jobs:
                   "## [model-sync] weekly cloud LLM proposal\n\n"
                   + table
                   + "\n\n"
-                  + "**Apply (host-owned, never done by CI):** in the instance config\n"
-                  + f"`$CRG_CONFIG_DIR/config.toml` (default `~/.crg/config.toml`) set\n\n"
-                  + "```toml\n"
-                  + "[models.chat]\n"
-                  + f'model = "{slug}"\n'
-                  + "```\n\n"
-                  + "`base_url` defaults to the OpenRouter endpoint; the key comes from the cell's\n"
-                  + "`api_key` or the `HULL_CHAT_API_KEY` env. The `[models.jev_score]` cell shares\n"
-                  + "the same default model — aligning it is optional and host-owned.\n\n"
-                  + "Scope guard: the LOCAL_* embedding / rerank settings stay local by design and\n"
+                  + apply_block
+                  + "\nScope guard: the LOCAL_* embedding / rerank settings stay local by design and\n"
                   + "are never proposed here.\n\n"
-                  + f"<!--model-sync:proposed={proposed}-->\n"
+                  + f"<!--model-sync:proposed={state}-->\n"
               )
           with open("changed.txt", "w") as f:
               f.write(("true" if changed else "false") + "\n")
@@ -163,7 +179,7 @@ jobs:
             echo "Patched sticky issue #${num}"
             if [ "${changed}" = "true" ]; then
               gh issue comment "${num}" --repo "${REPO}" \
-                --body "Proposal changed at ${now}: \`${last:-none}\` → \`${PROPOSED}\` (host config \`[models.chat].model = \"${PROPOSED_SLUG}\"\`)." >/dev/null
+                --body "Proposal changed at ${now}: \`${last}\` → \`${PROPOSED:-none (weak board)}\` (host config \`[models.chat].model = \"${PROPOSED_SLUG:-}\"\`)." >/dev/null
             fi
           fi
           cat sticky.md >> "${GITHUB_STEP_SUMMARY}"
