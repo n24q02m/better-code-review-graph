@@ -1,0 +1,169 @@
+name: Model Sync
+
+# Weekly benchmark-driven cloud-LLM proposal for crg's `[models.chat]` cell.
+#
+# Source of truth: KnowledgePrism's apps/ai-worker/app/data/model_rankings.json
+# (KP's daily model-refresh job keeps it current). Selection is deterministic:
+# active entries sorted by chain_position, image-output entries dropped, the
+# first survivor is the proposed OpenRouter slug.
+#
+# crg resolves models per task from the host-owned instance config
+# (`$CRG_CONFIG_DIR/config.toml`, default `~/.crg/config.toml`) — there is no
+# in-repo pin file, so this workflow only files/updates ONE sticky issue that
+# doubles as the proposal dashboard and state cache (the last proposed slug is
+# embedded in the issue body). It never edits config, code defaults, or the
+# instance: applying the proposal is a host-owner decision.
+#
+# Scope guard: the LOCAL_* settings (local embedding / local rerank) are local
+# by design and are never proposed here.
+#
+# Source-access note: KnowledgePrism is a private repository, so the anonymous
+# raw fetch below fails closed (HTTP 404) until the rankings file is mirrored
+# to a public URL or this repo is granted a fine-grained PAT with read access
+# to it. The job never guesses a model.
+
+on:
+  schedule:
+    - cron: "37 3 * * 1" # weekly Mon 03:37 UTC — after KP's daily 02:23 refresh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # sticky proposal issue
+
+concurrency:
+  group: model-sync
+  cancel-in-progress: false
+
+env:
+  KP_RANKINGS_URL: https://raw.githubusercontent.com/n24q02m/KnowledgePrism/main/apps/ai-worker/app/data/model_rankings.json
+  STICKY_TITLE: "[model-sync] weekly cloud LLM proposal"
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    name: Propose cloud LLM cell
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Fetch published rankings
+        run: |
+          code="$(curl -sS -o model_rankings.json -w '%{http_code}' "${KP_RANKINGS_URL}")" || code=000
+          if [ "${code}" != "200" ]; then
+            echo "::error::Fetching KnowledgePrism model_rankings.json returned HTTP ${code}. KnowledgePrism is private: raw.githubusercontent.com serves anonymous clients a 404 and GITHUB_TOKEN cannot read sibling private repos. Unblock by mirroring the file to a public URL from KP's daily job, or by adding a fine-grained PAT secret (contents:read on KP) and switching this step to an authenticated fetch. Failing closed — the sync never guesses a model."
+            exit 1
+          fi
+
+      - name: Select text-chain leader
+        id: select
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+
+          data = json.load(open("model_rankings.json"))
+          models = [
+              m
+              for m in data.get("models", [])
+              if m.get("active") and m.get("chain_position") is not None
+          ]
+          models.sort(key=lambda m: m["chain_position"])
+          models = [m for m in models if "image" not in (m.get("output_modalities") or [])]
+          if not models:
+              raise SystemExit("no active text-chain model in model_rankings.json — failing closed")
+          meta = data.get("snapshot_meta") or {}
+          print(f"proposed={models[0]['litellm_id']}")
+          print(f"proposed_slug={models[0].get('openrouter_slug') or models[0]['litellm_id']}")
+          print(f"generated_at={meta.get('generated_at', 'unknown')}")
+          print("chain=" + "; ".join(m["litellm_id"] for m in models[:3]))
+          PY
+
+      - name: Upsert sticky proposal issue
+        env:
+          REPO: ${{ github.repository }}
+          PROPOSED: ${{ steps.select.outputs.proposed }}
+          PROPOSED_SLUG: ${{ steps.select.outputs.proposed_slug }}
+          GENERATED_AT: ${{ steps.select.outputs.generated_at }}
+          CHAIN: ${{ steps.select.outputs.chain }}
+        run: |
+          set -euo pipefail
+          now="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          num="$(gh issue list --repo "${REPO}" --state open --limit 200 --json number,title \
+            | python3 -c 'import json,os,sys;t=os.environ["STICKY_TITLE"];items=[i for i in json.load(sys.stdin) if i["title"]==t];print(items[0]["number"] if items else "")')"
+
+          export NOW="${now}" STICKY_NUM="${num}"
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+
+          repo = os.environ["REPO"]
+          title = os.environ["STICKY_TITLE"]
+          proposed = os.environ["PROPOSED"]
+          slug = os.environ["PROPOSED_SLUG"]
+          num = os.environ["STICKY_NUM"].strip()
+
+          last = ""
+          if num:
+              body = subprocess.run(
+                  ["gh", "issue", "view", num, "--repo", repo, "--json", "body", "--jq", ".body"],
+                  capture_output=True, text=True, check=True,
+              ).stdout
+              m = re.search(r"<!--model-sync:proposed=(\S+?)-->", body)
+              last = m.group(1) if m else ""
+          changed = last != proposed
+
+          rows = [
+              ("last checked (UTC)", os.environ["NOW"]),
+              ("source", f"KnowledgePrism `model_rankings.json` (generated_at {os.environ['GENERATED_AT']})"),
+              ("proposed `[models.chat]` model", f"`{slug}` (litellm id `{proposed}`)"),
+              ("text chain (top)", os.environ["CHAIN"]),
+              ("previously proposed", f"`{last}`" if last else "(none)"),
+              ("state", "**proposal changed — host review needed**" if changed else "unchanged"),
+          ]
+          table = "| field | value |\n| --- | --- |\n" + "\n".join(
+              f"| {k} | {v} |" for k, v in rows
+          )
+          with open("sticky.md", "w") as f:
+              f.write(
+                  "## [model-sync] weekly cloud LLM proposal\n\n"
+                  + table
+                  + "\n\n"
+                  + "**Apply (host-owned, never done by CI):** in the instance config\n"
+                  + f"`$CRG_CONFIG_DIR/config.toml` (default `~/.crg/config.toml`) set\n\n"
+                  + "```toml\n"
+                  + "[models.chat]\n"
+                  + f'model = "{slug}"\n'
+                  + "```\n\n"
+                  + "`base_url` defaults to the OpenRouter endpoint; the key comes from the cell's\n"
+                  + "`api_key` or the `HULL_CHAT_API_KEY` env. The `[models.jev_score]` cell shares\n"
+                  + "the same default model — aligning it is optional and host-owned.\n\n"
+                  + "Scope guard: the LOCAL_* embedding / rerank settings stay local by design and\n"
+                  + "are never proposed here.\n\n"
+                  + f"<!--model-sync:proposed={proposed}-->\n"
+              )
+          with open("changed.txt", "w") as f:
+              f.write(("true" if changed else "false") + "\n")
+          with open("last.txt", "w") as f:
+              f.write((last or "none") + "\n")
+          PY
+
+          changed="$(tr -d ' \n' < changed.txt)"
+          last="$(tr -d ' \n' < last.txt)"
+          if [ -z "${num}" ]; then
+            url="$(gh issue create --repo "${REPO}" --title "${STICKY_TITLE}" --body-file sticky.md)"
+            echo "Created sticky issue ${url}"
+          else
+            gh issue edit "${num}" --repo "${REPO}" --body-file sticky.md >/dev/null
+            echo "Patched sticky issue #${num}"
+            if [ "${changed}" = "true" ]; then
+              gh issue comment "${num}" --repo "${REPO}" \
+                --body "Proposal changed at ${now}: \`${last:-none}\` → \`${PROPOSED}\` (host config \`[models.chat].model = \"${PROPOSED_SLUG}\"\`)." >/dev/null
+            fi
+          fi
+          cat sticky.md >> "${GITHUB_STEP_SUMMARY}"
