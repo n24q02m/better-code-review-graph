@@ -8,6 +8,24 @@
 - Default graph state: `<repository>/.crg/graph.db`. Existing `.better-code-review-graph` and `.code-review-graph` state is preserved and is never adopted or deleted automatically.
 - Cloud model configuration is explicit per task. Empty embedding configuration uses local Fastretrieval; empty summary configuration disables summaries. Cohere `embed-v4.0` uses 1024 dimensions and explicit document/query input types.
 
+## Install and surfaces
+
+```bash
+pip install better-code-review-graph            # CLI + MCP server
+pip install 'better-code-review-graph[security]' # + semgrep (pinned <1.162: upstream mcp pin conflict)
+
+# CLI-first usage without a persistent install (CLI and dist name differ)
+uvx --python 3.13 --from better-code-review-graph crg graph build --full-rebuild <path>
+uvx --python 3.13 --from better-code-review-graph crg graph stats <path>
+
+# MCP server over stdio (secondary adapter; bare `crg` with no subcommand)
+claude mcp add crg -- uvx --python 3.13 better-code-review-graph
+```
+
+HTTP is opt-in with token auth: point the client at
+`http://127.0.0.1:8772/mcp` with `Authorization: Bearer <token>` (mint the
+hash with `hull token hash`, which ships with crg's dependency tree).
+
 ## Build, run, and verify
 
 ```bash
@@ -29,6 +47,8 @@ Use an isolated repository fixture for graph builds and protocol checks. Do not 
 - PHP CALLS post-processing resolves unique same-repository targets and leaves dynamic, ambiguous, inherited, or external calls unresolved with coverage warnings.
 - Exporters stream SQLite rows and escape format-specific identifiers and values.
 - Cohere requests must not be made without an explicit capped spend authorization and usage receipt.
+- There is no sanctioned default cloud model. `EMBEDDING_MODELS`' first entry is the active cloud embedding (later entries are retained configuration, not runtime fallbacks); the summary model comes from the `model` field of the `[models.chat]` cell, and an unconfigured cell disables summaries. Embedding storage width is 1024 for Cohere `embed-v4.0` and 768 for other backends — never sliced or padded; re-embed after a model change.
+- CRG has no cloud rerank call: `LOCAL_RERANK_MODEL` is the only reranking path; setting `RERANK_MODELS` or `RERANK_API_BASE` does not enable one.
 - This repository has no dependency on hosted VM infrastructure.
 
 ## In-flight and rollback
