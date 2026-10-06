@@ -862,7 +862,7 @@ class GraphStore:
         Args:
             node_id: The integer primary key of the node row in the nodes table.
             summary: Generated docstring text.
-            provider: Complete selected model identity (e.g. "openrouter/minimax/minimax-m3:free").
+            provider: Complete selected model identity as configured for this task (no default model is sanctioned).
             source_hash: SHA-256 of the source_text used to generate the summary.
                 Used as cache key on subsequent batch_summarize calls.
         """
