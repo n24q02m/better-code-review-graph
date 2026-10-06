@@ -2,6 +2,17 @@
 
 <!-- version list -->
 
+## v3.30.0 (2026-10-06)
+
+### Bug Fixes
+
+- **deps**: Lock file maintenance ([#1141](https://github.com/n24q02m/crg/pull/1141),
+  [`128bcf6`](https://github.com/n24q02m/crg/commit/128bcf65283f9cc182aaa72ae982b698ba9981cb))
+
+- **deps**: Update semgrep to v1.161.0 ([#1140](https://github.com/n24q02m/crg/pull/1140),
+  [`afeb04f`](https://github.com/n24q02m/crg/commit/afeb04f46a8f5c56315f9b13fba715954af4ced2))
+
+
 ## v3.30.0-beta.1 (2026-10-05)
 
 ### Bug Fixes
