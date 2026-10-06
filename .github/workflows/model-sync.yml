@@ -1,0 +1,185 @@
+name: Model Sync
+
+# Weekly benchmark-driven cloud-LLM proposal for crg's `[models.chat]` cell.
+#
+# Source of truth: the hull model-candidates publisher (weekly Mon 04:41 UTC
+# sticky PR committing data/model-candidates.json, schema_version 1). This
+# workflow runs after it and reads the profile "permissive" (cr g's review
+# assistant task class). Selection is deterministic: the first candidate with
+# weak_evidence == false AND pareto_rank == 0 is the proposed OpenRouter slug.
+# When no strong candidate exists, the sticky issue records the weak-board
+# state and no change is proposed — the sync never guesses a model.
+#
+# crg resolves models per task from the host-owned instance config
+# (`$CRG_CONFIG_DIR/config.toml`, default `~/.crg/config.toml`) — there is no
+# in-repo pin file, so this workflow only files/updates ONE sticky issue that
+# doubles as the proposal dashboard and state cache (the last proposed slug is
+# embedded in the issue body). It never edits config, code defaults, or the
+# instance: applying the proposal is a host-owner decision.
+#
+# Scope guard: the LOCAL_* settings (local embedding / local rerank) are local
+# by design and are never proposed here.
+
+on:
+  schedule:
+    - cron: "11 7 * * 1" # weekly Mon 07:11 UTC — trails hull's 04:41 publish + merge window
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write # sticky proposal issue
+
+concurrency:
+  group: model-sync
+  cancel-in-progress: false
+
+env:
+  MODEL_CANDIDATES_URL: https://raw.githubusercontent.com/n24q02m/hull/main/data/model-candidates.json
+  TASK_PROFILE: permissive
+  STICKY_TITLE: "[model-sync] weekly cloud LLM proposal"
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    name: Propose cloud LLM cell
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Fetch published candidates
+        run: |
+          code="$(curl -sS -o model-candidates.json -w '%{http_code}' "${MODEL_CANDIDATES_URL}")" || code=000
+          if [ "${code}" != "200" ]; then
+            echo "::error::Fetching hull model-candidates.json returned HTTP ${code}. The snapshot is committed by hull's weekly model-candidates publisher (sticky PR); until that lands on main the raw URL does not serve yet. Failing closed — the sync never guesses a model."
+            exit 1
+          fi
+
+      - name: Select strong candidate
+        id: select
+        env:
+          TASK_PROFILE: permissive
+        run: |
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          import os
+
+          data = json.load(open("model-candidates.json"))
+          if data.get("schema_version") != 1:
+              raise SystemExit(f"unsupported schema_version {data.get('schema_version')!r} — failing closed")
+          task = data.get("tasks", {}).get(os.environ["TASK_PROFILE"])
+          if task is None:
+              raise SystemExit(f"task profile {os.environ['TASK_PROFILE']!r} missing from snapshot — failing closed")
+          candidates = task.get("candidates") or []
+          strong = [
+              c for c in candidates
+              if c.get("pareto_rank") == 0 and c.get("weak_evidence") is False
+          ]
+          print(f"generated_at={data.get('generated_at', 'unknown')}")
+          print("strong=" + "; ".join(c.get("or_slug") or c.get("litellm_id") or "?" for c in strong[:3]))
+          if not strong:
+              print("proposed=")
+              print("proposed_slug=")
+          else:
+              print(f"proposed={strong[0]['litellm_id']}")
+              print(f"proposed_slug={strong[0].get('or_slug') or strong[0]['litellm_id']}")
+          PY
+
+      - name: Upsert sticky proposal issue
+        env:
+          REPO: ${{ github.repository }}
+          PROPOSED: ${{ steps.select.outputs.proposed }}
+          PROPOSED_SLUG: ${{ steps.select.outputs.proposed_slug }}
+          GENERATED_AT: ${{ steps.select.outputs.generated_at }}
+          STRONG: ${{ steps.select.outputs.strong }}
+        run: |
+          set -euo pipefail
+          now="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          num="$(gh issue list --repo "${REPO}" --state open --limit 200 --json number,title \
+            | python3 -c 'import json,os,sys;t=os.environ["STICKY_TITLE"];items=[i for i in json.load(sys.stdin) if i["title"]==t];print(items[0]["number"] if items else "")')"
+
+          export NOW="${now}" STICKY_NUM="${num}"
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+
+          repo = os.environ["REPO"]
+          title = os.environ["STICKY_TITLE"]
+          proposed = os.environ["PROPOSED"]
+          slug = os.environ["PROPOSED_SLUG"]
+          num = os.environ["STICKY_NUM"].strip()
+          state = "none" if not proposed else proposed
+
+          last = ""
+          if num:
+              body = subprocess.run(
+                  ["gh", "issue", "view", num, "--repo", repo, "--json", "body", "--jq", ".body"],
+                  capture_output=True, text=True, check=True,
+              ).stdout
+              m = re.search(r"<!--model-sync:proposed=(\S+?)-->", body)
+              last = m.group(1) if m else ""
+          changed = last != state
+
+          if proposed:
+              proposed_row = f"`{slug}` (litellm id `{proposed}`)"
+              state_row = "**proposal changed — host review needed**" if changed else "unchanged"
+              apply_block = (
+                  "**Apply (host-owned, never done by CI):** in the instance config\n"
+                  "`$CRG_CONFIG_DIR/config.toml` (default `~/.crg/config.toml`) set\n\n"
+                  "```toml\n"
+                  "[models.chat]\n"
+                  f'model = "{slug}"\n'
+                  "```\n\n"
+                  "`base_url` defaults to the OpenRouter endpoint; the key comes from the cell's\n"
+                  "`api_key` or the `HULL_CHAT_API_KEY` env. The `[models.jev_score]` cell shares\n"
+                  "the same default model — aligning it is optional and host-owned.\n"
+              )
+          else:
+              proposed_row = "(none — weak board)"
+              state_row = "**no strong candidate this week — no pin change proposed**"
+              apply_block = ""
+          rows = [
+              ("last checked (UTC)", os.environ["NOW"]),
+              ("source", f"hull `model-candidates.json`, profile permissive (generated_at {os.environ['GENERATED_AT']})"),
+              ("proposed `[models.chat]` model", proposed_row),
+              ("strong candidates (top)", os.environ["STRONG"] or "(none)"),
+              ("previously proposed", f"`{last}`" if last not in ("", "none") else "(none)"),
+              ("state", state_row),
+          ]
+          table = "| field | value |\n| --- | --- |\n" + "\n".join(
+              f"| {k} | {v} |" for k, v in rows
+          )
+          with open("sticky.md", "w") as f:
+              f.write(
+                  "## [model-sync] weekly cloud LLM proposal\n\n"
+                  + table
+                  + "\n\n"
+                  + apply_block
+                  + "\nScope guard: the LOCAL_* embedding / rerank settings stay local by design and\n"
+                  + "are never proposed here.\n\n"
+                  + f"<!--model-sync:proposed={state}-->\n"
+              )
+          with open("changed.txt", "w") as f:
+              f.write(("true" if changed else "false") + "\n")
+          with open("last.txt", "w") as f:
+              f.write((last or "none") + "\n")
+          PY
+
+          changed="$(tr -d ' \n' < changed.txt)"
+          last="$(tr -d ' \n' < last.txt)"
+          if [ -z "${num}" ]; then
+            url="$(gh issue create --repo "${REPO}" --title "${STICKY_TITLE}" --body-file sticky.md)"
+            echo "Created sticky issue ${url}"
+          else
+            gh issue edit "${num}" --repo "${REPO}" --body-file sticky.md >/dev/null
+            echo "Patched sticky issue #${num}"
+            if [ "${changed}" = "true" ]; then
+              gh issue comment "${num}" --repo "${REPO}" \
+                --body "Proposal changed at ${now}: \`${last}\` → \`${PROPOSED:-none (weak board)}\` (host config \`[models.chat].model = \"${PROPOSED_SLUG:-}\"\`)." >/dev/null
+            fi
+          fi
+          cat sticky.md >> "${GITHUB_STEP_SUMMARY}"
