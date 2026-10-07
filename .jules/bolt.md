@@ -129,3 +129,11 @@ Subquery 2 is not correlated, so SQLite already hoists it behind an `OP_Once` gu
 **Learning:** Similar to full graph exports, materializing the entire graph's nodes and edges into lists of Python dictionaries before passing them to `json.dumps()` in `export_jsonld` causes unnecessary peak memory overhead.
 
 **Action:** Replace full list materialization (`nodes = []; edges = []`) with a generator in `export_jsonld` that incrementally yields `json.dumps()` chunks.
+
+### 2026-10-07 - Stream GraphML exports via generator to reduce memory overhead
+
+**Anchor:** `N/A` (to be committed)
+
+**Learning:** Similar to full graph and JSON-LD exports, materializing the entire graph's nodes and edges into an `xml.etree.ElementTree` DOM structure before serialization causes significant unnecessary peak memory overhead.
+
+**Action:** Replace `xml.etree.ElementTree` materialization with an internal `_generate()` generator in `export_graphml` that directly iterates over the `sqlite3.Cursor` and incrementally yields raw XML string chunks.
