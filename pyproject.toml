@@ -62,7 +62,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov",
     "pytest-timeout",
-    "ruff==0.16.9",
+    "ruff==0.16.10",
     "syrupy",
     "ty==0.0.84",
 ]
