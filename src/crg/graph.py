@@ -1055,6 +1055,27 @@ class GraphStore:
         row = cursor.fetchone()
         return row["file_hash"] if row else None
 
+
+    def get_file_hashes(
+        self, file_paths: list[str], *, as_of: str = ""
+    ) -> dict[str, str]:
+        """Batch fetch file_hash for given files to avoid N+1 queries."""
+        if not file_paths:
+            return {}
+
+        unique_files = list(set(file_paths))
+        frag, frag_params = self._temporal_filter(as_of)
+
+        # We group by file_path and select max(file_hash) or any file_hash since all
+        # nodes in a file share the same hash in the same commit.
+        cursor = self._conn.execute(
+            "SELECT file_path, file_hash FROM nodes WHERE file_path IN "  # noqa: S608
+            f"(SELECT value FROM json_each(?)){frag} "
+            "AND file_hash IS NOT NULL GROUP BY file_path",
+            (json.dumps(unique_files), *frag_params),
+        )
+        return {r["file_path"]: r["file_hash"] for r in cursor}
+
     def get_function_hashes_by_files(
         self, file_paths: list[str], *, as_of: str = ""
     ) -> list[dict[str, Any]]:
