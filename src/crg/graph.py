@@ -1055,7 +1055,6 @@ class GraphStore:
         row = cursor.fetchone()
         return row["file_hash"] if row else None
 
-
     def get_file_hashes(
         self, file_paths: list[str], *, as_of: str = ""
     ) -> dict[str, str]:
