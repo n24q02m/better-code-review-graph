@@ -92,76 +92,72 @@ def export_graphml(store: GraphStore) -> str:
 
     Compatible with Gephi import, Cytoscape import, and ``networkx.read_graphml``.
     """
-    import xml.etree.ElementTree as standard_ET
 
-    standard_ET.register_namespace("", GRAPHML_NS)
-    root = standard_ET.Element(f"{{{GRAPHML_NS}}}graphml")
-
-    keys = [
-        ("kind", "node", "string"),
-        ("name", "node", "string"),
-        ("qualified_name", "node", "string"),
-        ("file_path", "node", "string"),
-        ("language", "node", "string"),
-        ("line_start", "node", "int"),
-        ("line_end", "node", "int"),
-        ("edge_kind", "edge", "string"),
-        ("edge_file", "edge", "string"),
-        ("edge_line", "edge", "int"),
-    ]
-    for key_id, scope, attr_type in keys:
-        standard_ET.SubElement(
-            root,
-            f"{{{GRAPHML_NS}}}key",
-            {"id": key_id, "for": scope, "attr.name": key_id, "attr.type": attr_type},
+    # Fast XML escape helper without importing xml.sax.saxutils
+    def _escape(s: str) -> str:
+        return (
+            s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
         )
 
-    graph = standard_ET.SubElement(
-        root, f"{{{GRAPHML_NS}}}graph", {"id": "G", "edgedefault": "directed"}
-    )
+    def _generate():
+        yield "<?xml version='1.0' encoding='utf-8'?>\n"
+        yield f'<graphml xmlns="{GRAPHML_NS}">'
 
-    for node in store.iter_raw_nodes():
-        n_el = standard_ET.SubElement(
-            graph, f"{{{GRAPHML_NS}}}node", {"id": node["qualified_name"]}
-        )
-        for k, v in (
-            ("kind", node["kind"]),
-            ("name", node["name"]),
-            ("qualified_name", node["qualified_name"]),
-            ("file_path", node["file_path"]),
-            ("language", node["language"]),
-        ):
-            if v is None or v == "":
-                continue
-            d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
-            d.text = str(v)
-        for k, v in (
-            ("line_start", node["line_start"]),
-            ("line_end", node["line_end"]),
-        ):
-            if v is None:
-                continue
-            d = standard_ET.SubElement(n_el, f"{{{GRAPHML_NS}}}data", {"key": k})
-            d.text = str(v)
+        keys = [
+            ("kind", "node", "string"),
+            ("name", "node", "string"),
+            ("qualified_name", "node", "string"),
+            ("file_path", "node", "string"),
+            ("language", "node", "string"),
+            ("line_start", "node", "int"),
+            ("line_end", "node", "int"),
+            ("edge_kind", "edge", "string"),
+            ("edge_file", "edge", "string"),
+            ("edge_line", "edge", "int"),
+        ]
+        for key_id, scope, attr_type in keys:
+            yield f'<key id="{key_id}" for="{scope}" attr.name="{key_id}" attr.type="{attr_type}" />'
 
-    for edge in store.iter_raw_edges():
-        e_el = standard_ET.SubElement(
-            graph,
-            f"{{{GRAPHML_NS}}}edge",
-            {"source": edge["source_qualified"], "target": edge["target_qualified"]},
-        )
-        for k, v in (("edge_kind", edge["kind"]), ("edge_file", edge["file_path"])):
-            if v is None or v == "":
-                continue
-            d = standard_ET.SubElement(e_el, f"{{{GRAPHML_NS}}}data", {"key": k})
-            d.text = str(v)
-        if edge["line"] is not None:
-            d = standard_ET.SubElement(
-                e_el, f"{{{GRAPHML_NS}}}data", {"key": "edge_line"}
-            )
-            d.text = str(edge["line"])
+        yield '<graph id="G" edgedefault="directed">'
 
-    return standard_ET.tostring(root, encoding="unicode", xml_declaration=True)
+        for node in store.iter_raw_nodes():
+            yield f'<node id="{_escape(node["qualified_name"])}">'
+            for k, v in (
+                ("kind", node["kind"]),
+                ("name", node["name"]),
+                ("qualified_name", node["qualified_name"]),
+                ("file_path", node["file_path"]),
+                ("language", node["language"]),
+            ):
+                if v is None or v == "":
+                    continue
+                yield f'<data key="{k}">{_escape(str(v))}</data>'
+            for k, v in (
+                ("line_start", node["line_start"]),
+                ("line_end", node["line_end"]),
+            ):
+                if v is None:
+                    continue
+                yield f'<data key="{k}">{v}</data>'
+            yield "</node>"
+
+        for edge in store.iter_raw_edges():
+            yield f'<edge source="{_escape(edge["source_qualified"])}" target="{_escape(edge["target_qualified"])}">'
+            for k, v in (("edge_kind", edge["kind"]), ("edge_file", edge["file_path"])):
+                if v is None or v == "":
+                    continue
+                yield f'<data key="{k}">{_escape(str(v))}</data>'
+            if edge["line"] is not None:
+                yield f'<data key="edge_line">{edge["line"]}</data>'
+            yield "</edge>"
+
+        yield "</graph></graphml>"
+
+    return "".join(_generate())
 
 
 def export_jsonld(store: GraphStore) -> str:
