@@ -2,6 +2,69 @@
 
 <!-- version list -->
 
+## v3.31.0-beta.1 (2026-10-10)
+
+### Bug Fixes
+
+- Apply ruff format to batched file-hash query ([#1155](https://github.com/n24q02m/crg/pull/1155),
+  [`d317a3a`](https://github.com/n24q02m/crg/commit/d317a3a9399018672c7139c6a7f32dae3f91b2eb))
+
+- Batch fetch file hashes to resolve N+1 query in incremental build
+  ([#1155](https://github.com/n24q02m/crg/pull/1155),
+  [`d317a3a`](https://github.com/n24q02m/crg/commit/d317a3a9399018672c7139c6a7f32dae3f91b2eb))
+
+- Drop hardcoded minimax-free model example — no default model is sanctioned
+  ([#1142](https://github.com/n24q02m/crg/pull/1142),
+  [`3ec0823`](https://github.com/n24q02m/crg/commit/3ec0823b0d05ccd393bd6835e8c85d4cbc401e5d))
+
+- Refresh HANDOVER.md (install/surfaces section, no-default-model policy)
+  ([#1143](https://github.com/n24q02m/crg/pull/1143),
+  [`f4a1efd`](https://github.com/n24q02m/crg/commit/f4a1efd3eb112007e7e835baa0872993ed0be6d5))
+
+- **deps**: Lock file maintenance ([#1154](https://github.com/n24q02m/crg/pull/1154),
+  [`ca1cd63`](https://github.com/n24q02m/crg/commit/ca1cd63ae90d5c5217536bd6bfe6eeae7a007296))
+
+- **deps**: Lock file maintenance ([#1152](https://github.com/n24q02m/crg/pull/1152),
+  [`7958ca1`](https://github.com/n24q02m/crg/commit/7958ca18b93516e9e39c147b2e768b7058fd4eda))
+
+- **deps**: Lock file maintenance ([#1148](https://github.com/n24q02m/crg/pull/1148),
+  [`11af2f2`](https://github.com/n24q02m/crg/commit/11af2f2ef58ab5f93ad20cf7e101a9aacbc91395))
+
+- **deps**: Update ruff to v0.16.10 ([#1151](https://github.com/n24q02m/crg/pull/1151),
+  [`2d64c7f`](https://github.com/n24q02m/crg/commit/2d64c7f7efefb48ef5341a8ba61528aaf0d7d80b))
+
+- **deps**: Update semgrep to v1.161.0 ([#1147](https://github.com/n24q02m/crg/pull/1147),
+  [`4e223f4`](https://github.com/n24q02m/crg/commit/4e223f4c8e7ff88c8ef63ddfc63c88ee05f224c1))
+
+- **model-sync**: Pull from canonical data/model-candidates branch, not main
+  ([#1145](https://github.com/n24q02m/crg/pull/1145),
+  [`6d35357`](https://github.com/n24q02m/crg/commit/6d35357a19adcbce7b36db9c8763f7ae1e773163))
+
+- **model-sync**: Weekly cloud-LLM proposal sticky issue
+  ([#1144](https://github.com/n24q02m/crg/pull/1144),
+  [`29ad85f`](https://github.com/n24q02m/crg/commit/29ad85f3b51da517f2c98226138d7f1f2f22075e))
+
+### Features
+
+- Batch fetch file hashes to fix N+1 query in incremental build
+  ([#1155](https://github.com/n24q02m/crg/pull/1155),
+  [`d317a3a`](https://github.com/n24q02m/crg/commit/d317a3a9399018672c7139c6a7f32dae3f91b2eb))
+
+- Drop per-repo model-sync (hull central leaders issue replaces it)
+  ([#1150](https://github.com/n24q02m/crg/pull/1150),
+  [`7f60133`](https://github.com/n24q02m/crg/commit/7f6013372113509a277812d49ab77086f80b674e))
+
+- Stream graphml export via generator to reduce memory overhead
+  ([#1153](https://github.com/n24q02m/crg/pull/1153),
+  [`4e9864e`](https://github.com/n24q02m/crg/commit/4e9864e76a1f15ad17c11f9b9a0ed63e0263dce3))
+
+### Performance Improvements
+
+- Batch fetch file hashes to fix N+1 query in incremental build
+  ([#1155](https://github.com/n24q02m/crg/pull/1155),
+  [`d317a3a`](https://github.com/n24q02m/crg/commit/d317a3a9399018672c7139c6a7f32dae3f91b2eb))
+
+
 ## v3.30.0 (2026-10-06)
 
 ### Bug Fixes
