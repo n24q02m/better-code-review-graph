@@ -507,6 +507,8 @@ def _update_files_in_store(
     errors = []
     repo_resolved = repo_root.resolve()
 
+    # 1. First pass: filter files and collect valid absolute paths
+    valid_files: list[tuple[str, str]] = []  # (rel_path, abs_path_str)
     for rel_path in all_files:
         if _should_ignore(rel_path, ignore_patterns):
             continue
@@ -522,14 +524,22 @@ def _update_files_in_store(
             continue
         if parser.detect_language(abs_path) is None:
             continue
+        valid_files.append((rel_path, str(abs_path)))
 
+    # Bolt optimization: Batch fetch file hashes to avoid N+1 queries during the update loop
+    valid_abs_paths = [abs_path for _, abs_path in valid_files]
+    batched_file_hashes = store.get_file_hashes(valid_abs_paths)
+
+    # 2. Second pass: read files, check hashes, and update graph
+    for rel_path, abs_path_str in valid_files:
+        abs_path = Path(abs_path_str)
         try:
             source_preview = abs_path.read_bytes()
             fhash = hashlib.sha256(source_preview).hexdigest()
 
             # Check file_hash directly via SQL to avoid materializing all
             # GraphNode objects for unchanged files.
-            existing_hash = store.get_file_hash(str(abs_path))
+            existing_hash = batched_file_hashes.get(abs_path_str)
             if existing_hash == fhash:
                 continue
 
